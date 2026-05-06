@@ -13,8 +13,9 @@ const MAX_BRAKE_FORCE = 60;
  * Builds a sleek GT-style car with PBR materials and a Cannon RaycastVehicle
  * for stable arcade-realistic physics.
  */
-export function createCar(world, materials) {
-  const visual = buildVisualCar();
+export function createCar(world, materials, options = {}) {
+  const bodyColor = options.color ?? 0xc8161d;
+  const visual = buildVisualCar(bodyColor);
 
   // Chassis body
   const chassisShape = new CANNON.Box(
@@ -118,12 +119,12 @@ export function createCar(world, materials) {
   };
 }
 
-function buildVisualCar() {
+function buildVisualCar(bodyColor = 0xc8161d) {
   const root = new THREE.Group();
 
   // ---------- Body ----------
   const bodyMat = new THREE.MeshPhysicalMaterial({
-    color: 0xc8161d,
+    color: bodyColor,
     metalness: 0.55,
     roughness: 0.28,
     clearcoat: 1.0,

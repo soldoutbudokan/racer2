@@ -1,6 +1,6 @@
 /**
- * SVG-driven HUD: speedometer arc, gear, lap timer.
- * Lap timing is driven from the game loop based on a parametric track position.
+ * SVG-driven HUD: speedometer arc, gear, lap timer, plus a top-down minimap
+ * canvas that shows the track outline and every car's position.
  */
 export function createHud(maxSpeed = 320) {
   const arc = document.getElementById('rpm-arc');
@@ -10,6 +10,9 @@ export function createHud(maxSpeed = 320) {
   const lapTotal = document.getElementById('lap-total');
   const lapTime = document.getElementById('lap-time');
   const bestTime = document.getElementById('best-time');
+  const posBlock = document.getElementById('hud-position-block');
+  const posCurrent = document.getElementById('pos-current');
+  const posTotal = document.getElementById('pos-total');
 
   // Build tick marks once
   const ticks = document.getElementById('ticks');
@@ -30,6 +33,13 @@ export function createHud(maxSpeed = 320) {
     line.setAttribute('stroke-width', i % 4 === 0 ? '2' : '1');
     ticks.appendChild(line);
   }
+
+  // Minimap canvas
+  const minimap = document.getElementById('minimap');
+  const mctx = minimap.getContext('2d');
+  let trackBounds = null;     // { minX, maxX, minZ, maxZ }
+  let trackPath = null;        // pre-built Path2D in canvas pixel coords
+  let startMarker = null;      // { x, y } in canvas coords
 
   function setSpeed(speedKmh, gearLabel) {
     const t = Math.max(0, Math.min(1, speedKmh / maxSpeed));
@@ -57,11 +67,129 @@ export function createHud(maxSpeed = 320) {
     bestTime.textContent = ms == null ? '--:--.---' : formatMs(ms);
   }
 
+  function setPosition(curr, total) {
+    posBlock.classList.remove('hidden');
+    posCurrent.textContent = curr;
+    posTotal.textContent = total;
+  }
+
+  function hidePosition() {
+    posBlock.classList.add('hidden');
+  }
+
   function show() {
     document.getElementById('ui').classList.remove('hidden');
   }
+  function hide() {
+    document.getElementById('ui').classList.add('hidden');
+  }
 
-  return { setSpeed, setLap, setLapTime, setBest, show };
+  // ----- Minimap -----
+
+  function buildMinimap(track) {
+    const frames = track.frames;
+    let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (const f of frames) {
+      if (f.pos.x < minX) minX = f.pos.x;
+      if (f.pos.x > maxX) maxX = f.pos.x;
+      if (f.pos.z < minZ) minZ = f.pos.z;
+      if (f.pos.z > maxZ) maxZ = f.pos.z;
+    }
+    const padding = 18;
+    const w = minimap.width;
+    const h = minimap.height;
+    const trackWidth = maxX - minX;
+    const trackHeight = maxZ - minZ;
+    const sx = (w - padding * 2) / trackWidth;
+    const sz = (h - padding * 2) / trackHeight;
+    const scale = Math.min(sx, sz);
+    const ox = (w - trackWidth * scale) / 2 - minX * scale;
+    const oz = (h - trackHeight * scale) / 2 - minZ * scale;
+    trackBounds = { minX, maxX, minZ, maxZ, scale, ox, oz };
+
+    const path = new Path2D();
+    for (let i = 0; i < frames.length; i++) {
+      const cx = frames[i].pos.x * scale + ox;
+      const cy = frames[i].pos.z * scale + oz;
+      if (i === 0) path.moveTo(cx, cy);
+      else path.lineTo(cx, cy);
+    }
+    path.closePath();
+    trackPath = path;
+
+    // Pre-compute the start position so we can draw a marker there each frame.
+    const sf = frames[0];
+    startMarker = {
+      x: sf.pos.x * scale + ox,
+      y: sf.pos.z * scale + oz,
+    };
+  }
+
+  /**
+   * Draw the track and a dot per car. cars: [{ pos, color, isPlayer }]
+   */
+  function drawMinimap(cars) {
+    if (!trackPath) return;
+    const w = minimap.width;
+    const h = minimap.height;
+    mctx.clearRect(0, 0, w, h);
+
+    // Track outline — fat dark stroke for the surface, thin light stroke on top.
+    mctx.lineWidth = 12;
+    mctx.lineJoin = 'round';
+    mctx.lineCap = 'round';
+    mctx.strokeStyle = 'rgba(255, 255, 255, 0.10)';
+    mctx.stroke(trackPath);
+    mctx.lineWidth = 6;
+    mctx.strokeStyle = 'rgba(220, 230, 240, 0.85)';
+    mctx.stroke(trackPath);
+
+    // Start/finish marker
+    if (startMarker) {
+      mctx.fillStyle = 'rgba(255, 215, 74, 0.9)';
+      mctx.beginPath();
+      mctx.arc(startMarker.x, startMarker.y, 4, 0, Math.PI * 2);
+      mctx.fill();
+      mctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+      mctx.lineWidth = 1;
+      mctx.stroke();
+    }
+
+    // Cars — players drawn last so they sit on top.
+    const sorted = [...cars].sort((a, b) => (a.isPlayer ? 1 : 0) - (b.isPlayer ? 1 : 0));
+    for (const c of sorted) {
+      const x = c.pos.x * trackBounds.scale + trackBounds.ox;
+      const y = c.pos.z * trackBounds.scale + trackBounds.oz;
+      const radius = c.isPlayer ? 5 : 4;
+      mctx.beginPath();
+      mctx.arc(x, y, radius + 2, 0, Math.PI * 2);
+      mctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+      mctx.fill();
+      mctx.beginPath();
+      mctx.arc(x, y, radius, 0, Math.PI * 2);
+      mctx.fillStyle = colorString(c.color);
+      mctx.fill();
+      if (c.isPlayer) {
+        mctx.strokeStyle = '#fff';
+        mctx.lineWidth = 1.4;
+        mctx.stroke();
+      }
+    }
+  }
+
+  return {
+    setSpeed, setLap, setLapTime, setBest,
+    setPosition, hidePosition,
+    show, hide,
+    buildMinimap, drawMinimap,
+  };
+}
+
+function colorString(hex) {
+  const r = (hex >> 16) & 0xff;
+  const g = (hex >> 8) & 0xff;
+  const b = hex & 0xff;
+  return `rgb(${r}, ${g}, ${b})`;
 }
 
 function formatMs(ms) {

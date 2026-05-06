@@ -17,6 +17,27 @@
       </div>
     </div>
 
+    <div id="menu" class="hidden">
+      <div class="menu-inner">
+        <div class="title">RACER<span>2</span></div>
+        <div class="subtitle">SELECT MODE</div>
+        <div class="mode-list">
+          <button class="mode" data-mode="time-trial">
+            <div class="mode-name">TIME TRIAL</div>
+            <div class="mode-desc">Empty track. Hot-lap practice.</div>
+          </button>
+          <button class="mode" data-mode="quick-race">
+            <div class="mode-name">QUICK RACE</div>
+            <div class="mode-desc">You vs. 3 AI opponents over 3 laps.</div>
+          </button>
+          <button class="mode" data-mode="two-player">
+            <div class="mode-name">TWO PLAYER</div>
+            <div class="mode-desc">Split-screen. WASD vs. Arrows.</div>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="ui" class="hidden">
       <div id="hud-top">
         <div class="hud-block">
@@ -30,6 +51,10 @@
         <div class="hud-block">
           <div class="hud-label">BEST</div>
           <div class="hud-value" id="best-time">--:--.---</div>
+        </div>
+        <div class="hud-block hud-block-pos hidden" id="hud-position-block">
+          <div class="hud-label">POS</div>
+          <div class="hud-value"><span id="pos-current">1</span> / <span id="pos-total">4</span></div>
         </div>
       </div>
 
@@ -53,14 +78,21 @@
             <text x="110" y="178" text-anchor="middle" fill="rgba(255,255,255,0.45)" font-family="Inter,Arial,sans-serif" font-size="10" letter-spacing="3">GEAR</text>
           </svg>
         </div>
-        <div id="controls-hint">
-          <div><kbd>W</kbd>/<kbd>↑</kbd> Throttle</div>
-          <div><kbd>S</kbd>/<kbd>↓</kbd> Brake / Reverse</div>
-          <div><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> Steer</div>
-          <div><kbd>Space</kbd> Handbrake</div>
-          <div><kbd>C</kbd> Camera</div>
-          <div><kbd>R</kbd> Reset</div>
+        <div id="minimap-wrap">
+          <canvas id="minimap" width="220" height="220"></canvas>
+          <div class="minimap-label">TRACK</div>
         </div>
+      </div>
+
+      <div id="controls-hint">
+        <div class="hint-line"><kbd>W</kbd>/<kbd>↑</kbd> Throttle</div>
+        <div class="hint-line"><kbd>S</kbd>/<kbd>↓</kbd> Brake / Reverse</div>
+        <div class="hint-line"><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> Steer</div>
+        <div class="hint-line"><kbd>Space</kbd> Handbrake</div>
+        <div class="hint-line"><kbd>C</kbd> Camera</div>
+        <div class="hint-line"><kbd>R</kbd> Reset all</div>
+        <div class="hint-line"><kbd>B</kbd> Back to track</div>
+        <div class="hint-line"><kbd>Esc</kbd> Menu</div>
       </div>
     </div>
 

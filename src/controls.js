@@ -1,28 +1,28 @@
 /**
- * Keyboard input — WASD or arrow keys. Returns smoothed analog values to
- * avoid the bang-bang feel of raw key states.
+ * Keyboard input. A binding is either a key code or an array of key codes
+ * (any of which trigger the action). This lets single-player accept WASD
+ * AND arrow keys at the same time, while two-player splits them by hand.
  */
-export function createInput() {
+export function createInput(bindings) {
   const keys = new Set();
   const state = {
-    throttle: 0,   // 0..1
-    brake: 0,      // 0..1
-    steer: 0,      // -1..1 (left negative)
+    throttle: 0,
+    brake: 0,
+    steer: 0,
     handbrake: false,
     cameraToggle: false,
     reset: false,
+    rescue: false,
   };
+
+  const allBound = collectAllCodes(bindings);
 
   const onDown = (e) => {
     keys.add(e.code);
-    if (e.code === 'KeyC') state.cameraToggle = true;
-    if (e.code === 'KeyR') state.reset = true;
-    // Stop arrow keys from scrolling the page
-    if (
-      e.code === 'ArrowUp' || e.code === 'ArrowDown' ||
-      e.code === 'ArrowLeft' || e.code === 'ArrowRight' ||
-      e.code === 'Space'
-    ) e.preventDefault();
+    if (matches(e.code, bindings.cameraToggle)) state.cameraToggle = true;
+    if (matches(e.code, bindings.reset)) state.reset = true;
+    if (matches(e.code, bindings.rescue)) state.rescue = true;
+    if (allBound.has(e.code)) e.preventDefault();
   };
   const onUp = (e) => keys.delete(e.code);
   const onBlur = () => keys.clear();
@@ -32,17 +32,15 @@ export function createInput() {
   window.addEventListener('blur', onBlur);
 
   function update(dt) {
-    const fwd = keys.has('KeyW') || keys.has('ArrowUp');
-    const back = keys.has('KeyS') || keys.has('ArrowDown');
-    const left = keys.has('KeyA') || keys.has('ArrowLeft');
-    const right = keys.has('KeyD') || keys.has('ArrowRight');
-    state.handbrake = keys.has('Space');
+    const fwd = isPressed(keys, bindings.throttle);
+    const back = isPressed(keys, bindings.brake);
+    const left = isPressed(keys, bindings.left);
+    const right = isPressed(keys, bindings.right);
+    state.handbrake = isPressed(keys, bindings.handbrake);
 
-    // Throttle / brake — independent so you can trail-brake in
     state.throttle = approach(state.throttle, fwd ? 1 : 0, dt * (fwd ? 4 : 6));
     state.brake = approach(state.brake, back ? 1 : 0, dt * (back ? 6 : 8));
 
-    // Steering — slower so high-speed inputs aren't jerky
     let target = 0;
     if (left) target -= 1;
     if (right) target += 1;
@@ -50,22 +48,72 @@ export function createInput() {
     return state;
   }
 
-  function consumeToggle() {
-    const v = state.cameraToggle;
-    state.cameraToggle = false;
-    return v;
-  }
-  function consumeReset() {
-    const v = state.reset;
-    state.reset = false;
-    return v;
-  }
+  function consumeToggle() { const v = state.cameraToggle; state.cameraToggle = false; return v; }
+  function consumeReset()  { const v = state.reset;        state.reset = false;        return v; }
+  function consumeRescue() { const v = state.rescue;       state.rescue = false;       return v; }
 
-  return { update, consumeToggle, consumeReset, state };
+  return { update, consumeToggle, consumeReset, consumeRescue, state };
+}
+
+// Single-player: WASD OR arrow keys, both work.
+export const SINGLE_PLAYER_BINDINGS = {
+  throttle: ['KeyW', 'ArrowUp'],
+  brake:    ['KeyS', 'ArrowDown'],
+  left:     ['KeyA', 'ArrowLeft'],
+  right:    ['KeyD', 'ArrowRight'],
+  handbrake: 'Space',
+  cameraToggle: 'KeyC',
+  reset: 'KeyR',
+  rescue: 'KeyB',
+};
+
+// Player 1 in 2P mode: WASD only, with the global camera/reset/rescue bindings.
+export const WASD_BINDINGS = {
+  throttle: 'KeyW',
+  brake:    'KeyS',
+  left:     'KeyA',
+  right:    'KeyD',
+  handbrake: 'ShiftLeft',
+  cameraToggle: 'KeyC',
+  reset: 'KeyR',
+  rescue: 'KeyB',
+};
+
+// Player 2 in 2P mode: arrows only. Numpad-0 as handbrake.
+export const ARROW_BINDINGS = {
+  throttle: 'ArrowUp',
+  brake:    'ArrowDown',
+  left:     'ArrowLeft',
+  right:    'ArrowRight',
+  handbrake: 'Numpad0',
+  cameraToggle: null,
+  reset: null,
+  rescue: null,
+};
+
+function isPressed(keys, binding) {
+  if (!binding) return false;
+  if (Array.isArray(binding)) return binding.some((k) => keys.has(k));
+  return keys.has(binding);
+}
+
+function matches(code, binding) {
+  if (!binding) return false;
+  if (Array.isArray(binding)) return binding.includes(code);
+  return code === binding;
+}
+
+function collectAllCodes(bindings) {
+  const set = new Set();
+  for (const v of Object.values(bindings)) {
+    if (!v) continue;
+    if (Array.isArray(v)) v.forEach((k) => set.add(k));
+    else set.add(v);
+  }
+  return set;
 }
 
 function approach(current, target, rate) {
-  // Frame-rate-independent exponential smoothing.
   const t = 1 - Math.exp(-rate);
   return current + (target - current) * t;
 }

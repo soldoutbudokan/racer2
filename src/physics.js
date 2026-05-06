@@ -21,8 +21,10 @@ export function createPhysicsWorld() {
     contactEquationStiffness: 1000,
   }));
   world.addContactMaterial(new CANNON.ContactMaterial(chassisMat, barrierMat, {
-    friction: 0.2,
-    restitution: 0.15,
+    // Lower friction + lower restitution so a glancing wall hit slides along
+    // rather than snagging or bouncing the car into a spin.
+    friction: 0.08,
+    restitution: 0.04,
   }));
   world.addContactMaterial(new CANNON.ContactMaterial(chassisMat, groundMat, {
     friction: 0.2,
