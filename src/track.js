@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 const ROAD_WIDTH = 14;
 const KERB_WIDTH = 2.0;
@@ -450,6 +451,75 @@ function makeStartFinishTexture() {
   return tex;
 }
 
+// ---------- Scenery textures ----------
+
+// Soft leaf-cluster billboard with a transparent surround (alpha-tested).
+function makeFoliageTexture() {
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.clearRect(0, 0, size, size);
+  for (let i = 0; i < 90; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const rad = Math.pow(Math.random(), 0.7) * size * 0.42;
+    const x = size / 2 + Math.cos(a) * rad;
+    const y = size / 2 + Math.sin(a) * rad * 0.95;
+    const r = 6 + Math.random() * 15;
+    const g = 80 + Math.random() * 80;
+    ctx.fillStyle = `rgba(${(28 + Math.random() * 34) | 0},${g | 0},${(30 + Math.random() * 26) | 0},0.9)`;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// Stadium crowd — speckled colour on a dark bank.
+function makeCrowdTexture() {
+  const w = 256, h = 64;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#23262b'; ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < 1400; i++) {
+    const x = Math.random() * w, y = Math.random() * h;
+    const hue = Math.floor(Math.random() * 360);
+    ctx.fillStyle = `hsl(${hue},${40 + Math.random() * 40}%,${45 + Math.random() * 30}%)`;
+    ctx.fillRect(x, y, 2, 2);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+// A handful of faux sponsor logos (geometric mark + wordmark).
+function makeSponsorTextures() {
+  const words = ['VELOCE', 'APEX', 'NITRO', 'AERO', 'TORQUE', 'VORTEX', 'RACE1', 'FLUX'];
+  const bg = ['#e8e8ea', '#101418', '#c41e1e', '#1e40af', '#059669', '#f5b301', '#0891b2', '#7c3aed'];
+  return words.map((word, i) => {
+    const w = 512, h = 80;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = bg[i % bg.length]; ctx.fillRect(0, 0, w, h);
+    const fg = (i % bg.length) === 0 || (i % bg.length) === 5 ? '#16181d' : '#f4f6f8';
+    // geometric mark
+    ctx.fillStyle = fg;
+    ctx.beginPath();
+    ctx.moveTo(20, 60); ctx.lineTo(50, 18); ctx.lineTo(70, 18); ctx.lineTo(40, 60);
+    ctx.closePath(); ctx.fill();
+    ctx.fillRect(58, 18, 14, 42);
+    ctx.font = 'bold 50px Arial Black, Arial';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(word, 100, 44);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 8;
+    return tex;
+  });
+}
+
 // ---------- Procedural noise ----------
 
 function hashFn(x, y) {
@@ -542,23 +612,35 @@ function scatterTrees(scene, frames) {
   const trunkMat = new THREE.MeshStandardMaterial({
     color: 0x4a3520, roughness: 0.95, metalness: 0,
   });
+  // Crossed alpha-cutout foliage billboards read as full leafy canopies from
+  // every angle yet stay cheap (instanced, alpha-tested → no sorting).
   const leavesMat = new THREE.MeshStandardMaterial({
-    color: 0x2e6b2a, roughness: 0.9, metalness: 0,
+    map: makeFoliageTexture(),
+    alphaTest: 0.45,
+    roughness: 0.9, metalness: 0,
+    side: THREE.DoubleSide,
   });
 
-  const trunkGeo = new THREE.CylinderGeometry(0.25, 0.4, 2.4, 6);
-  trunkGeo.translate(0, 1.2, 0);
-  const leavesGeo = new THREE.ConeGeometry(2.0, 6.0, 8);
-  leavesGeo.translate(0, 5.0, 0);
+  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.42, 2.6, 7);
+  trunkGeo.translate(0, 1.3, 0);
+
+  // three quads crossing through a common vertical axis
+  const quad = new THREE.PlaneGeometry(7.2, 7.4);
+  quad.translate(0, 3.7, 0);
+  const q2 = quad.clone(); q2.rotateY(Math.PI / 3);
+  const q3 = quad.clone(); q3.rotateY((2 * Math.PI) / 3);
+  const leavesGeo = mergeGeometries([quad, q2, q3]);
+  leavesGeo.translate(0, 2.4, 0); // sit on top of the trunk
 
   const N = 600;
   const trunkInst = new THREE.InstancedMesh(trunkGeo, trunkMat, N);
   const leavesInst = new THREE.InstancedMesh(leavesGeo, leavesMat, N);
   trunkInst.castShadow = trunkInst.receiveShadow = true;
-  leavesInst.castShadow = leavesInst.receiveShadow = true;
+  leavesInst.castShadow = true;
   const m = new THREE.Matrix4();
   const q = new THREE.Quaternion();
   const s = new THREE.Vector3();
+  const col = new THREE.Color();
   let placed = 0;
   for (let i = 0; i < N * 4 && placed < N; i++) {
     const x = (Math.random() * 2 - 1) * 800;
@@ -576,33 +658,62 @@ function scatterTrees(scene, frames) {
     m.compose(p, q, s);
     trunkInst.setMatrixAt(placed, m);
     leavesInst.setMatrixAt(placed, m);
+    // per-tree hue variation so the canopy isn't a flat green wall
+    col.setHSL(0.26 + (Math.random() - 0.5) * 0.06, 0.5, 0.32 + Math.random() * 0.12);
+    leavesInst.setColorAt(placed, col);
     placed++;
   }
   trunkInst.count = placed;
   leavesInst.count = placed;
   trunkInst.instanceMatrix.needsUpdate = true;
   leavesInst.instanceMatrix.needsUpdate = true;
+  if (leavesInst.instanceColor) leavesInst.instanceColor.needsUpdate = true;
   scene.add(trunkInst);
   scene.add(leavesInst);
 }
 
 function addDistantMountains(scene) {
   const mat = new THREE.MeshStandardMaterial({
-    color: 0x6c7a86,
+    vertexColors: true,
     roughness: 1.0,
     metalness: 0,
-    flatShading: true,
   });
+  const rock = new THREE.Color(0x5c6672);
+  const grass = new THREE.Color(0x44503f);
+  const snow = new THREE.Color(0xe8edf2);
+  const tmp = new THREE.Color();
   for (let i = 0; i < 28; i++) {
     const r = 1100 + Math.random() * 300;
     const a = (i / 28) * Math.PI * 2;
     const x = Math.cos(a) * r;
     const z = Math.sin(a) * r;
-    const h = 80 + Math.random() * 140;
-    const w = 180 + Math.random() * 180;
-    const geo = new THREE.ConeGeometry(w, h, 5 + Math.floor(Math.random() * 3));
+    const h = 100 + Math.random() * 180;
+    const w = 200 + Math.random() * 200;
+    const geo = new THREE.ConeGeometry(w, h, 14, 7);
+    // Displace radially with noise → ridged, eroded silhouette (no flatShading).
+    const pos = geo.getAttribute('position');
+    const colors = [];
+    const seed = i * 7.13;
+    for (let v = 0; v < pos.count; v++) {
+      const px = pos.getX(v), py = pos.getY(v), pz = pos.getZ(v);
+      const ang = Math.atan2(pz, px);
+      const yFrac = (py + h / 2) / h;             // 0 base .. 1 tip
+      const n = fractalNoise(ang * 2.2 + seed, yFrac * 3 + seed, 4);
+      const push = (0.6 + n * 0.8) * (1 - yFrac * 0.5);
+      pos.setX(v, px * (0.7 + push * 0.5));
+      pos.setZ(v, pz * (0.7 + push * 0.5));
+      pos.setY(v, py + (n - 0.5) * h * 0.12);
+      // colour by altitude with a noisy snow line
+      const snowLine = 0.62 + (n - 0.5) * 0.18;
+      if (yFrac > snowLine) tmp.copy(snow);
+      else if (yFrac < 0.18) tmp.copy(grass);
+      else tmp.copy(rock).lerp(snow, (yFrac - 0.18) / (snowLine - 0.18) * 0.4);
+      colors.push(tmp.r, tmp.g, tmp.b);
+    }
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.computeVertexNormals();
     const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, h / 2 - 6, z);
+    m.position.set(x, h / 2 - 8, z);
     m.rotation.y = Math.random() * Math.PI;
     scene.add(m);
   }
@@ -610,10 +721,16 @@ function addDistantMountains(scene) {
 
 function addGrandstands(scene, frames) {
   const standMat = new THREE.MeshStandardMaterial({
-    color: 0xd9d9d9, roughness: 0.85, metalness: 0,
+    color: 0xc9ccd0, roughness: 0.8, metalness: 0.1,
   });
-  const seatMat = new THREE.MeshStandardMaterial({
-    color: 0x1a4f8a, roughness: 0.7, metalness: 0,
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x3a3f47, roughness: 0.5, metalness: 0.6,
+  });
+  const roofMat = new THREE.MeshStandardMaterial({
+    color: 0xe6e8ea, roughness: 0.6, metalness: 0.2, side: THREE.DoubleSide,
+  });
+  const crowdMat = new THREE.MeshStandardMaterial({
+    map: makeCrowdTexture(), roughness: 0.85, metalness: 0,
   });
   const places = [0, 8, 16];
   const standOffset = ARMCO_OFFSET + 4;
@@ -622,20 +739,33 @@ function addGrandstands(scene, frames) {
     const base = f.pos.clone().add(f.left.clone().multiplyScalar(-standOffset));
     const yaw = Math.atan2(f.tan.x, f.tan.z);
     const g = new THREE.Group();
-    const struct = new THREE.Mesh(
-      new THREE.BoxGeometry(20, 6, 6),
-      standMat
-    );
-    struct.position.y = 3;
-    struct.castShadow = struct.receiveShadow = true;
-    g.add(struct);
-    for (let s = 0; s < 4; s++) {
-      const seat = new THREE.Mesh(
-        new THREE.BoxGeometry(19, 0.4, 1.0),
-        seatMat
-      );
-      seat.position.set(0, 1 + s * 1.2, 2.4 - s * 1.2);
-      g.add(seat);
+    // sloped seating bank with a crowd texture facing the track
+    const bank = new THREE.Mesh(new THREE.BoxGeometry(22, 7, 7), standMat);
+    bank.position.y = 3.5;
+    bank.castShadow = bank.receiveShadow = true;
+    g.add(bank);
+    const crowd = new THREE.Mesh(new THREE.PlaneGeometry(21, 7.6), crowdMat);
+    crowd.position.set(0, 3.7, 3.6);
+    crowd.rotation.x = -0.55;
+    g.add(crowd);
+    // support columns
+    for (const cx of [-9.5, -3, 3, 9.5]) {
+      const col = new THREE.Mesh(new THREE.BoxGeometry(0.5, 7, 0.5), frameMat);
+      col.position.set(cx, 3.5, -2.6);
+      col.castShadow = true;
+      g.add(col);
+    }
+    // cantilever roof canopy
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(23, 0.3, 8), roofMat);
+    roof.position.set(0, 7.6, 1.2);
+    roof.rotation.x = 0.12;
+    roof.castShadow = true;
+    g.add(roof);
+    for (const cx of [-10, 10]) {
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.5, 0.3), frameMat);
+      brace.position.set(cx, 6, -1.5);
+      brace.rotation.x = -0.5;
+      g.add(brace);
     }
     g.position.copy(base);
     g.rotation.y = yaw;
@@ -936,11 +1066,15 @@ function addTireStacks(scene, frames, curvature, offset) {
 }
 
 function addSponsorBoards(scene, frames, offset) {
-  const colors = [
-    0xc41e1e, 0x1e40af, 0x059669, 0xea580c,
-    0x7c3aed, 0xfacc15, 0xdc2626, 0x0891b2,
-  ];
-  const boardGeo = new THREE.BoxGeometry(8, 1.2, 0.15);
+  const logos = makeSponsorTextures();
+  const faceMats = logos.map((map) => new THREE.MeshStandardMaterial({
+    map, roughness: 0.5, metalness: 0.1,
+  }));
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x1b1d22, roughness: 0.6, metalness: 0.4,
+  });
+  const boardGeo = new THREE.BoxGeometry(8, 1.2, 0.16);
+  const frameGeo = new THREE.BoxGeometry(8.3, 1.5, 0.1);
   const N = 22;
   const step = Math.floor(frames.length / N);
   for (let i = 0; i < frames.length; i += step) {
@@ -948,17 +1082,19 @@ function addSponsorBoards(scene, frames, offset) {
     const f = frames[i];
     const sign = Math.random() < 0.5 ? +1 : -1;
     const pos = f.pos.clone().add(f.left.clone().multiplyScalar(sign * offset));
-    const mat = new THREE.MeshStandardMaterial({
-      color: colors[Math.floor(Math.random() * colors.length)],
-      roughness: 0.6,
-      metalness: 0,
-    });
+    const yaw = Math.atan2(f.tan.x, f.tan.z);
+    const mat = faceMats[Math.floor(Math.random() * faceMats.length)];
     const board = new THREE.Mesh(boardGeo, mat);
     board.position.set(pos.x, 1.55, pos.z);
-    board.rotation.y = Math.atan2(f.tan.x, f.tan.z);
+    board.rotation.y = yaw;
     board.castShadow = true;
     board.receiveShadow = true;
     scene.add(board);
+    const frame = new THREE.Mesh(frameGeo, frameMat);
+    frame.position.set(pos.x, 1.55, pos.z);
+    frame.rotation.y = yaw;
+    frame.translateZ(-0.05);
+    scene.add(frame);
     // Small stand legs
     const legMat = new THREE.MeshStandardMaterial({
       color: 0x444444, roughness: 0.7, metalness: 0.4,

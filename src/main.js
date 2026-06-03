@@ -21,6 +21,11 @@ const PLAYER1_COLOR = 0xc8161d;
 const PLAYER2_COLOR = 0x1f6cff;
 const AI_COLORS = [0xfacc15, 0x059669, 0xea580c];
 
+// Visually distinct body shapes across the grid.
+const PLAYER1_ARCH = 'gt';
+const PLAYER2_ARCH = 'muscle';
+const AI_ARCHETYPES = ['open-wheel', 'gt', 'muscle'];
+
 bootstrap();
 
 async function bootstrap() {
@@ -68,6 +73,8 @@ async function bootstrap() {
     mode: null,
     state: null,
   };
+  // Dev hook for headless screenshot inspection (harmless in production).
+  if (typeof window !== 'undefined') window.__ctx = ctx;
 
   document.querySelectorAll('button.mode').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -112,17 +119,17 @@ function startMode(ctx, mode) {
   ctx.state = createGameState(mode);
 
   if (mode === 'time-trial') {
-    addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, PLAYER1_COLOR, 0);
+    addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, PLAYER1_COLOR, 0, PLAYER1_ARCH);
     ctx.hud.hidePosition();
   } else if (mode === 'quick-race') {
-    addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, PLAYER1_COLOR, 0);
+    addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, PLAYER1_COLOR, 0, PLAYER1_ARCH);
     for (let i = 0; i < 3; i++) {
-      addAICar(ctx, AI_COLORS[i], i + 1, 0.78 + i * 0.04);
+      addAICar(ctx, AI_COLORS[i], i + 1, 0.78 + i * 0.04, AI_ARCHETYPES[i]);
     }
     ctx.hud.setPosition(1, ctx.cars.length);
   } else if (mode === 'two-player') {
-    addPlayerCar(ctx, WASD_BINDINGS, PLAYER1_COLOR, 0);
-    addPlayerCar(ctx, ARROW_BINDINGS, PLAYER2_COLOR, 1);
+    addPlayerCar(ctx, WASD_BINDINGS, PLAYER1_COLOR, 0, PLAYER1_ARCH);
+    addPlayerCar(ctx, ARROW_BINDINGS, PLAYER2_COLOR, 1, PLAYER2_ARCH);
     ctx.hud.hidePosition();
   }
 
@@ -161,8 +168,8 @@ function carState() {
   };
 }
 
-function addPlayerCar(ctx, bindings, color, gridIdx) {
-  const car = createCar(ctx.world, ctx.materials, { color });
+function addPlayerCar(ctx, bindings, color, gridIdx, archetype = 'gt') {
+  const car = createCar(ctx.world, ctx.materials, { color, archetype });
   ctx.scene.add(car.visual.root);
   car.visual.wheels.forEach((w) => ctx.scene.add(w));
   const spawn = gridSpawn(ctx.track, gridIdx);
@@ -179,8 +186,8 @@ function addPlayerCar(ctx, bindings, color, gridIdx) {
   ctx.state.perCar.push(ctx.cars[ctx.cars.length - 1]);
 }
 
-function addAICar(ctx, color, gridIdx, skill) {
-  const car = createCar(ctx.world, ctx.materials, { color });
+function addAICar(ctx, color, gridIdx, skill, archetype = 'gt') {
+  const car = createCar(ctx.world, ctx.materials, { color, archetype });
   ctx.scene.add(car.visual.root);
   car.visual.wheels.forEach((w) => ctx.scene.add(w));
   const spawn = gridSpawn(ctx.track, gridIdx);

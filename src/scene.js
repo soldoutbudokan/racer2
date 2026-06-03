@@ -82,8 +82,10 @@ export function createScene(canvas) {
   scene.environment = env;
   pmrem.dispose();
 
-  // Now that the env map is captured, add atmospheric fog for depth.
-  scene.fog = new THREE.Fog(0xb8c8d8, 280, 1400);
+  // Now that the env map is captured, add atmospheric fog for depth. Pushed
+  // back so distant scenery (trees, mountains, grandstands) reads crisply
+  // instead of dissolving into haze.
+  scene.fog = new THREE.Fog(0xc2cfdb, 520, 2600);
 
   // ---- Post-processing ----
   const composer = new EffectComposer(renderer);
@@ -95,9 +97,9 @@ export function createScene(canvas) {
 
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.42,  // strength
-    0.85,  // radius
-    0.92   // threshold (only highlights bloom)
+    0.30,  // strength — restrained so the scene doesn't go milky
+    0.8,   // radius
+    0.9    // threshold (only true highlights bloom)
   );
   composer.addPass(bloom);
 
