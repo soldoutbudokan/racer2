@@ -83,6 +83,14 @@ async function bootstrap() {
     });
   });
 
+  // Finish-screen buttons.
+  document.getElementById('finish-restart').addEventListener('click', () => {
+    if (ctx.mode) startMode(ctx, ctx.mode);
+  });
+  document.getElementById('finish-menu').addEventListener('click', () => {
+    stopMode(ctx);
+  });
+
   // ESC returns to the menu.
   window.addEventListener('keydown', (e) => {
     if (e.code === 'Escape' && ctx.mode) {
@@ -135,6 +143,9 @@ function startMode(ctx, mode) {
 
   ctx.hud.setLap(1, TOTAL_LAPS);
   ctx.hud.setBest(null);
+  ctx.hud.setLapTime(0);
+  ctx.hud.clearAnnouncements();
+  hideFinish();
 
   hideMenu();
   ctx.hud.show();
@@ -146,21 +157,70 @@ function stopMode(ctx) {
   ctx.state = null;
   ctx.hud.hide();
   ctx.hud.hidePosition();
+  ctx.hud.clearAnnouncements();
+  hideFinish();
   showMenu();
+}
+
+// ---------- Finish screen ----------
+
+function racePlace(ctx, car) {
+  const sorted = [...ctx.cars].sort((a, b) => b.state.progress - a.state.progress);
+  return sorted.indexOf(car) + 1;
+}
+
+function showFinish(ctx) {
+  const primary = ctx.cars[ctx.primaryPlayerIdx];
+  const st = primary.state;
+  let title = 'FINISHED';
+  let detail = '';
+  if (ctx.mode === 'time-trial') {
+    detail = `BEST LAP   ${formatTime(st.bestMs)}`;
+  } else if (ctx.mode === 'quick-race') {
+    const place = racePlace(ctx, primary);
+    title = place === 1 ? 'YOU WIN' : `FINISHED  P${place}/${ctx.cars.length}`;
+    detail = `RACE TIME   ${formatTime(st.finishMs)}`;
+  } else if (ctx.mode === 'two-player') {
+    const winner = ctx.state.finishOrder[0];
+    title = winner && winner.label === 'P2' ? 'PLAYER 2 WINS' : 'PLAYER 1 WINS';
+    detail = `TIME   ${formatTime(winner ? winner.state.finishMs : st.finishMs)}`;
+  }
+  document.getElementById('finish-title').textContent = title;
+  document.getElementById('finish-detail').textContent = detail;
+  document.getElementById('finish').classList.remove('hidden');
+}
+
+function hideFinish() {
+  document.getElementById('finish').classList.add('hidden');
+}
+
+function formatTime(ms) {
+  if (ms == null || !isFinite(ms)) return '--:--.---';
+  const total = Math.max(0, Math.floor(ms));
+  const m = Math.floor(total / 60000);
+  const s = Math.floor((total % 60000) / 1000);
+  const mss = total % 1000;
+  const pad = (n, w) => n.toString().padStart(w, '0');
+  return `${pad(m, 2)}:${pad(s, 2)}.${pad(mss, 3)}`;
 }
 
 function createGameState(mode) {
   return {
     mode,
+    finishOrder: [], // car entries in the order they crossed the final line
+    finishShown: false,
     perCar: [], // populated as cars are added
   };
 }
 
 function carState() {
+  const now = performance.now();
   return {
     lap: 1,
     bestMs: null,
-    lapStart: performance.now(),
+    lapStart: now,
+    raceStart: now, // total elapsed reference for the finish screen
+    finishMs: null,
     lastT: 0,
     sectorReached: false,
     finished: false,
@@ -261,8 +321,13 @@ function tick(ctx, dt, now) {
           cc.car.reset(sp.position, sp.yaw);
           cc.state = carState();
         }
+        ctx.state.finishOrder = [];
+        ctx.state.finishShown = false;
         ctx.hud.setLap(1, TOTAL_LAPS);
         ctx.hud.setBest(null);
+        ctx.hud.setLapTime(0);
+        ctx.hud.clearAnnouncements();
+        hideFinish();
       }
       if (c.input.consumeRescue()) {
         rescueCar(ctx.track, c.car);
@@ -296,13 +361,14 @@ function tick(ctx, dt, now) {
     const v = primary.car.body.velocity;
     const speedKmh = Math.hypot(v.x, v.y, v.z) * 3.6;
     ctx.hud.setSpeed(speedKmh, gearLabel(speedKmh, primary.input.state));
-    updateLapTiming(primary, ctx.track, ctx.hud);
+    updateLapTiming(primary, ctx.track, ctx.hud, ctx.state);
+    ctx.hud.setWrongWay(!primary.state.finished && isWrongWay(ctx.track, primary.car));
   }
 
   // Update non-primary cars' lap timing too (for race position).
   for (const c of ctx.cars) {
     if (c === primary) continue;
-    updateLapTimingSilently(c, ctx.track);
+    updateLapTimingSilently(c, ctx.track, ctx.state);
   }
 
   // Race positions
@@ -310,6 +376,17 @@ function tick(ctx, dt, now) {
     const sorted = [...ctx.cars].sort((a, b) => b.state.progress - a.state.progress);
     const playerPos = sorted.indexOf(primary) + 1;
     ctx.hud.setPosition(playerPos, ctx.cars.length);
+  }
+
+  // Finish — show the results overlay once the race is over. Two-player ends as
+  // soon as anyone crosses the final line; solo modes end when the player does.
+  const raceOver = ctx.mode === 'two-player'
+    ? ctx.state.finishOrder.length >= 1
+    : primary && primary.state.finished;
+  if (raceOver && !ctx.state.finishShown) {
+    ctx.state.finishShown = true;
+    ctx.hud.setWrongWay(false);
+    showFinish(ctx);
   }
 
   // Mini-map
@@ -448,43 +525,62 @@ function rescueCar(track, car) {
 
 // ---------- Lap timing ----------
 
-function updateLapTiming(carEntry, track, hud) {
-  const cp = nearestCurveT(track, carEntry.car.body.position);
+// Core lap bookkeeping shared by the HUD-driven player path and the silent
+// (AI / 2nd-player) path. Returns the event that just occurred, one of:
+//   null | 'lap' | 'final' | 'finish'
+function advanceLap(carEntry, track, state, now) {
   const st = carEntry.state;
+  if (st.finished) return null;
+  const cp = nearestCurveT(track, carEntry.car.body.position);
   if (cp > 0.4 && cp < 0.6) st.sectorReached = true;
+  let event = null;
   if (st.sectorReached && st.lastT > 0.92 && cp < 0.08) {
-    const now = performance.now();
     const lapMs = now - st.lapStart;
-    if (st.bestMs == null || lapMs < st.bestMs) {
-      st.bestMs = lapMs;
-      hud.setBest(st.bestMs);
+    if (st.bestMs == null || lapMs < st.bestMs) st.bestMs = lapMs;
+    st.sectorReached = false;
+    if (st.lap >= TOTAL_LAPS) {
+      // Crossed the line on the final lap — the race is over for this car.
+      st.finished = true;
+      st.finishMs = now - st.raceStart;
+      state.finishOrder.push(carEntry);
+      st.lastT = cp;
+      // Finished cars sort ahead of everyone, preserving finish order.
+      st.progress = TOTAL_LAPS + 100 - (state.finishOrder.length - 1);
+      return 'finish';
     }
     st.lap += 1;
     st.lapStart = now;
-    st.sectorReached = false;
-    if (st.lap > TOTAL_LAPS) st.lap = 1;
-    hud.setLap(st.lap, TOTAL_LAPS);
+    event = st.lap === TOTAL_LAPS ? 'final' : 'lap';
   }
   st.lastT = cp;
   st.progress = (st.lap - 1) + cp;
-  hud.setLapTime(performance.now() - st.lapStart);
+  return event;
 }
 
-function updateLapTimingSilently(carEntry, track) {
-  const cp = nearestCurveT(track, carEntry.car.body.position);
+function updateLapTiming(carEntry, track, hud, state) {
   const st = carEntry.state;
-  if (cp > 0.4 && cp < 0.6) st.sectorReached = true;
-  if (st.sectorReached && st.lastT > 0.92 && cp < 0.08) {
-    st.lap += 1;
-    st.lapStart = performance.now();
-    st.sectorReached = false;
-    if (st.lap > TOTAL_LAPS) st.lap = 1;
+  const prevBest = st.bestMs;
+  const now = performance.now();
+  const event = advanceLap(carEntry, track, state, now);
+  if (st.bestMs !== prevBest) hud.setBest(st.bestMs);
+  if (event === 'finish') {
+    hud.setLap(TOTAL_LAPS, TOTAL_LAPS);
+    hud.flashBanner('FINISH');
+  } else if (event === 'final') {
+    hud.setLap(st.lap, TOTAL_LAPS);
+    hud.flashBanner('FINAL LAP');
+  } else if (event === 'lap') {
+    hud.setLap(st.lap, TOTAL_LAPS);
+    hud.flashBanner(`LAP ${st.lap} / ${TOTAL_LAPS}`);
   }
-  st.lastT = cp;
-  st.progress = (st.lap - 1) + cp;
+  if (!st.finished) hud.setLapTime(now - st.lapStart);
 }
 
-function nearestCurveT(track, position) {
+function updateLapTimingSilently(carEntry, track, state) {
+  advanceLap(carEntry, track, state, performance.now());
+}
+
+function nearestFrameIndex(track, position) {
   const frames = track.frames;
   let bestI = 0;
   let bestD = Infinity;
@@ -494,5 +590,19 @@ function nearestCurveT(track, position) {
     const d = dx * dx + dz * dz;
     if (d < bestD) { bestD = d; bestI = i; }
   }
-  return bestI / frames.length;
+  return bestI;
+}
+
+function nearestCurveT(track, position) {
+  return nearestFrameIndex(track, position) / track.frames.length;
+}
+
+// True when the car is driving against the track direction at speed.
+function isWrongWay(track, car) {
+  const v = car.body.velocity;
+  const speed = Math.hypot(v.x, v.z);
+  if (speed < 5) return false;
+  const tan = track.frames[nearestFrameIndex(track, car.body.position)].tan;
+  const align = (v.x * tan.x + v.z * tan.z) / speed;
+  return align < -0.25;
 }

@@ -136,6 +136,29 @@ button.mode:hover {
   letter-spacing: 1px;
 }
 
+/* Finish screen — reuses the menu overlay look */
+#finish {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(39, 210, 255, 0.10), transparent 60%),
+    rgba(5, 6, 10, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: opacity 0.4s ease;
+}
+#finish.hidden { opacity: 0; pointer-events: none; }
+#finish .subtitle { margin-top: 10px; font-size: 16px; letter-spacing: 4px; }
+.finish-actions {
+  width: 300px;
+  margin-top: 30px;
+}
+.finish-actions .mode-name { text-align: center; }
+
 /* HUD */
 #ui {
   position: fixed;
@@ -145,6 +168,45 @@ button.mode:hover {
   transition: opacity 0.5s ease;
 }
 #ui.hidden { opacity: 0; }
+
+/* Lap / finish banner */
+#race-banner {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(1);
+  font-size: 68px;
+  font-weight: 800;
+  letter-spacing: 5px;
+  white-space: nowrap;
+  color: #fff;
+  text-shadow: 0 6px 30px rgba(0, 0, 0, 0.8), 0 0 22px rgba(39, 210, 255, 0.55);
+  opacity: 1;
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+#race-banner.hidden {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.82);
+}
+
+/* Wrong-way warning */
+#wrong-way {
+  position: absolute;
+  top: 17%;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 5px;
+  color: #ff3b30;
+  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.85);
+  animation: wrongway-pulse 0.65s ease-in-out infinite;
+}
+#wrong-way.hidden { display: none; }
+@keyframes wrongway-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
 
 #hud-top {
   position: absolute;

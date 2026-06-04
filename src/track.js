@@ -30,10 +30,16 @@ export function createTrack(scene, world, materials) {
     new THREE.Vector3( 120, 0, -240),
     new THREE.Vector3(   0, 0, -220),
     new THREE.Vector3( -90, 0, -180),
-    new THREE.Vector3(-130, 0, -120),
-    new THREE.Vector3(-130, 0,  -40),
-    new THREE.Vector3( -80, 0,   30),
-    new THREE.Vector3(  -8, 0,   60),
+    // Closing stretch: a clean ~90° left-hander that sweeps in from the west and
+    // settles onto a straight, north-pointing main straight well before the line.
+    // These four points used to loop back along the start straight (overlapping
+    // road + a 180° cusp at the line), which made it impossible to tell how to
+    // start the next lap. The corner now finishes ~40 m short of the line so the
+    // grid and start/finish sit on genuinely straight, north-aligned asphalt.
+    new THREE.Vector3(-160, 0, -115),
+    new THREE.Vector3(-165, 0,  -55),
+    new THREE.Vector3( -60, 0,  -65),
+    new THREE.Vector3(  -5, 0,  -55),
   ];
   const curve = new THREE.CatmullRomCurve3(cps, true, 'catmullrom', 0.5);
   const frames = sampleCurve(curve, TRACK_SEGMENTS);

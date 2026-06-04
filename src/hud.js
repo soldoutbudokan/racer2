@@ -13,6 +13,9 @@ export function createHud(maxSpeed = 320) {
   const posBlock = document.getElementById('hud-position-block');
   const posCurrent = document.getElementById('pos-current');
   const posTotal = document.getElementById('pos-total');
+  const raceBanner = document.getElementById('race-banner');
+  const wrongWay = document.getElementById('wrong-way');
+  let bannerTimer = null;
 
   // Build tick marks once
   const ticks = document.getElementById('ticks');
@@ -75,6 +78,28 @@ export function createHud(maxSpeed = 320) {
 
   function hidePosition() {
     posBlock.classList.add('hidden');
+  }
+
+  // Big transient headline (lap changes, FINAL LAP, FINISH).
+  function flashBanner(text, ms = 1800) {
+    raceBanner.textContent = text;
+    raceBanner.classList.remove('hidden');
+    if (bannerTimer) clearTimeout(bannerTimer);
+    bannerTimer = setTimeout(() => {
+      raceBanner.classList.add('hidden');
+      bannerTimer = null;
+    }, ms);
+  }
+
+  function setWrongWay(on) {
+    wrongWay.classList.toggle('hidden', !on);
+  }
+
+  // Clear any transient overlays (called on start / reset / stop).
+  function clearAnnouncements() {
+    if (bannerTimer) { clearTimeout(bannerTimer); bannerTimer = null; }
+    raceBanner.classList.add('hidden');
+    wrongWay.classList.add('hidden');
   }
 
   function show() {
@@ -180,6 +205,7 @@ export function createHud(maxSpeed = 320) {
   return {
     setSpeed, setLap, setLapTime, setBest,
     setPosition, hidePosition,
+    flashBanner, setWrongWay, clearAnnouncements,
     show, hide,
     buildMinimap, drawMinimap,
   };
