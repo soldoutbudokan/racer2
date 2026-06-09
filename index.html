@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Racer2 — Hyperreal GT</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2305060a'/%3E%3Ctext x='8' y='12' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='800' fill='%2327d2ff'%3ER%3C/text%3E%3C/svg%3E" />
+    <script type="module" crossorigin src="./assets/index-CNngwl87.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-D5T73PTv.css">
+  </head>
+  <body>
+    <div id="loading">
+      <div class="loading-inner">
+        <div class="title">RACER<span>2</span></div>
+        <div class="subtitle">LOADING ENVIRONMENT</div>
+        <div class="bar"><div id="loading-fill"></div></div>
+        <div id="loading-status">Initialising</div>
+      </div>
+    </div>
+
+    <div id="menu" class="hidden">
+      <div class="menu-inner">
+        <div class="title">RACER<span>2</span></div>
+        <div class="subtitle">SELECT MODE</div>
+        <div class="mode-list">
+          <button class="mode" data-mode="time-trial">
+            <div class="mode-name">TIME TRIAL</div>
+            <div class="mode-desc">Empty track. Hot-lap practice.</div>
+          </button>
+          <button class="mode" data-mode="quick-race">
+            <div class="mode-name">QUICK RACE</div>
+            <div class="mode-desc">You vs. 3 AI opponents over 3 laps.</div>
+          </button>
+          <button class="mode" data-mode="two-player">
+            <div class="mode-name">TWO PLAYER</div>
+            <div class="mode-desc">Split-screen. WASD vs. Arrows.</div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="finish" class="hidden">
+      <div class="menu-inner">
+        <div class="title" id="finish-title">FINISH</div>
+        <div class="subtitle" id="finish-detail"></div>
+        <div class="mode-list finish-actions">
+          <button class="mode" id="finish-restart">
+            <div class="mode-name">RESTART</div>
+          </button>
+          <button class="mode" id="finish-menu">
+            <div class="mode-name">MAIN MENU</div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="ui" class="hidden">
+      <div id="race-banner" class="hidden"></div>
+      <div id="wrong-way" class="hidden">WRONG WAY</div>
+      <div id="hud-top">
+        <div class="hud-block">
+          <div class="hud-label">LAP</div>
+          <div class="hud-value"><span id="lap-current">1</span> / <span id="lap-total">3</span></div>
+        </div>
+        <div class="hud-block">
+          <div class="hud-label">TIME</div>
+          <div class="hud-value" id="lap-time">00:00.000</div>
+        </div>
+        <div class="hud-block">
+          <div class="hud-label">BEST</div>
+          <div class="hud-value" id="best-time">--:--.---</div>
+        </div>
+        <div class="hud-block hud-block-pos hidden" id="hud-position-block">
+          <div class="hud-label">POS</div>
+          <div class="hud-value"><span id="pos-current">1</span> / <span id="pos-total">4</span></div>
+        </div>
+      </div>
+
+      <div id="hud-bottom">
+        <div id="speedo">
+          <svg viewBox="0 0 220 220" id="speedo-svg">
+            <defs>
+              <linearGradient id="rpmGrad" x1="0" x2="1" y1="0" y2="0">
+                <stop offset="0" stop-color="#27ff8a"/>
+                <stop offset="0.65" stop-color="#ffd84a"/>
+                <stop offset="0.85" stop-color="#ff7a2c"/>
+                <stop offset="1" stop-color="#ff2840"/>
+              </linearGradient>
+            </defs>
+            <circle cx="110" cy="110" r="100" fill="rgba(0,0,0,0.55)" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+            <path id="rpm-arc" d="" fill="none" stroke="url(#rpmGrad)" stroke-width="10" stroke-linecap="round"/>
+            <g id="ticks"></g>
+            <text x="110" y="100" text-anchor="middle" fill="#fff" font-family="Inter,Arial,sans-serif" font-size="56" font-weight="700" id="speed-num">0</text>
+            <text x="110" y="125" text-anchor="middle" fill="rgba(255,255,255,0.55)" font-family="Inter,Arial,sans-serif" font-size="14" letter-spacing="3">KM/H</text>
+            <text x="110" y="160" text-anchor="middle" fill="#fff" font-family="Inter,Arial,sans-serif" font-size="22" font-weight="600" id="gear-num">N</text>
+            <text x="110" y="178" text-anchor="middle" fill="rgba(255,255,255,0.45)" font-family="Inter,Arial,sans-serif" font-size="10" letter-spacing="3">GEAR</text>
+          </svg>
+        </div>
+        <div id="minimap-wrap">
+          <canvas id="minimap" width="220" height="220"></canvas>
+          <div class="minimap-label">TRACK</div>
+        </div>
+      </div>
+
+      <div id="controls-hint">
+        <div class="hint-line"><kbd>W</kbd>/<kbd>↑</kbd> Throttle</div>
+        <div class="hint-line"><kbd>S</kbd>/<kbd>↓</kbd> Brake / Reverse</div>
+        <div class="hint-line"><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> Steer</div>
+        <div class="hint-line"><kbd>Space</kbd> Handbrake</div>
+        <div class="hint-line"><kbd>C</kbd> Camera</div>
+        <div class="hint-line"><kbd>R</kbd> Reset all</div>
+        <div class="hint-line"><kbd>B</kbd> Back to track</div>
+        <div class="hint-line"><kbd>Esc</kbd> Menu</div>
+      </div>
+    </div>
+
+    <canvas id="game"></canvas>
+  </body>
+</html>
