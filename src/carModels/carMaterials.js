@@ -18,8 +18,8 @@ function tunePaint(hex) {
   const c = new THREE.Color(hex);
   const hsl = {};
   c.getHSL(hsl);
-  hsl.s = Math.min(1, hsl.s * 0.95);
-  hsl.l = hsl.l * 0.62;          // deep base so bright sun + ACES keeps it coloured
+  hsl.s = Math.min(1, hsl.s * 1.0);
+  hsl.l = hsl.l * 0.5;           // deep base so bright sun + ACES keeps it coloured
   c.setHSL(hsl.h, hsl.s, hsl.l);
   return c;
 }
@@ -29,21 +29,20 @@ export function makePaint(colorHex) {
   const flake = flakeNormal();
   flake.repeat.set(8, 18);
   // Automotive paint = a coloured DIELECTRIC base (low metalness) under a
-  // clear coat. High metalness would make it act like tinted chrome and blow
-  // out to white/pink under the bright sky. Keep the flake VERY subtle — too
-  // strong and the thousands of micro-highlights bloom into a white haze.
+  // strong clear coat. The clearcoat carries the sky reflection and the sun
+  // hot-spot; the base stays deep and saturated.
   const m = new THREE.MeshPhysicalMaterial({
     color: tunePaint(colorHex),
     metalness: 0.1,
-    roughness: 0.5,
+    roughness: 0.52,
     roughnessMap: paintRoughness(),
-    clearcoat: 0.5,
-    clearcoatRoughness: 0.22,
+    clearcoat: 0.9,
+    clearcoatRoughness: 0.13,
     clearcoatNormalMap: orangePeelNormal(),
     clearcoatNormalScale: new THREE.Vector2(0.05, 0.05),
     normalMap: flake,
     normalScale: new THREE.Vector2(0.05, 0.05),
-    envMapIntensity: 0.3,
+    envMapIntensity: 0.55,
   });
   paintCache.set(colorHex, m);
   return m;
@@ -177,7 +176,7 @@ let _head = null;
 export function makeHeadlight() {
   if (_head) return _head;
   _head = new THREE.MeshStandardMaterial({
-    color: 0xf6f3ea, emissive: 0xfff2d4, emissiveIntensity: 1.7,
+    color: 0xe9e6dd, emissive: 0xfff2d4, emissiveIntensity: 0.85,
     roughness: 0.25, metalness: 0.0,
   });
   return _head;

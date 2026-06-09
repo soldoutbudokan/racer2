@@ -42,36 +42,54 @@ export function createScene(canvas) {
   scene.add(sky);
   const sunPos = new THREE.Vector3();
   const skyU = sky.material.uniforms;
-  skyU.turbidity.value = 4.2;
-  skyU.rayleigh.value = 1.6;
-  skyU.mieCoefficient.value = 0.005;
-  skyU.mieDirectionalG.value = 0.82;
-  // Late-afternoon sun
-  const sunElev = THREE.MathUtils.degToRad(28);
+  skyU.turbidity.value = 6.5;
+  skyU.rayleigh.value = 2.6;
+  skyU.mieCoefficient.value = 0.0045;
+  skyU.mieDirectionalG.value = 0.85;
+  // Golden-hour sun: low and warm.
+  const sunElev = THREE.MathUtils.degToRad(17);
   const sunAzim = THREE.MathUtils.degToRad(125);
   sunPos.setFromSphericalCoords(1, Math.PI / 2 - sunElev, sunAzim);
   skyU.sunPosition.value.copy(sunPos);
 
   // Sun
-  const sun = new THREE.DirectionalLight(0xfff1d6, 3.4);
+  const sun = new THREE.DirectionalLight(0xffdcae, 3.2);
   sun.position.copy(sunPos).multiplyScalar(800);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(4096, 4096);
   sun.shadow.camera.near = 50;
-  sun.shadow.camera.far = 1100;
-  const s = 220;
+  sun.shadow.camera.far = 1600;
+  // Tight frustum for crisp contact shadows — it FOLLOWS the player car via
+  // updateShadowTarget() each frame (it used to sit at the origin, so most of
+  // the lap had no shadows at all).
+  const s = 90;
   sun.shadow.camera.left = -s;
   sun.shadow.camera.right = s;
   sun.shadow.camera.top = s;
   sun.shadow.camera.bottom = -s;
-  sun.shadow.bias = -0.00012;
-  sun.shadow.normalBias = 0.05;
-  sun.shadow.radius = 4;
+  sun.shadow.bias = -0.0001;
+  sun.shadow.normalBias = 0.04;
+  sun.shadow.radius = 3;
   scene.add(sun);
   scene.add(sun.target);
 
+  const sunDir = sunPos.clone().normalize();
+  const shadowTexel = (2 * s) / 4096;
+  function updateShadowTarget(focus) {
+    // Quantise the target to shadow-texel-sized steps so the shadow edges
+    // don't shimmer as the camera glides.
+    const tx = Math.round(focus.x / shadowTexel) * shadowTexel;
+    const tz = Math.round(focus.z / shadowTexel) * shadowTexel;
+    sun.target.position.set(tx, 0, tz);
+    sun.position.set(
+      tx + sunDir.x * 800,
+      sunDir.y * 800,
+      tz + sunDir.z * 800,
+    );
+  }
+
   // Sky-tinted hemisphere fill — keeps shadows from being pure black
-  const hemi = new THREE.HemisphereLight(0xbcd6ff, 0x3a2a1a, 0.55);
+  const hemi = new THREE.HemisphereLight(0xa8c4e8, 0x4a3d2a, 0.5);
   scene.add(hemi);
 
   // IBL: render the (sky-only) scene through PMREM for crisp reflections.
@@ -82,10 +100,10 @@ export function createScene(canvas) {
   scene.environment = env;
   pmrem.dispose();
 
-  // Now that the env map is captured, add atmospheric fog for depth. Pushed
-  // back so distant scenery (trees, mountains, grandstands) reads crisply
-  // instead of dissolving into haze.
-  scene.fog = new THREE.Fog(0xc2cfdb, 520, 2600);
+  // Now that the env map is captured, add atmospheric fog for depth. Warm
+  // golden haze, pushed far back so the circuit itself stays crisp and only
+  // the distant scenery melts into the light.
+  scene.fog = new THREE.Fog(0xd9cdb4, 750, 3600);
 
   // ---- Post-processing ----
   const composer = new EffectComposer(renderer);
@@ -97,9 +115,9 @@ export function createScene(canvas) {
 
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.30,  // strength — restrained so the scene doesn't go milky
-    0.8,   // radius
-    0.9    // threshold (only true highlights bloom)
+    0.18,  // strength — restrained so the scene doesn't go milky
+    0.7,   // radius
+    0.93   // threshold (only true highlights bloom)
   );
   composer.addPass(bloom);
 
@@ -126,7 +144,7 @@ export function createScene(canvas) {
     bloom.resolution.set(w, h);
   });
 
-  return { renderer, scene, camera, composer, sun };
+  return { renderer, scene, camera, composer, sun, updateShadowTarget };
 }
 
 // --- Cinematic post shader: vignette + tiny chromatic aberration + grain ---
@@ -135,8 +153,8 @@ const CinematicShader = {
     tDiffuse: { value: null },
     uTime: { value: 0 },
     uVignette: { value: 1.0 },
-    uCA: { value: 0.0018 },
-    uGrain: { value: 0.025 },
+    uCA: { value: 0.0011 },
+    uGrain: { value: 0.014 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;

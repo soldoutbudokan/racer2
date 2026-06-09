@@ -4,6 +4,7 @@ import { makeGlass, makeTrim, makeCarbon } from './carMaterials.js';
 import {
   buildHeadlights, buildTaillights, buildMirrors, buildGrille, buildSplitter,
   buildDiffuser, buildWing, buildExhaust, buildBadgesAndPlate, buildUnderbody,
+  buildArchLiners,
 } from './parts.js';
 
 // Muscle car — long flat hood, fat rear haunches, upright fastback cabin set
@@ -51,6 +52,7 @@ export function decorate(body, ctx) {
   body.add(buildExhaust({ z: -2.12, y: -0.16, x: 0.5, count: 4 }));
   body.add(buildBadgesAndPlate({ frontZ: 2.1, rearZ: -2.1, plateY: 0.0 }));
   body.add(buildUnderbody({ y: -0.30, w: 1.7, len: 4.0 }));
+  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.88 }));
 
   return { brakeLights: tail.brakeMesh };
 }

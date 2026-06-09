@@ -40,7 +40,7 @@ async function bootstrap() {
   await frame();
 
   const canvas = document.getElementById('game');
-  const { renderer, scene, camera, composer } = createScene(canvas);
+  const { renderer, scene, camera, composer, updateShadowTarget } = createScene(canvas);
 
   setProgress(0.25, 'Building physics world');
   await frame();
@@ -68,13 +68,17 @@ async function bootstrap() {
   // ---- Mode selection ----
   const ctx = {
     renderer, scene, camera, camera2, composer, world, materials, track, hud,
+    updateShadowTarget,
     cars: [],
     primaryPlayerIdx: 0,
     mode: null,
     state: null,
   };
-  // Dev hook for headless screenshot inspection (harmless in production).
-  if (typeof window !== 'undefined') window.__ctx = ctx;
+  // Dev hooks for headless screenshot/test harnesses (harmless in production).
+  if (typeof window !== 'undefined') {
+    window.__ctx = ctx;
+    window.__createAIDriver = createAIDriver;
+  }
 
   document.querySelectorAll('button.mode').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -346,6 +350,10 @@ function tick(ctx, dt, now) {
 
   // Update visuals from physics
   for (const c of ctx.cars) c.car.update();
+
+  // Keep the tight shadow frustum centred on the primary car.
+  const focusCar = ctx.cars[ctx.primaryPlayerIdx];
+  if (focusCar) ctx.updateShadowTarget(focusCar.car.body.position);
 
   // Update each player's chase camera
   for (const c of ctx.cars) {
