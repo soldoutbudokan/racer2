@@ -57,7 +57,7 @@ async function bootstrap() {
 
   // Second camera lives in main.js (composer only knows about the primary).
   const camera2 = new THREE.PerspectiveCamera(
-    62, window.innerWidth / window.innerHeight, 0.3, 3000,
+    62, window.innerWidth / window.innerHeight, 0.6, 3000,
   );
   scene.add(camera2);
 

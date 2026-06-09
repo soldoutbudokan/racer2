@@ -89,6 +89,9 @@ export function createTrack(scene, world, materials) {
     color: 0xdcdcd6,
     roughness: 0.7,
     metalness: 0,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3,
   });
   const lineWidth = 0.2;
   const lineEdgeOffset = ROAD_WIDTH / 2 - lineWidth / 2 - 0.05;
@@ -137,7 +140,10 @@ export function createTrack(scene, world, materials) {
 
   // Start/finish line
   const sfTex = makeStartFinishTexture();
-  const sfMat = new THREE.MeshStandardMaterial({ map: sfTex, roughness: 0.6 });
+  const sfMat = new THREE.MeshStandardMaterial({
+    map: sfTex, roughness: 0.6,
+    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+  });
   const sf = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, 1.6), sfMat);
   sf.rotation.x = -Math.PI / 2;
   sf.position.copy(frames[0].pos).add(new THREE.Vector3(0, 0.014, 0));
@@ -425,6 +431,9 @@ function addSkidMarks(scene, frames, curvature, lineOffset, arcLens) {
     transparent: true,
     opacity: 0.30,
     depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3,
   });
   // find corner clusters
   const marks = [];
@@ -565,6 +574,10 @@ function makeAsphaltMaterial() {
     roughness: 0.88,
     metalness: 0.0,
     envMapIntensity: 0.5,
+    // pulled toward the camera so the asphalt always beats the ground plane
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
 }
 
@@ -590,6 +603,13 @@ function makeGrassMaterial() {
     roughness: 0.96,
     metalness: 0.0,
     envMapIntensity: 0.35,
+    // Push the huge ground plane back in depth: at grazing chase-camera
+    // angles the 3 cm height difference to the road is below the depth
+    // buffer's precision a few hundred metres out, and the grass wins
+    // pixels on the road.
+    polygonOffset: true,
+    polygonOffsetFactor: 2,
+    polygonOffsetUnits: 2,
   });
 }
 
@@ -622,6 +642,9 @@ function makeVergeMaterial() {
     roughness: 0.97,
     metalness: 0,
     envMapIntensity: 0.3,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
 }
 
@@ -640,6 +663,9 @@ function makeGravelMaterial() {
     roughness: 1.0,
     metalness: 0,
     envMapIntensity: 0.3,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
 }
 
@@ -660,6 +686,9 @@ function makeKerbMaterial() {
     map: tex,
     roughness: 0.55,
     metalness: 0.0,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
   });
 }
 
@@ -1398,6 +1427,9 @@ function addStartingGrid(scene, startFrame) {
     metalness: 0,
     transparent: true,
     opacity: 0.7,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3,
   });
   const stripeMat = new THREE.MeshStandardMaterial({
     color: 0xffd84a,
@@ -1405,6 +1437,9 @@ function addStartingGrid(scene, startFrame) {
     metalness: 0,
     transparent: true,
     opacity: 0.85,
+    polygonOffset: true,
+    polygonOffsetFactor: -3,
+    polygonOffsetUnits: -3,
   });
 
   for (let r = 0; r < rows; r++) {

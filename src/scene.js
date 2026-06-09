@@ -29,10 +29,12 @@ export function createScene(canvas) {
   const scene = new THREE.Scene();
   // (fog set after PMREM so it doesn't tint the env map)
 
+  // near 0.6 (not 0.3) doubles far-field depth precision — together with the
+  // polygon offsets it keeps the road/ground layering stable at distance.
   const camera = new THREE.PerspectiveCamera(
     62,
     window.innerWidth / window.innerHeight,
-    0.3,
+    0.6,
     3000
   );
 
