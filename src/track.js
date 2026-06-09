@@ -30,21 +30,25 @@ export function createTrack(scene, world, materials) {
     new THREE.Vector3( 120, 0, -240),
     new THREE.Vector3(   0, 0, -220),
     new THREE.Vector3( -90, 0, -180),
-    // Closing stretch: a clean ~90° left-hander that sweeps in from the west and
-    // settles onto a straight, north-pointing main straight well before the line.
-    // These four points used to loop back along the start straight (overlapping
-    // road + a 180° cusp at the line), which made it impossible to tell how to
-    // start the next lap. The corner now finishes ~40 m short of the line so the
-    // grid and start/finish sit on genuinely straight, north-aligned asphalt.
+    // Closing stretch: a sweeping left at the west end, an east-bound run, and
+    // a final left that feeds a TRULY straight main straight. The two collinear
+    // points (0,-110) → (0,-55) → (0,0) force the Catmull tangents onto +z, so
+    // the 55 m behind the line (where the grid boxes are painted) is dead
+    // straight — previously the road bent west there, the grid sat half off
+    // the racing surface, and the closing corner's armco crossed within a car
+    // width of the start-straight road edge.
     new THREE.Vector3(-160, 0, -115),
-    new THREE.Vector3(-165, 0,  -55),
-    new THREE.Vector3( -60, 0,  -65),
-    new THREE.Vector3(  -5, 0,  -55),
+    new THREE.Vector3(-115, 0,  -85),
+    new THREE.Vector3( -50, 0, -105),
+    new THREE.Vector3(   0, 0, -110),
+    new THREE.Vector3(   0, 0,  -55),
   ];
   const curve = new THREE.CatmullRomCurve3(cps, true, 'catmullrom', 0.5);
   const frames = sampleCurve(curve, TRACK_SEGMENTS);
   const arcLens = computeArcLengths(frames);
   const curvature = computeCurvature(frames);
+  // Frame indices where the run-off is a gravel trap (heavy-braking corners).
+  const gravelFrames = new Set();
 
   // ---- Ground ----
   const grassMat = makeGrassMaterial();
@@ -176,6 +180,9 @@ export function createTrack(scene, world, materials) {
     frames,
     spawn,
     width: ROAD_WIDTH,
+    kerbWidth: KERB_WIDTH,
+    // Gravel traps will register frame ranges here (filled by scenery pass).
+    isGravel: (frameIdx) => gravelFrames.has(frameIdx),
     length: curve.getLength(),
   };
 }
@@ -1124,15 +1131,17 @@ function addSponsorBoards(scene, frames, offset) {
 
 function buildBarrierPhysics(world, frames, offset, materials) {
   const bodyMat = materials.barrierMat;
-  // Stride 2 (≈5 m apart) with 5 m-long boxes → continuous wall, no gaps
-  // for the car to squeeze through onto the grass beyond.
+  // Stride 2 (≈6.4 m apart) with 7 m-long boxes aligned ALONG the track
+  // tangent → a continuous overlapping wall. (These used to be authored with
+  // the long axis across the road, which left a picket fence of sideways
+  // slabs jutting ~2.7 m into the run-off that cars wedged against.)
   for (let i = 0; i < frames.length; i += 2) {
     const f = frames[i];
     const yaw = Math.atan2(f.tan.x, f.tan.z);
     for (const sign of [+1, -1]) {
       const p = f.pos.clone().add(f.left.clone().multiplyScalar(offset * sign));
       const body = new CANNON.Body({ mass: 0, material: bodyMat });
-      body.addShape(new CANNON.Box(new CANNON.Vec3(2.7, 0.6, 0.25)));
+      body.addShape(new CANNON.Box(new CANNON.Vec3(0.25, 0.6, 3.5)));
       body.position.set(p.x, 0.6, p.z);
       const q = new CANNON.Quaternion();
       q.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), yaw);

@@ -44,8 +44,12 @@ export function createHud(maxSpeed = 320) {
   let trackPath = null;        // pre-built Path2D in canvas pixel coords
   let startMarker = null;      // { x, y } in canvas coords
 
-  function setSpeed(speedKmh, gearLabel) {
-    const t = Math.max(0, Math.min(1, speedKmh / maxSpeed));
+  // Arc shows engine RPM when provided (it has the rev-band gradient);
+  // falls back to speed fraction for older callers.
+  function setSpeed(speedKmh, gearLabel, rpmFrac) {
+    const t = rpmFrac != null
+      ? Math.max(0, Math.min(1, rpmFrac))
+      : Math.max(0, Math.min(1, speedKmh / maxSpeed));
     const a0 = startA;
     const a1 = startA + (endA - startA) * t;
     const x0 = cx + Math.cos(a0) * r;
