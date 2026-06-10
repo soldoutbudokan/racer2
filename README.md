@@ -6,6 +6,8 @@ Inspired by the look of GT Racing 2: golden-hour light, rubbered-in racing
 groove, kerbs and gravel traps, a pit complex and grandstands, glossy
 clear-coated bodywork.
 
+**Play it:** <https://soldoutbudokan.github.io/racer2/>
+
 ## Run it
 
 ```bash
