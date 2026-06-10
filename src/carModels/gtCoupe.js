@@ -4,6 +4,7 @@ import { makeGlass } from './carMaterials.js';
 import {
   buildHeadlights, buildTaillights, buildMirrors, buildGrille, buildSplitter,
   buildDiffuser, buildWing, buildExhaust, buildBadgesAndPlate, buildUnderbody,
+  buildArchLiners,
 } from './parts.js';
 
 // GT coupe — smooth fastback supercar silhouette.
@@ -47,6 +48,7 @@ export function decorate(body, ctx) {
   body.add(buildExhaust({ z: -2.08, y: -0.18, x: 0.45, count: 2 }));
   body.add(buildBadgesAndPlate({ frontZ: 2.07, rearZ: -2.08, plateY: -0.04 }));
   body.add(buildUnderbody({ y: -0.30, w: 1.64, len: 3.8 }));
+  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.86 }));
 
   return { brakeLights: tail.brakeMesh };
 }

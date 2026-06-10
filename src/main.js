@@ -40,7 +40,7 @@ async function bootstrap() {
   await frame();
 
   const canvas = document.getElementById('game');
-  const { renderer, scene, camera, composer } = createScene(canvas);
+  const { renderer, scene, camera, composer, updateShadowTarget } = createScene(canvas);
 
   setProgress(0.25, 'Building physics world');
   await frame();
@@ -57,7 +57,7 @@ async function bootstrap() {
 
   // Second camera lives in main.js (composer only knows about the primary).
   const camera2 = new THREE.PerspectiveCamera(
-    62, window.innerWidth / window.innerHeight, 0.3, 3000,
+    62, window.innerWidth / window.innerHeight, 0.6, 3000,
   );
   scene.add(camera2);
 
@@ -68,13 +68,17 @@ async function bootstrap() {
   // ---- Mode selection ----
   const ctx = {
     renderer, scene, camera, camera2, composer, world, materials, track, hud,
+    updateShadowTarget,
     cars: [],
     primaryPlayerIdx: 0,
     mode: null,
     state: null,
   };
-  // Dev hook for headless screenshot inspection (harmless in production).
-  if (typeof window !== 'undefined') window.__ctx = ctx;
+  // Dev hooks for headless screenshot/test harnesses (harmless in production).
+  if (typeof window !== 'undefined') {
+    window.__ctx = ctx;
+    window.__createAIDriver = createAIDriver;
+  }
 
   document.querySelectorAll('button.mode').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -280,8 +284,7 @@ function gridSpawn(track, idx) {
 
 function destroyCars(ctx) {
   for (const c of ctx.cars) {
-    c.car.vehicle.removeFromWorld(ctx.world);
-    ctx.world.removeBody(c.car.body);
+    c.car.dispose();
     ctx.scene.remove(c.car.visual.root);
     c.car.visual.wheels.forEach((w) => ctx.scene.remove(w));
   }
@@ -309,6 +312,7 @@ function tick(ctx, dt, now) {
   }
 
   // Drive each car
+  const allCars = ctx.cars.map((c) => c.car);
   for (const c of ctx.cars) {
     let cmd;
     if (c.isPlayer) {
@@ -333,9 +337,9 @@ function tick(ctx, dt, now) {
         rescueCar(ctx.track, c.car);
       }
     } else {
-      cmd = c.ai.update(c.car);
+      cmd = c.ai.update(c.car, allCars, dt);
     }
-    applyDriving(c.car, cmd);
+    c.car.applyControls(cmd, dt, wheelSurfaces(ctx.track, c.car));
   }
 
   // Step physics
@@ -346,6 +350,10 @@ function tick(ctx, dt, now) {
 
   // Update visuals from physics
   for (const c of ctx.cars) c.car.update();
+
+  // Keep the tight shadow frustum centred on the primary car.
+  const focusCar = ctx.cars[ctx.primaryPlayerIdx];
+  if (focusCar) ctx.updateShadowTarget(focusCar.car.body.position);
 
   // Update each player's chase camera
   for (const c of ctx.cars) {
@@ -358,9 +366,8 @@ function tick(ctx, dt, now) {
   // Update HUD with the primary player's stats.
   const primary = ctx.cars[ctx.primaryPlayerIdx];
   if (primary && primary.isPlayer) {
-    const v = primary.car.body.velocity;
-    const speedKmh = Math.hypot(v.x, v.y, v.z) * 3.6;
-    ctx.hud.setSpeed(speedKmh, gearLabel(speedKmh, primary.input.state));
+    const t = primary.car.telemetry;
+    ctx.hud.setSpeed(t.speedKmh, t.gearLabel, t.rpmFrac);
     updateLapTiming(primary, ctx.track, ctx.hud, ctx.state);
     ctx.hud.setWrongWay(!primary.state.finished && isWrongWay(ctx.track, primary.car));
   }
@@ -442,63 +449,40 @@ function frame() {
   return new Promise((res) => requestAnimationFrame(() => res()));
 }
 
-// ---------- Driving model ----------
-function applyDriving(car, ctrl) {
-  const { vehicle, constants } = car;
+// ---------- Surface detection ----------
+// Per-wheel surface lookup so half-on-grass actually behaves like it.
+// Uses the car's nearest centreline frame as a hint, then refines per wheel
+// in a small window — cheap enough to run for every car every frame.
+const _surfScratch = ['road', 'road', 'road', 'road'];
 
-  const speed = Math.hypot(car.body.velocity.x, car.body.velocity.z);
-  const steerScale = 1 - Math.min(0.65, speed * 0.011);
-  const steer = -ctrl.steer * constants.MAX_STEER * steerScale;
-  vehicle.setSteeringValue(steer, 0);
-  vehicle.setSteeringValue(steer, 1);
-
-  const fwdSpeed = forwardSpeed(car);
-  let engineForce = 0;
-  let brakeForce = 0;
-
-  if (ctrl.throttle > 0.01) {
-    const t = Math.max(0, 1 - speed / 95);
-    engineForce = constants.MAX_ENGINE_FORCE * ctrl.throttle * (0.55 + 0.45 * t);
-  } else if (ctrl.brake > 0.01) {
-    if (fwdSpeed > 1.0) {
-      brakeForce = constants.MAX_BRAKE_FORCE * ctrl.brake;
-    } else {
-      engineForce = -constants.MAX_ENGINE_FORCE * 0.5 * ctrl.brake;
+function wheelSurfaces(track, car) {
+  const frames = track.frames;
+  const n = frames.length;
+  const hint = nearestFrameIndex(track, car.body.position);
+  for (let w = 0; w < 4; w++) {
+    const wi = car.vehicle.wheelInfos[w];
+    const p = wi.isInContact
+      ? wi.raycastResult.hitPointWorld
+      : wi.chassisConnectionPointWorld;
+    // Refine nearest frame around the hint (frames are ~2.6 m apart).
+    let bestI = hint;
+    let bestD = Infinity;
+    for (let k = -4; k <= 4; k++) {
+      const i = (hint + k + n) % n;
+      const dx = frames[i].pos.x - p.x;
+      const dz = frames[i].pos.z - p.z;
+      const d = dx * dx + dz * dz;
+      if (d < bestD) { bestD = d; bestI = i; }
     }
+    const f = frames[bestI];
+    const lat = Math.abs(
+      (p.x - f.pos.x) * f.left.x + (p.z - f.pos.z) * f.left.z);
+    const halfRoad = track.width / 2;
+    if (lat <= halfRoad) _surfScratch[w] = 'road';
+    else if (lat <= halfRoad + track.kerbWidth) _surfScratch[w] = 'kerb';
+    else _surfScratch[w] = track.isGravel && track.isGravel(bestI) ? 'gravel' : 'grass';
   }
-
-  vehicle.applyEngineForce(-engineForce, 2);
-  vehicle.applyEngineForce(-engineForce, 3);
-
-  const ROLL_RESIST = 0.4;
-  const brakeFront = brakeForce * 0.65 + ROLL_RESIST;
-  let brakeRear = brakeForce * 0.35 + ROLL_RESIST;
-  if (ctrl.handbrake) brakeRear = constants.MAX_BRAKE_FORCE * 1.4;
-  vehicle.setBrake(brakeFront, 0);
-  vehicle.setBrake(brakeFront, 1);
-  vehicle.setBrake(brakeRear, 2);
-  vehicle.setBrake(brakeRear, 3);
-
-  const brakeLevel = Math.min(1, Math.max(ctrl.brake, ctrl.handbrake ? 0.8 : 0));
-  car.setBrakeLight(brakeLevel * 1.6);
-}
-
-function forwardSpeed(car) {
-  const q = car.body.quaternion;
-  const fx = 2 * (q.x * q.z + q.w * q.y);
-  const fz = 1 - 2 * (q.x * q.x + q.y * q.y);
-  const v = car.body.velocity;
-  return v.x * fx + v.z * fz;
-}
-
-function gearLabel(speedKmh, ctrl) {
-  if (speedKmh < 1) return ctrl.brake > 0.05 ? 'R' : 'N';
-  if (speedKmh < 30) return '1';
-  if (speedKmh < 65) return '2';
-  if (speedKmh < 100) return '3';
-  if (speedKmh < 145) return '4';
-  if (speedKmh < 200) return '5';
-  return '6';
+  return _surfScratch;
 }
 
 // ---------- Rescue (back to track) ----------

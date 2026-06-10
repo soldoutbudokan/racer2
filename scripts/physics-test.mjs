@@ -1,100 +1,228 @@
-// Deterministic driving test: freeze the render loop and step the physics
-// directly so render speed can't skew sim time. Proves the car settles,
-// accelerates under engine force, steers, and brakes.
+// Deterministic driving-model test: freeze the render loop and step the
+// physics directly so render speed can't skew sim time. Verifies the
+// realistic driving model: acceleration through the gears, a drag-limited
+// top speed, braking distances, cornering that sheds speed, grass penalty,
+// and that the AI can still lap the circuit.
+//
+// Chrome binary resolution: $CHROME_EXE, then puppeteer's cache, then the
+// old mac playwright path.
 import { chromium } from 'playwright-core';
-const EXE = process.env.HOME + '/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
-const b = await chromium.launch({ executablePath: EXE, headless: true, args: ['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
+import { execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+
+function findChrome() {
+  if (process.env.CHROME_EXE && existsSync(process.env.CHROME_EXE)) return process.env.CHROME_EXE;
+  try {
+    const out = execSync(
+      'find ~/.cache/puppeteer/chrome /root/.cache/puppeteer/chrome -maxdepth 3 -name chrome -type f 2>/dev/null | head -1',
+      { shell: '/bin/bash' }).toString().trim();
+    if (out && existsSync(out)) return out;
+  } catch { /* fall through */ }
+  const mac = process.env.HOME + '/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
+  if (existsSync(mac)) return mac;
+  throw new Error('No Chrome binary found — set CHROME_EXE');
+}
+
+const b = await chromium.launch({
+  executablePath: findChrome(), headless: true,
+  args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
+});
 const page = await b.newPage({ viewport: { width: 640, height: 480 } });
-const errs=[]; page.on('pageerror',e=>errs.push(e.message)); page.on('console',m=>{if(m.type()==='error')errs.push(m.text());});
+const errs = [];
+page.on('pageerror', (e) => errs.push(e.message));
+page.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
 await page.goto('http://localhost:5173/', { waitUntil: 'load' });
 await page.waitForFunction(() => !!window.__ctx, { timeout: 20000 });
 
-let pass=0, fail=0;
-const ck=(n,ok,d='')=>{console.log(`${ok?'PASS':'FAIL'}  ${n}${d?'  — '+d:''}`); ok?pass++:fail++;};
+let pass = 0, fail = 0;
+const ck = (n, ok, d = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}${d ? '  — ' + d : ''}`); ok ? pass++ : fail++; };
 
-async function run(mode){
+async function startMode(mode) {
   await page.waitForSelector(`button.mode[data-mode="${mode}"]`);
-  await page.evaluate((mode) => document.querySelector(`button.mode[data-mode="${mode}"]`).click(), mode);
-  await page.waitForTimeout(800);
-  return page.evaluate((mode) => {
-    const ctx = window.__ctx;
-    ctx.mode = null;                         // stop rAF tick from also stepping
-    const world = ctx.world;
-    const cars = ctx.cars.map(c=>c.car);
-    const me = cars[0];
-    const step = (n)=>{ for(let i=0;i<n;i++){ world.step(1/120); for(const c of cars) c.update(); } };
-    const speed = (c)=>Math.hypot(c.body.velocity.x,c.body.velocity.z)*3.6;
-    const yawOf = (c)=>{const q=c.body.quaternion;return Math.atan2(2*(q.x*q.z+q.w*q.y),1-2*(q.x*q.x+q.y*q.y));};
-    const flat=(p)=>({x:p.x,z:p.z});
-    const D=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
-
-    // settle
-    step(360);
-    let contacts = 0;
-    for(let i=0;i<20;i++){ world.step(1/120); for(const c of cars) c.update();
-      contacts = Math.max(contacts, me.vehicle.wheelInfos.filter(w=>w.isInContact).length); }
-    const p0 = flat(me.body.position);
-
-    // AI cars: let their own driver command them from the fresh grid.
-    const aiStart = cars.slice(1).map(c=>flat(c.body.position));
-    for(let i=0;i<420;i++){
-      for(const c of ctx.cars){ if(c.ai){ const cmd=c.ai.update(c.car); const v=c.car.vehicle;
-        v.applyEngineForce(-2000*(cmd.throttle||0),2); v.applyEngineForce(-2000*(cmd.throttle||0),3);
-        v.setSteeringValue(-(cmd.steer||0)*0.5,0); v.setSteeringValue(-(cmd.steer||0)*0.5,1);
-      }}
-      world.step(1/120); for(const c of cars) c.update();
-    }
-    const aiMoved = cars.slice(1).map((c,i)=>D(flat(c.body.position),aiStart[i]));
-
-    // accelerate (mirror applyDriving: negative engine force on rear wheels)
-    for(let i=0;i<700;i++){
-      me.vehicle.applyEngineForce(-2200,2); me.vehicle.applyEngineForce(-2200,3);
-      me.vehicle.setBrake(0.4,0); me.vehicle.setBrake(0.4,1); me.vehicle.setBrake(0.4,2); me.vehicle.setBrake(0.4,3);
-      world.step(1/120); for(const c of cars) c.update();
-    }
-    const accelKmh = speed(me);
-    const p1 = flat(me.body.position);
-    const yaw1 = yawOf(me);
-
-    // steer right under power
-    for(let i=0;i<240;i++){
-      me.vehicle.applyEngineForce(-1800,2); me.vehicle.applyEngineForce(-1800,3);
-      me.vehicle.setSteeringValue(-0.5,0); me.vehicle.setSteeringValue(-0.5,1);
-      world.step(1/120); for(const c of cars) c.update();
-    }
-    let dyaw = Math.abs(yawOf(me)-yaw1); if(dyaw>Math.PI) dyaw=2*Math.PI-dyaw;
-    me.vehicle.setSteeringValue(0,0); me.vehicle.setSteeringValue(0,1);
-
-    // brake hard
-    const beforeBrake = speed(me);
-    for(let i=0;i<260;i++){
-      me.vehicle.applyEngineForce(0,2); me.vehicle.applyEngineForce(0,3);
-      me.vehicle.setBrake(50,0); me.vehicle.setBrake(50,1); me.vehicle.setBrake(50,2); me.vehicle.setBrake(50,3);
-      world.step(1/120); for(const c of cars) c.update();
-    }
-    const afterBrake = speed(me);
-
-    return { mode, nCars:cars.length, contacts, settleY:+me.body.position.y.toFixed(2),
-      accelKmh:+accelKmh.toFixed(1), accelDist:+D(p0,p1).toFixed(1),
-      steerDeg:+(dyaw*180/Math.PI).toFixed(1),
-      brake:`${beforeBrake.toFixed(0)}->${afterBrake.toFixed(0)}`,
-      aiMoved: aiMoved.map(x=>+x.toFixed(0)) };
-  }, mode);
+  await page.evaluate((m) => document.querySelector(`button.mode[data-mode="${m}"]`).click(), mode);
+  await page.waitForTimeout(600);
+  await page.evaluate(() => { window.__ctx.mode = null; }); // stop rAF from stepping
 }
 
-const tt = await run('time-trial');
-console.log('time-trial:', JSON.stringify(tt));
-ck('car settles on the track (not falling through)', tt.settleY>0.3 && tt.settleY<1.6, `y=${tt.settleY}`);
-ck('accelerates under power', tt.accelKmh>40, `${tt.accelKmh} km/h`);
-ck('travels a meaningful distance', tt.accelDist>30, `${tt.accelDist} m`);
-ck('steering turns the car', tt.steerDeg>10, `${tt.steerDeg} deg`);
-ck('braking sheds speed', (()=>{const[a,c]=tt.brake.split('->').map(Number);return c<a-15;})(), `${tt.brake} km/h`);
+// ---------- Single-car driving model ----------
+await startMode('time-trial');
+const dm = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  const world = ctx.world;
+  const me = ctx.cars[0].car;
+  const ROAD = ['road', 'road', 'road', 'road'];
+  const GRASS = ['grass', 'grass', 'grass', 'grass'];
+  const dt = 1 / 120;
+  const speed = () => Math.hypot(me.body.velocity.x, me.body.velocity.z) * 3.6;
+  const yawOf = () => { const q = me.body.quaternion; return Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y)); };
+  const drive = (ctrl, steps, surf = ROAD) => {
+    for (let i = 0; i < steps; i++) {
+      me.applyControls(ctrl, dt, surf);
+      world.step(dt);
+    }
+  };
 
-const qr = await run('quick-race');
+  // Teleport to open ground so straight-line runs don't meet the armco.
+  const tp = (x, z, yaw = 0) => {
+    me.reset({ x, y: 1.0, z }, yaw);
+    drive({ throttle: 0, brake: 0, steer: 0, handbrake: false }, 90);
+  };
+
+  // 1. settle
+  tp(1500, -1800);
+  const contacts = me.vehicle.wheelInfos.filter((w) => w.isInContact).length;
+  const settleY = me.body.position.y;
+
+  // 2. acceleration: 8 s flat out
+  const p0 = { x: me.body.position.x, z: me.body.position.z };
+  drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 8 * 120);
+  const accel8s = speed();
+  const accelDist = Math.hypot(me.body.position.x - p0.x, me.body.position.z - p0.z);
+  const gearAt8s = me.telemetry.gearLabel;
+
+  // 3. top speed: keep going 32 more seconds
+  drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 32 * 120);
+  const vmax = speed();
+
+  // 4. braking from speed: full brake to <5 km/h
+  tp(-1500, -1800);
+  drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 9 * 120);
+  const vBrake = speed();
+  const bp = { x: me.body.position.x, z: me.body.position.z };
+  let brakeSteps = 0;
+  while (speed() > 5 && brakeSteps < 12 * 120) {
+    drive({ throttle: 0, brake: 1, steer: 0, handbrake: false }, 1);
+    brakeSteps++;
+  }
+  const brakeDist = Math.hypot(me.body.position.x - bp.x, me.body.position.z - bp.z);
+  const brakeDecel = (vBrake / 3.6) ** 2 / (2 * Math.max(1, brakeDist));
+
+  // 5. cornering sheds speed: ~150 km/h, full lock, no throttle, 3 s
+  tp(1500, 0);
+  drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 8 * 120);
+  const cornerEntry = speed();
+  const yaw0 = yawOf();
+  drive({ throttle: 0, brake: 0, steer: 1, handbrake: false }, 3 * 120);
+  const cornerExit = speed();
+  let dyaw = Math.abs(yawOf() - yaw0); if (dyaw > Math.PI) dyaw = 2 * Math.PI - dyaw;
+  const cornerLoss = cornerEntry - cornerExit;
+
+  // 6. cornering hard cuts acceleration (friction circle): full throttle for
+  // 4 s straight vs. 4 s at full lock, from the same entry speed.
+  tp(-1500, -300);
+  drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 6 * 120);
+  const sEntry = speed();
+  drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 4 * 120);
+  const straightGain = speed() - sEntry;
+  tp(-1500, 600);
+  drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 6 * 120);
+  const pwrEntry = speed();
+  drive({ throttle: 1, brake: 0, steer: 1, handbrake: false }, 4 * 120);
+  const pwrExit = speed();
+  const cornerGain = pwrExit - pwrEntry;
+
+  // 7. grass penalty: coast from ~110 km/h on grass vs road
+  const accelTo = (kmh) => {
+    let guard = 0;
+    while (speed() < kmh && guard++ < 20 * 120) {
+      drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 1);
+    }
+  };
+  tp(0, -1800);
+  accelTo(110);
+  const g0 = speed();
+  drive({ throttle: 0, brake: 0, steer: 0, handbrake: false }, 4 * 120, GRASS);
+  const grassLoss = g0 - speed();
+  tp(300, -1800);
+  accelTo(110);
+  const r0 = speed();
+  drive({ throttle: 0, brake: 0, steer: 0, handbrake: false }, 4 * 120, ROAD);
+  const roadLoss = r0 - speed();
+
+  // 8. reverse works
+  tp(600, -1800);
+  drive({ throttle: 0, brake: 1, steer: 0, handbrake: false }, 3 * 120);
+  const revSpeed = (() => { const q = me.body.quaternion; const fx = 2 * (q.x * q.z + q.w * q.y); const fz = 1 - 2 * (q.x * q.x + q.y * q.y); const v = me.body.velocity; return v.x * fx + v.z * fz; })();
+
+  return {
+    contacts, settleY: +settleY.toFixed(2),
+    accel8s: +accel8s.toFixed(1), accelDist: +accelDist.toFixed(0), gearAt8s,
+    vmax: +vmax.toFixed(1),
+    vBrake: +vBrake.toFixed(1), brakeDist: +brakeDist.toFixed(1), brakeDecel: +brakeDecel.toFixed(2),
+    cornerEntry: +cornerEntry.toFixed(1), cornerExit: +cornerExit.toFixed(1),
+    cornerLoss: +cornerLoss.toFixed(1), cornerYawDeg: +(dyaw * 180 / Math.PI).toFixed(0),
+    straightGain: +straightGain.toFixed(1), cornerGain: +cornerGain.toFixed(1),
+    pwrEntry: +pwrEntry.toFixed(1), pwrExit: +pwrExit.toFixed(1),
+    grassLoss: +grassLoss.toFixed(1), roadLoss: +roadLoss.toFixed(1),
+    revSpeed: +revSpeed.toFixed(2),
+  };
+});
+console.log('driving-model:', JSON.stringify(dm));
+ck('car settles on its wheels', dm.contacts === 4 && dm.settleY > 0.3 && dm.settleY < 1.6, `contacts=${dm.contacts} y=${dm.settleY}`);
+ck('accelerates hard through the gears', dm.accel8s > 140 && dm.accelDist > 180, `${dm.accel8s} km/h in 8s over ${dm.accelDist} m (gear ${dm.gearAt8s})`);
+ck('drag-limited top speed 250–310 km/h', dm.vmax > 250 && dm.vmax < 310, `${dm.vmax} km/h`);
+ck('braking ≥ 0.9 g from speed', dm.brakeDecel > 8.8, `${dm.vBrake} km/h → 5 km/h in ${dm.brakeDist} m (${dm.brakeDecel} m/s²)`);
+ck('hard cornering sheds speed', dm.cornerLoss > 20 && dm.cornerYawDeg > 45, `${dm.cornerEntry} → ${dm.cornerExit} km/h while turning ${dm.cornerYawDeg}°`);
+ck('cornering hard cuts acceleration', dm.cornerGain < dm.straightGain * 0.6 && dm.cornerGain < dm.straightGain - 8,
+  `straight +${dm.straightGain} vs full-lock +${dm.cornerGain} km/h over 4s (from ${dm.pwrEntry} km/h)`);
+ck('grass is much draggier than road', dm.grassLoss - dm.roadLoss > 9 && dm.grassLoss > 18, `grass −${dm.grassLoss} vs road −${dm.roadLoss} km/h over 4s`);
+ck('reverse works', dm.revSpeed < -1, `${dm.revSpeed} m/s`);
+
+// ---------- AI sanity on the real circuit ----------
+await startMode('quick-race');
+const qr = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  const world = ctx.world;
+  const dt = 1 / 120;
+  const frames = ctx.track.frames;
+  const nearest = (p) => {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < frames.length; i++) {
+      const dx = frames[i].pos.x - p.x, dz = frames[i].pos.z - p.z;
+      const d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; bi = i; }
+    }
+    return { i: bi, d: Math.sqrt(bd) };
+  };
+  const ROAD = ['road', 'road', 'road', 'road'];
+  const ai = ctx.cars.filter((c) => !c.isPlayer);
+  // Park the (undriven) player car far away so the AI aren't ramming a
+  // stationary obstacle on the grid.
+  const player = ctx.cars.find((c) => c.isPlayer);
+  if (player) player.car.reset({ x: 1500, y: 1, z: -1500 }, 0);
+  // Accumulate progress (handles full laps; nearest-frame alone is mod-lap).
+  const lastIdx = ai.map((c) => nearest(c.car.body.position).i);
+  const total = ai.map(() => 0);
+  let maxDev = 0;
+  const steps = 45 * 120;
+  const aiCars = ai.map((c) => c.car);
+  for (let s = 0; s < steps; s++) {
+    for (const c of ai) {
+      const cmd = c.ai.update(c.car, aiCars, dt);
+      c.car.applyControls(cmd, dt, ROAD);
+    }
+    world.step(dt);
+    if (s % 30 === 0) {
+      for (let k = 0; k < ai.length; k++) {
+        const { i, d } = nearest(ai[k].car.body.position);
+        if (d > maxDev) maxDev = d;
+        let adv = i - lastIdx[k];
+        if (adv < -frames.length / 2) adv += frames.length;
+        if (adv > frames.length / 2) adv -= frames.length;
+        total[k] += adv;
+        lastIdx[k] = i;
+      }
+    }
+  }
+  const progressed = total.map((t) => Math.round(t / frames.length * 100)); // % of laps
+  return { nCars: ctx.cars.length, progressed, maxDev: +maxDev.toFixed(1) };
+});
 console.log('quick-race:', JSON.stringify(qr));
-ck('quick-race spawns 4 cars', qr.nCars===4, `${qr.nCars}`);
-ck('AI cars drive themselves', qr.aiMoved.every(d=>d>10), 'moved='+qr.aiMoved.join(','));
+ck('quick-race spawns 4 cars', qr.nCars === 4, `${qr.nCars}`);
+ck('AI completes ≥ 60% of a lap in 45 s', qr.progressed.every((p) => p > 60), `progress=${qr.progressed.join(',')}%`);
+ck('AI stays inside the circuit', qr.maxDev < 16, `max centreline deviation ${qr.maxDev} m`);
 
-ck('no console errors', errs.length===0, errs.slice(0,3).join(' | ')||'clean');
+ck('no console errors', errs.length === 0, errs.slice(0, 3).join(' | ') || 'clean');
 console.log(`\n${pass} passed, ${fail} failed`);
-await b.close(); process.exit(fail?1:0);
+await b.close();
+process.exit(fail ? 1 : 0);

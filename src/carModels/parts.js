@@ -9,7 +9,8 @@ import { plateTexture, badgeTexture } from './texgen.js';
 // (+Z forward, +Y up, +X right). Y values follow the proven placement from the
 // original car so everything sits correctly on the wheels.
 
-// ---- Headlight clusters (emissive + bloom; no real lights) ----
+// ---- Headlight clusters: swept smoked lens over a dark housing with a
+// projector + DRL blade. Tilted to lie along the nose, not stuck onto it. ----
 export function buildHeadlights({ z = 1.92, y = 0.64, x = 0.60 } = {}) {
   const g = new THREE.Group();
   const housingMat = makeTrim();
@@ -17,27 +18,31 @@ export function buildHeadlights({ z = 1.92, y = 0.64, x = 0.60 } = {}) {
   const emit = makeHeadlight();
   for (const sx of [-1, 1]) {
     const cluster = new THREE.Group();
-    // recessed housing
-    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.14), housingMat);
+    // recessed housing, swept back at the outer end
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.13, 0.12), housingMat);
     cluster.add(housing);
-    // two projector pods
-    for (const px of [-0.09, 0.09]) {
-      const pod = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.06, 0.08, 18), emit);
-      pod.rotation.x = Math.PI / 2;
-      pod.position.set(px, 0.0, 0.07);
-      cluster.add(pod);
-    }
-    // DRL strip
-    const drl = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.025, 0.02), emit);
-    drl.position.set(0, 0.06, 0.08);
+    // single projector
+    const pod = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.045, 0.05, 0.07, 16), emit);
+    pod.rotation.x = Math.PI / 2;
+    pod.position.set(-sx * 0.1, -0.005, 0.055);
+    cluster.add(pod);
+    const podRing = new THREE.Mesh(
+      new THREE.TorusGeometry(0.052, 0.012, 8, 18), housingMat);
+    podRing.position.set(-sx * 0.1, -0.005, 0.088);
+    cluster.add(podRing);
+    // DRL blade along the top edge
+    const drl = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.018, 0.02), emit);
+    drl.position.set(0, 0.048, 0.055);
+    drl.rotation.z = sx * 0.06;
     cluster.add(drl);
-    // clear lens cover
-    const lens = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.03), lensMat);
-    lens.position.z = 0.09;
+    // smoked lens cover
+    const lens = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.15, 0.035), lensMat);
+    lens.position.z = 0.075;
     cluster.add(lens);
     cluster.position.set(sx * x, y, z);
-    cluster.rotation.y = sx > 0 ? -0.18 : 0.18; // wrap around the nose
+    cluster.rotation.y = sx > 0 ? -0.32 : 0.32;  // wrap around the nose
+    cluster.rotation.x = -0.12;                  // follow the bonnet slope
     g.add(cluster);
   }
   return g;
@@ -248,6 +253,35 @@ export function buildUnderbody({ y = 0.20, w = 1.7, len = 3.8 } = {}) {
   const u = new THREE.Mesh(new THREE.BoxGeometry(w, 0.04, len), makeTrim());
   u.position.set(0, y, 0);
   return u;
+}
+
+// ---- Wheel-arch liners: dark half-tubes over each wheel so the wheels sit
+// inside real-looking housings instead of floating beside the hull. ----
+let _archMat = null;
+function archMaterial() {
+  if (_archMat) return _archMat;
+  _archMat = new THREE.MeshStandardMaterial({
+    color: 0x0b0c0e, roughness: 0.94, metalness: 0.0, side: THREE.DoubleSide,
+  });
+  return _archMat;
+}
+
+export function buildArchLiners({
+  zF = 1.45, zR = -1.45, x = 0.86, r = 0.47, width = 0.36,
+} = {}) {
+  const g = new THREE.Group();
+  // Open half-cylinder spanning the top half (after rotateZ the θ∈[0,π]
+  // half maps onto y ≥ 0), axis along X so it wraps the wheel.
+  const geo = new THREE.CylinderGeometry(r, r, width, 22, 1, true, 0, Math.PI);
+  geo.rotateZ(Math.PI / 2);
+  for (const z of [zF, zR]) {
+    for (const sx of [-1, 1]) {
+      const liner = new THREE.Mesh(geo, archMaterial());
+      liner.position.set(sx * x, 0, z);
+      g.add(liner);
+    }
+  }
+  return g;
 }
 
 // ---- Soft fake contact shadow blob under the car (works in 1P and 2P) ----
