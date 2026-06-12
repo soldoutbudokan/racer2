@@ -15,6 +15,9 @@ export function createHud(maxSpeed = 320) {
   const posTotal = document.getElementById('pos-total');
   const raceBanner = document.getElementById('race-banner');
   const wrongWay = document.getElementById('wrong-way');
+  const pacePill = document.getElementById('pace-pill');
+  const paceTarget = document.getElementById('pace-target');
+  const paceDelta = document.getElementById('pace-delta');
   let bannerTimer = null;
 
   // Build tick marks once
@@ -97,6 +100,30 @@ export function createHud(maxSpeed = 320) {
 
   function setWrongWay(on) {
     wrongWay.classList.toggle('hidden', !on);
+  }
+
+  // Perfect-line pace readout: ideal speed at the player's position plus a
+  // colour-coded verdict against their actual speed.
+  function setPace(targetKmh, deltaKmh) {
+    pacePill.classList.remove('hidden');
+    paceTarget.textContent = Math.round(targetKmh);
+    let cls, text;
+    if (deltaKmh > 3) {
+      cls = 'pace-over';
+      text = `+${Math.round(deltaKmh)} TOO FAST`;
+    } else if (deltaKmh < -8) {
+      cls = 'pace-under';
+      text = `−${Math.round(-deltaKmh)} COULD GO FASTER`;
+    } else {
+      cls = 'pace-on';
+      text = 'ON PACE';
+    }
+    paceDelta.textContent = text;
+    paceDelta.className = cls;
+  }
+
+  function hidePace() {
+    pacePill.classList.add('hidden');
   }
 
   // Clear any transient overlays (called on start / reset / stop).
@@ -209,6 +236,7 @@ export function createHud(maxSpeed = 320) {
   return {
     setSpeed, setLap, setLapTime, setBest,
     setPosition, hidePosition,
+    setPace, hidePace,
     flashBanner, setWrongWay, clearAnnouncements,
     show, hide,
     buildMinimap, drawMinimap,

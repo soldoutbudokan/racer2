@@ -222,6 +222,112 @@ ck('quick-race spawns 4 cars', qr.nCars === 4, `${qr.nCars}`);
 ck('AI completes ≥ 60% of a lap in 45 s', qr.progressed.every((p) => p > 60), `progress=${qr.progressed.join(',')}%`);
 ck('AI stays inside the circuit', qr.maxDev < 16, `max centreline deviation ${qr.maxDev} m`);
 
+// ---------- Barrier containment ----------
+// Launch the car at the armco from the centreline at ~275 km/h, at many spots
+// around the lap, alternating sides and angles of attack. This is RAW wall
+// containment — the game-loop out-of-bounds failsafe is not running here.
+await startMode('time-trial');
+const bar = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  const world = ctx.world;
+  const me = ctx.cars[0].car;
+  const frames = ctx.track.frames;
+  const dt = 1 / 120;
+  const ROAD = ['road', 'road', 'road', 'road'];
+  const latAt = (p) => {
+    let bi = 0, bd = Infinity;
+    for (let i = 0; i < frames.length; i++) {
+      const dx = frames[i].pos.x - p.x, dz = frames[i].pos.z - p.z;
+      const d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; bi = i; }
+    }
+    const f = frames[bi];
+    return Math.abs((p.x - f.pos.x) * f.left.x + (p.z - f.pos.z) * f.left.z);
+  };
+  let maxLat = 0, minY = 1;
+  const N = frames.length;
+  const RUNS = 18;
+  for (let s = 0; s < RUNS; s++) {
+    const f = frames[Math.floor(s * N / RUNS)];
+    const sign = s % 2 ? 1 : -1;
+    const skew = ((s % 3) - 1) * 0.6;          // −0.6 / 0 / +0.6 rad off-normal
+    const aim = Math.atan2(f.left.x, f.left.z) + (sign < 0 ? Math.PI : 0) + skew;
+    me.reset({ x: f.pos.x, y: 0.7, z: f.pos.z }, aim);
+    me.body.velocity.set(Math.sin(aim) * 76, 0, Math.cos(aim) * 76);
+    for (let t = 0; t < 2.5 * 120; t++) {
+      me.applyControls({ throttle: 1, brake: 0, steer: 0, handbrake: false }, dt, ROAD);
+      world.step(dt);
+      const lat = latAt(me.body.position);
+      if (lat > maxLat) maxLat = lat;
+      if (me.body.position.y < minY) minY = me.body.position.y;
+    }
+  }
+  return { armco: ctx.track.armcoOffset, maxLat: +maxLat.toFixed(1), minY: +minY.toFixed(1) };
+});
+console.log('barriers:', JSON.stringify(bar));
+ck('walls contain 275 km/h impacts at every angle', bar.maxLat < bar.armco + 2,
+  `max lateral ${bar.maxLat} m vs armco at ${bar.armco} m`);
+ck('car never falls through the world', bar.minY > -1, `minY=${bar.minY}`);
+
+// ---------- Single-lap time trial + perfect-line aid ----------
+// Headless Chrome throttles rAF, so drive the real game loop deterministically
+// through the __tick pump instead of waiting on wall-clock time.
+await startMode('time-trial');
+const ttSetup = await page.evaluate(() => ({
+  totalLaps: window.__ctx.state.totalLaps,
+  lapTotalHud: document.getElementById('lap-total').textContent,
+  lineVisible: window.__ctx.racingLine.mesh.visible,
+}));
+const tt = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  ctx.mode = 'time-trial';
+  const frames = ctx.track.frames;
+  const car = ctx.cars[0].car;
+  const pump = (steps) => { for (let i = 0; i < steps; i++) window.__tick(1 / 60); };
+  // Touch the mid-lap sector checkpoint…
+  const fm = frames[Math.floor(frames.length / 2)];
+  car.reset({ x: fm.pos.x, y: 0.7, z: fm.pos.z }, Math.atan2(fm.tan.x, fm.tan.z));
+  pump(20);
+  // …then roll across the start/finish line.
+  const f = frames[frames.length - 10];
+  car.reset({ x: f.pos.x, y: 0.7, z: f.pos.z }, Math.atan2(f.tan.x, f.tan.z));
+  car.body.velocity.set(f.tan.x * 22, 0, f.tan.z * 22);
+  pump(3 * 60);
+  const out = {
+    finished: ctx.cars[0].state.finished,
+    overlayShown: !document.getElementById('finish').classList.contains('hidden'),
+    paceShown: !document.getElementById('pace-pill').classList.contains('hidden'),
+  };
+  ctx.mode = null;
+  return out;
+});
+console.log('time-trial:', JSON.stringify({ ...ttSetup, ...tt }));
+ck('time trial is a single lap', ttSetup.totalLaps === 1 && ttSetup.lapTotalHud === '1',
+  `totalLaps=${ttSetup.totalLaps} hud=${ttSetup.lapTotalHud}`);
+ck('crossing the line once finishes the time trial', tt.finished && tt.overlayShown,
+  `finished=${tt.finished} overlay=${tt.overlayShown}`);
+ck('racing line + pace aid active in time trial', ttSetup.lineVisible && tt.paceShown,
+  `line=${ttSetup.lineVisible} pace=${tt.paceShown}`);
+
+// ---------- Racing-line speed profile sanity ----------
+const rl = await page.evaluate(() => {
+  const p = window.__ctx.racingLine.profile;
+  let mn = Infinity, mx = 0;
+  for (let i = 0; i < p.length; i++) { if (p[i] < mn) mn = p[i]; if (p[i] > mx) mx = p[i]; }
+  return { minKmh: +(mn * 3.6).toFixed(0), maxKmh: +(mx * 3.6).toFixed(0) };
+});
+console.log('racing-line:', JSON.stringify(rl));
+ck('ideal-speed profile is sane', rl.minKmh > 40 && rl.minKmh < 140 && rl.maxKmh > 180 && rl.maxKmh <= 260,
+  `corners down to ${rl.minKmh} km/h, straights up to ${rl.maxKmh} km/h`);
+
+// Quick race keeps 3 laps; split-screen hides the aid.
+await startMode('quick-race');
+const qrLaps = await page.evaluate(() => window.__ctx.state.totalLaps);
+ck('quick race is still 3 laps', qrLaps === 3, `totalLaps=${qrLaps}`);
+await startMode('two-player');
+const tpLine = await page.evaluate(() => window.__ctx.racingLine.mesh.visible);
+ck('racing line hidden in split-screen', tpLine === false, `visible=${tpLine}`);
+
 ck('no console errors', errs.length === 0, errs.slice(0, 3).join(' | ') || 'clean');
 console.log(`\n${pass} passed, ${fail} failed`);
 await b.close();

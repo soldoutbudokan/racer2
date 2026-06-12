@@ -196,6 +196,10 @@ export function createTrack(scene, world, materials) {
     spawn,
     width: ROAD_WIDTH,
     kerbWidth: KERB_WIDTH,
+    armcoOffset: ARMCO_OFFSET,
+    // Lateral offset (m, +left) of the baked racing groove per frame — the
+    // "perfect line" driving aid follows the same path the visuals rubber in.
+    racingLineOffset: lineOffset,
     // Gravel traps will register frame ranges here (filled by scenery pass).
     isGravel: (frameIdx) => gravelFrames.has(frameIdx),
     length: curve.getLength(),
@@ -1795,20 +1799,41 @@ function addSponsorBoards(scene, frames, offset) {
 
 function buildBarrierPhysics(world, frames, offset, materials) {
   const bodyMat = materials.barrierMat;
-  // Stride 2 (≈6.4 m apart) with 7 m-long boxes aligned ALONG the track
-  // tangent → a continuous overlapping wall. (These used to be authored with
-  // the long axis across the road, which left a picket fence of sideways
-  // slabs jutting ~2.7 m into the run-off that cars wedged against.)
-  for (let i = 0; i < frames.length; i += 2) {
-    const f = frames[i];
-    const yaw = Math.atan2(f.tan.x, f.tan.z);
-    for (const sign of [+1, -1]) {
-      const p = f.pos.clone().add(f.left.clone().multiplyScalar(offset * sign));
+  // A continuous chord wall: each box spans exactly from this frame's offset
+  // point to the next one's, so consecutive segments share endpoints and the
+  // wall stays gap-free however the curve bends. (The previous wall used
+  // fixed-length boxes aligned to the local TANGENT; on the outside of tight
+  // corners adjacent boxes splayed apart and opened V-shaped gaps that cars
+  // squeezed through at speed.) Boxes are thick and tall enough that neither
+  // a 300 km/h head-on hit (≈0.75 m of travel per physics substep) nor a
+  // kerb-launched car can pass them, and they overlap at the joints.
+  const STRIDE = 2;
+  const HALF_THICK = 0.6;
+  const HALF_HEIGHT = 1.9;
+  const OVERLAP = 0.7;        // extra half-length so angled joints stay sealed
+  const n = frames.length;
+  const q = new CANNON.Quaternion();
+  const up = new CANNON.Vec3(0, 1, 0);
+  for (const sign of [+1, -1]) {
+    // Keep the contact face at the visual rail line: the box centre sits
+    // slightly outside `offset` so its inner face lands on the armco.
+    const centerOff = (offset + HALF_THICK - 0.25) * sign;
+    for (let i = 0; i < n; i += STRIDE) {
+      const fA = frames[i];
+      const fB = frames[(i + STRIDE) % n];
+      const ax = fA.pos.x + fA.left.x * centerOff;
+      const az = fA.pos.z + fA.left.z * centerOff;
+      const bx = fB.pos.x + fB.left.x * centerOff;
+      const bz = fB.pos.z + fB.left.z * centerOff;
+      const dx = bx - ax;
+      const dz = bz - az;
+      const len = Math.hypot(dx, dz);
       const body = new CANNON.Body({ mass: 0, material: bodyMat });
-      body.addShape(new CANNON.Box(new CANNON.Vec3(0.25, 0.6, 3.5)));
-      body.position.set(p.x, 0.6, p.z);
-      const q = new CANNON.Quaternion();
-      q.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), yaw);
+      body.addShape(new CANNON.Box(
+        new CANNON.Vec3(HALF_THICK, HALF_HEIGHT, len / 2 + OVERLAP)));
+      // Sunk slightly so there is no slit at ground level: spans y -0.3..3.5.
+      body.position.set((ax + bx) / 2, HALF_HEIGHT - 0.3, (az + bz) / 2);
+      q.setFromAxisAngle(up, Math.atan2(dx, dz));
       body.quaternion.copy(q);
       world.addBody(body);
     }

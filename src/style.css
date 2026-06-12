@@ -238,6 +238,45 @@ button.mode:hover {
   letter-spacing: 1px;
 }
 
+/* Perfect-line pace readout */
+#pace-pill {
+  position: absolute;
+  top: 112px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 8px 18px;
+  background: rgba(0,0,0,0.45);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  box-shadow: 0 8px 30px rgba(0,0,0,0.45);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+#pace-pill.hidden { display: none; }
+.pace-label, .pace-unit {
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: rgba(255,255,255,0.45);
+}
+#pace-target {
+  font-size: 19px;
+  font-weight: 700;
+}
+#pace-delta {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+}
+#pace-delta.pace-over { color: #ff4d44; }
+#pace-delta.pace-under { color: #3dff8a; }
+#pace-delta.pace-on { color: rgba(255,255,255,0.8); }
+
 #hud-bottom {
   position: absolute;
   bottom: 28px;

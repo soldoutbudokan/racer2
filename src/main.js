@@ -13,9 +13,15 @@ import {
 import { createChaseCamera } from './camera.js';
 import { createHud } from './hud.js';
 import { createAIDriver } from './ai.js';
+import { createRacingLine } from './racingLine.js';
 
-const TOTAL_LAPS = 3;
+const RACE_LAPS = 3;
 const MAX_KMH = 320;
+
+// Time trial is a single flying lap; the other modes run a full race distance.
+function lapsFor(mode) {
+  return mode === 'time-trial' ? 1 : RACE_LAPS;
+}
 
 const PLAYER1_COLOR = 0xc8161d;
 const PLAYER2_COLOR = 0x1f6cff;
@@ -54,6 +60,7 @@ async function bootstrap() {
   await frame();
   const hud = createHud(MAX_KMH);
   hud.buildMinimap(track);
+  const racingLine = createRacingLine(scene, track);
 
   // Second camera lives in main.js (composer only knows about the primary).
   const camera2 = new THREE.PerspectiveCamera(
@@ -68,6 +75,8 @@ async function bootstrap() {
   // ---- Mode selection ----
   const ctx = {
     renderer, scene, camera, camera2, composer, world, materials, track, hud,
+    racingLine,
+    lineAid: false,
     updateShadowTarget,
     cars: [],
     primaryPlayerIdx: 0,
@@ -78,6 +87,9 @@ async function bootstrap() {
   if (typeof window !== 'undefined') {
     window.__ctx = ctx;
     window.__createAIDriver = createAIDriver;
+    // Deterministic loop pump — headless Chrome throttles rAF, so tests
+    // drive frames through this instead of waiting on wall-clock time.
+    window.__tick = (dt) => tick(ctx, dt, performance.now());
   }
 
   document.querySelectorAll('button.mode').forEach((btn) => {
@@ -145,7 +157,13 @@ function startMode(ctx, mode) {
     ctx.hud.hidePosition();
   }
 
-  ctx.hud.setLap(1, TOTAL_LAPS);
+  // The perfect-line aid is for single-screen modes; in split-screen its
+  // colours could only be right for one of the two players.
+  ctx.lineAid = mode !== 'two-player';
+  ctx.racingLine.setVisible(ctx.lineAid);
+  if (!ctx.lineAid) ctx.hud.hidePace();
+
+  ctx.hud.setLap(1, ctx.state.totalLaps);
   ctx.hud.setBest(null);
   ctx.hud.setLapTime(0);
   ctx.hud.clearAnnouncements();
@@ -159,8 +177,10 @@ function stopMode(ctx) {
   destroyCars(ctx);
   ctx.mode = null;
   ctx.state = null;
+  ctx.racingLine.setVisible(false);
   ctx.hud.hide();
   ctx.hud.hidePosition();
+  ctx.hud.hidePace();
   ctx.hud.clearAnnouncements();
   hideFinish();
   showMenu();
@@ -179,7 +199,7 @@ function showFinish(ctx) {
   let title = 'FINISHED';
   let detail = '';
   if (ctx.mode === 'time-trial') {
-    detail = `BEST LAP   ${formatTime(st.bestMs)}`;
+    detail = `LAP TIME   ${formatTime(st.bestMs)}`;
   } else if (ctx.mode === 'quick-race') {
     const place = racePlace(ctx, primary);
     title = place === 1 ? 'YOU WIN' : `FINISHED  P${place}/${ctx.cars.length}`;
@@ -211,6 +231,7 @@ function formatTime(ms) {
 function createGameState(mode) {
   return {
     mode,
+    totalLaps: lapsFor(mode),
     finishOrder: [], // car entries in the order they crossed the final line
     finishShown: false,
     perCar: [], // populated as cars are added
@@ -318,6 +339,11 @@ function tick(ctx, dt, now) {
     if (c.isPlayer) {
       cmd = c.input.update(dt);
       if (c.input.consumeToggle()) c.chase.cycle();
+      if (c.input.consumeLineToggle() && ctx.mode !== 'two-player') {
+        ctx.lineAid = !ctx.lineAid;
+        ctx.racingLine.setVisible(ctx.lineAid);
+        if (!ctx.lineAid) ctx.hud.hidePace();
+      }
       if (c.input.consumeReset()) {
         for (const cc of ctx.cars) {
           const idx = ctx.cars.indexOf(cc);
@@ -327,7 +353,7 @@ function tick(ctx, dt, now) {
         }
         ctx.state.finishOrder = [];
         ctx.state.finishShown = false;
-        ctx.hud.setLap(1, TOTAL_LAPS);
+        ctx.hud.setLap(1, ctx.state.totalLaps);
         ctx.hud.setBest(null);
         ctx.hud.setLapTime(0);
         ctx.hud.clearAnnouncements();
@@ -351,6 +377,11 @@ function tick(ctx, dt, now) {
   // Update visuals from physics
   for (const c of ctx.cars) c.car.update();
 
+  // Containment failsafe — the barrier walls should make this unreachable,
+  // but if a car ever ends up beyond the armco line (or under the world),
+  // put it back on the track rather than letting it drive off the map.
+  for (const c of ctx.cars) enforceBounds(ctx.track, c.car);
+
   // Keep the tight shadow frustum centred on the primary car.
   const focusCar = ctx.cars[ctx.primaryPlayerIdx];
   if (focusCar) ctx.updateShadowTarget(focusCar.car.body.position);
@@ -370,6 +401,17 @@ function tick(ctx, dt, now) {
     ctx.hud.setSpeed(t.speedKmh, t.gearLabel, t.rpmFrac);
     updateLapTiming(primary, ctx.track, ctx.hud, ctx.state);
     ctx.hud.setWrongWay(!primary.state.finished && isWrongWay(ctx.track, primary.car));
+
+    // Perfect-line aid: recolour the line against the player's current speed
+    // and show the ideal speed for where they are right now.
+    if (ctx.lineAid) {
+      const v = primary.car.body.velocity;
+      const speedMs = Math.hypot(v.x, v.z);
+      ctx.racingLine.update(speedMs);
+      const target = ctx.racingLine.profile[
+        nearestFrameIndex(ctx.track, primary.car.body.position)];
+      ctx.hud.setPace(target * 3.6, (speedMs - target) * 3.6);
+    }
   }
 
   // Update non-primary cars' lap timing too (for race position).
@@ -507,6 +549,21 @@ function rescueCar(track, car) {
   car.reset(respawn, yaw);
 }
 
+// Auto-rescue any car that escapes the playable area: laterally past the
+// armco line (plus a margin so wall contact never triggers it) or fallen
+// below the world.
+function enforceBounds(track, car) {
+  const pos = car.body.position;
+  if (pos.y < -2) {
+    rescueCar(track, car);
+    return;
+  }
+  const f = track.frames[nearestFrameIndex(track, pos)];
+  const lat = Math.abs(
+    (pos.x - f.pos.x) * f.left.x + (pos.z - f.pos.z) * f.left.z);
+  if (lat > track.armcoOffset + 2.5) rescueCar(track, car);
+}
+
 // ---------- Lap timing ----------
 
 // Core lap bookkeeping shared by the HUD-driven player path and the silent
@@ -522,19 +579,19 @@ function advanceLap(carEntry, track, state, now) {
     const lapMs = now - st.lapStart;
     if (st.bestMs == null || lapMs < st.bestMs) st.bestMs = lapMs;
     st.sectorReached = false;
-    if (st.lap >= TOTAL_LAPS) {
+    if (st.lap >= state.totalLaps) {
       // Crossed the line on the final lap — the race is over for this car.
       st.finished = true;
       st.finishMs = now - st.raceStart;
       state.finishOrder.push(carEntry);
       st.lastT = cp;
       // Finished cars sort ahead of everyone, preserving finish order.
-      st.progress = TOTAL_LAPS + 100 - (state.finishOrder.length - 1);
+      st.progress = state.totalLaps + 100 - (state.finishOrder.length - 1);
       return 'finish';
     }
     st.lap += 1;
     st.lapStart = now;
-    event = st.lap === TOTAL_LAPS ? 'final' : 'lap';
+    event = st.lap === state.totalLaps ? 'final' : 'lap';
   }
   st.lastT = cp;
   st.progress = (st.lap - 1) + cp;
@@ -548,14 +605,14 @@ function updateLapTiming(carEntry, track, hud, state) {
   const event = advanceLap(carEntry, track, state, now);
   if (st.bestMs !== prevBest) hud.setBest(st.bestMs);
   if (event === 'finish') {
-    hud.setLap(TOTAL_LAPS, TOTAL_LAPS);
+    hud.setLap(state.totalLaps, state.totalLaps);
     hud.flashBanner('FINISH');
   } else if (event === 'final') {
-    hud.setLap(st.lap, TOTAL_LAPS);
+    hud.setLap(st.lap, state.totalLaps);
     hud.flashBanner('FINAL LAP');
   } else if (event === 'lap') {
-    hud.setLap(st.lap, TOTAL_LAPS);
-    hud.flashBanner(`LAP ${st.lap} / ${TOTAL_LAPS}`);
+    hud.setLap(st.lap, state.totalLaps);
+    hud.flashBanner(`LAP ${st.lap} / ${state.totalLaps}`);
   }
   if (!st.finished) hud.setLapTime(now - st.lapStart);
 }

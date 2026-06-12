@@ -26,8 +26,25 @@ Then open the URL Vite prints (defaults to <http://localhost:5173>).
 | `A` `D` / `←` `→`       | Steer             |
 | `Space`                 | Handbrake         |
 | `C`                     | Cycle camera      |
+| `L`                     | Racing-line aid   |
 | `R`                     | Reset to start    |
 | `B`                     | Back to track     |
+
+## Modes & driving aids
+
+- **Time trial** — a single flying lap against the clock on an empty track.
+- **Quick race** — you vs. three AI over 3 laps.
+- **Two player** — split-screen, WASD vs. arrows.
+
+Single-screen modes show the **perfect-line aid** (toggle with `L`): a ribbon
+along the ideal racing line, recoloured live against your current speed —
+red where the ideal lap is slower than you're going (brake!), white where
+you're on pace, green where it carries more speed than you have (push on).
+The HUD pill shows the ideal speed for where you are plus a verdict
+(`TOO FAST` / `ON PACE` / `COULD GO FASTER`). The ideal-speed profile uses
+the same physics planning as the AI — corner speeds from line curvature,
+anticipatory braking — plus an acceleration-reachability pass so it never
+demands speed the car can't actually build.
 
 ## Driving model
 
@@ -80,13 +97,14 @@ src/
   car.js        visual + physics car: engine, gearbox, aero, tyres
   ai.js         lap speed profile, pure pursuit, traffic, recovery
   track.js      circuit geometry, groove, kerbs, gravel, scenery
+  racingLine.js perfect-line aid: ideal line, speed profile, live colours
   physics.js    Cannon world & contact materials
   controls.js   keyboard input with smoothing
   camera.js     chase / hood / cinematic cameras
-  hud.js        SVG tachometer + lap UI + minimap
+  hud.js        SVG tachometer + lap UI + pace pill + minimap
   carModels/    procedural car bodies, wheels, materials
 scripts/
-  physics-test.mjs  deterministic driving-model assertions (12 checks)
+  physics-test.mjs  deterministic driving-model assertions (20 checks)
   viewshot.mjs      deterministic drive + multi-angle screenshots
   smoke-car.mjs     car-builder geometry sanity
 ```

@@ -24,7 +24,7 @@
         <div class="mode-list">
           <button class="mode" data-mode="time-trial">
             <div class="mode-name">TIME TRIAL</div>
-            <div class="mode-desc">Empty track. Hot-lap practice.</div>
+            <div class="mode-desc">Empty track. One flying lap against the clock.</div>
           </button>
           <button class="mode" data-mode="quick-race">
             <div class="mode-name">QUICK RACE</div>
@@ -75,6 +75,13 @@
         </div>
       </div>
 
+      <div id="pace-pill" class="hidden">
+        <span class="pace-label">IDEAL</span>
+        <span id="pace-target">0</span>
+        <span class="pace-unit">KM/H</span>
+        <span id="pace-delta" class="pace-on">ON PACE</span>
+      </div>
+
       <div id="hud-bottom">
         <div id="speedo">
           <svg viewBox="0 0 220 220" id="speedo-svg">
@@ -107,6 +114,7 @@
         <div class="hint-line"><kbd>A</kbd><kbd>D</kbd>/<kbd>←</kbd><kbd>→</kbd> Steer</div>
         <div class="hint-line"><kbd>Space</kbd> Handbrake</div>
         <div class="hint-line"><kbd>C</kbd> Camera</div>
+        <div class="hint-line"><kbd>L</kbd> Racing line</div>
         <div class="hint-line"><kbd>R</kbd> Reset all</div>
         <div class="hint-line"><kbd>B</kbd> Back to track</div>
         <div class="hint-line"><kbd>Esc</kbd> Menu</div>
