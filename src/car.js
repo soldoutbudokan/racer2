@@ -32,6 +32,12 @@ const SPEC = {
   drivelineEff: 0.88,
   engineBrakeNm: 36,          // drag torque at redline when off throttle
 
+  // Rotating inertia — gives the engine a real flywheel so RPM is a state, not
+  // a readout of road speed. When the driven tyres can't take all the torque
+  // the surplus spins the engine up: that's wheelspin, shown live on the tach.
+  engineInertia: 0.15,        // kg·m² (crank + flywheel + clutch, crank-referred)
+  wheelInertia: 0.9,          // kg·m² per driven wheel/tyre/brake assembly
+
   // Aerodynamics
   airDensity: 1.225,
   cdA: 0.92,                  // drag area (m²) → ~285 km/h terminal
@@ -46,6 +52,17 @@ const SPEC = {
   // Extra longitudinal drag on soft surfaces, as a fraction of wheel load.
   surfaceDrag: { road: 0, kerb: 0, grass: 0.12, gravel: 0.20 },
   scrubCoef: 0.38,            // tyre scrub when the body runs at a slip angle
+  // Load sensitivity: a tyre carrying more than its share of the load makes
+  // less grip per newton. This is what makes weight transfer matter — diving
+  // onto the fronts under braking, unloading the inside in a corner, squatting
+  // the rears on power — so balance shifts the way a real car's does. It is
+  // measured relative to the average wheel load, so pure downforce (which
+  // loads all four evenly) still adds grip; only *transfer* trades it away.
+  loadSensitivity: 0.14,     // μ change per unit of load above/below the mean
+  loadMuClamp: 0.22,         // cap the swing to ±22%
+  // Once a driven tyre is spinning, grip eases from its static peak toward this
+  // kinetic fraction, so lighting up the rears genuinely costs you drive.
+  slipGripFloor: 0.86,
 
   // Brakes — cannon brake values are impulse clamps (N·s per 1/120 s step).
   brakeFront: 50,
@@ -68,6 +85,17 @@ function torqueAt(rpm) {
     }
   }
   return c[c.length - 1][1];
+}
+
+// Load-sensitive grip: a tyre loaded above the car's average wheel load gives
+// up some μ; a lightly loaded one gains a little. Referenced to the mean so a
+// uniform load change (downforce) doesn't move μ — only redistribution does.
+function loadMu(baseMu, load, avgLoad) {
+  if (avgLoad <= 1) return baseMu;
+  const f = 1 - SPEC.loadSensitivity * (load / avgLoad - 1);
+  const lo = 1 - SPEC.loadMuClamp;
+  const hi = 1 + SPEC.loadMuClamp;
+  return baseMu * Math.min(hi, Math.max(lo, f));
 }
 
 /**
@@ -145,11 +173,14 @@ export function createCar(world, materials, options = {}) {
     mode: 'D',            // 'D' | 'R'
     shiftT: 0,            // >0 while a shift is in progress
     rpm: SPEC.idleRpm,
+    engineRpm: SPEC.idleRpm, // real flywheel speed (state, integrated each frame)
+    wheelOmega: 0,           // driven-wheel angular speed (rad/s) — the spin state
     smoothedRpm: SPEC.idleRpm,
     steer: 0,
     surfaces: ['road', 'road', 'road', 'road'],
     throttle: 0,
     brakeLevel: 0,
+    slip: 0,             // driven-wheel longitudinal slip ratio (>0 = wheelspin)
   };
 
   const telemetry = {
@@ -157,6 +188,7 @@ export function createCar(world, materials, options = {}) {
     rpmFrac: 0,
     gearLabel: 'N',
     speedKmh: 0,
+    slip: 0,             // exposed so the HUD/tests can see wheelspin
   };
 
   // Scratch vectors for the per-substep force pass.
@@ -276,6 +308,19 @@ export function createCar(world, materials, options = {}) {
     const fwdSpd = forwardSpeed();
     const speed = Math.hypot(chassisBody.velocity.x, chassisBody.velocity.z);
 
+    // Instantaneous vertical load on each tyre, from the suspension. Cannon
+    // already transfers weight as the body pitches/rolls, so these capture
+    // dive, squat and lateral load shift — the basis for load-sensitive grip.
+    const loads = [0, 0, 0, 0];
+    let loadSum = 0;
+    let loadN = 0;
+    for (let i = 0; i < 4; i++) {
+      const f = vehicle.wheelInfos[i].suspensionForce || 0;
+      loads[i] = f;
+      if (f > 0) { loadSum += f; loadN += 1; }
+    }
+    const avgLoad = loadN > 0 ? loadSum / loadN : SPEC.massKg * 9.82 / 4;
+
     // --- Direction mode (simple automatic): brake at standstill → reverse;
     //     throttle at standstill while reversing → forward.
     if (drive.mode === 'D' && ctrl.brake > 0.1 && fwdSpd < 0.5 && speed < 1.0) {
@@ -286,68 +331,110 @@ export function createCar(world, materials, options = {}) {
       drive.gear = 1;
     }
 
-    // --- Gearbox (auto) ---
+    // --- Gearbox (auto). Shift on the RPM implied by *road speed*, not the
+    //     flywheel — a wheelspin flare must not trigger a phantom upshift. ---
     const ratioFor = (g) => SPEC.gears[g - 1] * SPEC.finalDrive;
     if (drive.shiftT > 0) drive.shiftT -= dt;
-    if (drive.mode === 'D') {
-      const wheelRpm = Math.max(0, fwdSpd) / (2 * Math.PI * WHEEL_RADIUS) * 60;
-      drive.rpm = Math.max(SPEC.idleRpm, wheelRpm * ratioFor(drive.gear));
-      if (drive.shiftT <= 0) {
-        if (drive.rpm > SPEC.shiftUpRpm && drive.gear < SPEC.gears.length) {
-          drive.gear += 1;
-          drive.shiftT = SPEC.shiftTime;
-        } else if (drive.rpm < SPEC.shiftDownRpm && drive.gear > 1) {
-          drive.gear -= 1;
-          drive.shiftT = SPEC.shiftTime * 0.6;
-        }
+    const driveRatio = drive.mode === 'D'
+      ? ratioFor(drive.gear)
+      : SPEC.reverseRatio * SPEC.finalDrive;
+    const wheelRps = Math.abs(fwdSpd) / (2 * Math.PI * WHEEL_RADIUS); // rev/s
+    const roadRpm = THREE.MathUtils.clamp(
+      wheelRps * 60 * driveRatio, SPEC.idleRpm, SPEC.redlineRpm);
+    if (drive.mode === 'D' && drive.shiftT <= 0) {
+      if (roadRpm > SPEC.shiftUpRpm && drive.gear < SPEC.gears.length) {
+        drive.gear += 1;
+        drive.shiftT = SPEC.shiftTime;
+      } else if (roadRpm < SPEC.shiftDownRpm && drive.gear > 1) {
+        drive.gear -= 1;
+        drive.shiftT = SPEC.shiftTime * 0.6;
       }
-      drive.rpm = Math.min(SPEC.redlineRpm, Math.max(SPEC.idleRpm,
-        wheelRpm * ratioFor(drive.gear)));
-    } else {
-      const wheelRpm = Math.abs(Math.min(0, fwdSpd)) / (2 * Math.PI * WHEEL_RADIUS) * 60;
-      drive.rpm = Math.min(SPEC.redlineRpm, Math.max(SPEC.idleRpm,
-        wheelRpm * SPEC.reverseRatio * SPEC.finalDrive));
     }
-
-    // --- Engine force at the driven (rear) wheels ---
-    let engineForce = 0;
-    let brakeCmd = 0;
+    // Ratio after any shift this frame (the gear may have just changed).
+    const ratio = drive.mode === 'D'
+      ? ratioFor(drive.gear)
+      : SPEC.reverseRatio * SPEC.finalDrive;
 
     const throttle = drive.mode === 'D' ? ctrl.throttle : ctrl.brake;
     const brakeIn = drive.mode === 'D' ? ctrl.brake : ctrl.throttle;
+    const onThrottle = throttle > 0.02 && drive.shiftT <= 0;
 
-    if (throttle > 0.02 && drive.shiftT <= 0) {
-      const ratio = drive.mode === 'D'
-        ? ratioFor(drive.gear)
-        : SPEC.reverseRatio * SPEC.finalDrive;
-      const tq = torqueAt(drive.rpm) * throttle;
-      engineForce = tq * ratio * SPEC.drivelineEff / WHEEL_RADIUS;
-      // Friction circle on the driven axle: cornering load eats into the
-      // traction available for drive. Powering out of a corner is therefore
-      // grip-limited — you cannot gain speed while the rear tyres are
-      // already working sideways.
-      const yawRate = chassisBody.angularVelocity.y;
-      const aLat = Math.abs(speed * yawRate);
-      const nRear = (vehicle.wheelInfos[2].suspensionForce || 0)
-                  + (vehicle.wheelInfos[3].suspensionForce || 0);
-      const muRear = ((SPEC.mu[drive.surfaces[2]] ?? SPEC.mu.road)
-                    + (SPEC.mu[drive.surfaces[3]] ?? SPEC.mu.road)) / 2;
-      // 1.3 margin: v·yawRate understates true tyre demand while the car is
-      // ploughing/sliding, so without it power-on mid-corner is too cheap.
-      const fLatRear = SPEC.massKg * aLat * 0.5 * 1.3;
-      const budget = (muRear * nRear) ** 2 - fLatRear ** 2;
-      const fCap = budget > 0 ? Math.sqrt(budget) : 0;
-      if (nRear > 100) engineForce = Math.min(engineForce, fCap);
-      if (drive.mode === 'R') {
-        engineForce = -engineForce;
-        if (-fwdSpd > SPEC.maxReverseSpeed) engineForce = 0;
-      }
-    } else if (throttle <= 0.02 && drive.mode === 'D' && fwdSpd > 1) {
-      // Engine braking — proportional to revs, through the gearing.
-      const ebTq = SPEC.engineBrakeNm * (drive.rpm / SPEC.redlineRpm);
-      engineForce = -ebTq * ratioFor(drive.gear) * SPEC.drivelineEff / WHEEL_RADIUS;
+    // --- Crank torque the engine is making right now, from its *own* RPM. ---
+    let crankTq;
+    if (onThrottle) {
+      crankTq = torqueAt(drive.engineRpm) * throttle;
+    } else {
+      // Off throttle (or during a shift cut) the engine is a brake.
+      crankTq = -SPEC.engineBrakeNm * (drive.engineRpm / SPEC.redlineRpm)
+              * (fwdSpd > 1 || drive.engineRpm > SPEC.idleRpm + 50 ? 1 : 0);
     }
 
+    // Force the driveline *wants* at the contact patch (+ = forward).
+    const dir = drive.mode === 'R' ? -1 : 1;
+    const Fdesired = crankTq * ratio * SPEC.drivelineEff / WHEEL_RADIUS * dir;
+
+    // --- Rear-axle traction budget: a friction circle on load-sensitive grip,
+    //     eased toward the kinetic floor once the tyres are spinning. Cornering
+    //     load eats into what's left for drive, so you can't both turn and
+    //     power at the limit. ---
+    const yawRate = chassisBody.angularVelocity.y;
+    const aLat = Math.abs(speed * yawRate);
+    const nRL = loads[2];
+    const nRR = loads[3];
+    const gripRear =
+      loadMu(SPEC.mu[drive.surfaces[2]] ?? SPEC.mu.road, nRL, avgLoad) * nRL +
+      loadMu(SPEC.mu[drive.surfaces[3]] ?? SPEC.mu.road, nRR, avgLoad) * nRR;
+    // 1.3 margin: v·yawRate understates true tyre demand while ploughing.
+    const fLatRear = SPEC.massKg * aLat * 0.5 * 1.3;
+    let fCap = (gripRear * gripRear) - (fLatRear * fLatRear);
+    fCap = fCap > 0 ? Math.sqrt(fCap) : 0;
+    // Once the tyres are spinning, grip eases toward its kinetic floor. Uses
+    // last frame's slip (persistent state) — it's recomputed below.
+    if (drive.slip > 0.14) {
+      const t = THREE.MathUtils.clamp((drive.slip - 0.14) / 0.5, 0, 1);
+      fCap *= THREE.MathUtils.lerp(1, SPEC.slipGripFloor, t);
+    }
+
+    // Traction-limit the force the tyres can actually lay down.
+    let engineForce = Fdesired;
+    if (nRL + nRR > 100) {
+      engineForce = Fdesired >= 0
+        ? Math.min(Fdesired, fCap)
+        : Math.max(Fdesired, -fCap);
+    }
+    if (drive.mode === 'R' && -fwdSpd > SPEC.maxReverseSpeed) engineForce = 0;
+
+    // --- Driven-wheel flywheel. The clutch stays locked, so engine RPM follows
+    //     the driven wheels through the gearing. When the tyres take all the
+    //     torque the wheels simply roll (ω = v/r) and the tach reads road speed.
+    //     When demand outruns grip the surplus torque spins the driven wheels —
+    //     and the geared-up engine + flywheel — faster than the road: that's
+    //     wheelspin, shown live on the tach and costing grip via the falloff
+    //     above. Integrated at the wheel hub, with engine inertia referred there
+    //     by ratio². ---
+    const omegaRoad = Math.abs(fwdSpd) / WHEEL_RADIUS;             // rad/s rolling
+    const omegaMax = (SPEC.redlineRpm / 60 * 2 * Math.PI) / ratio;  // rev limiter
+    const spinning = onThrottle && (nRL + nRR > 100)
+                   && Math.abs(Fdesired) > fCap + 1;
+    if (spinning) {
+      const Ihub = SPEC.engineInertia * ratio * ratio + 2 * SPEC.wheelInertia;
+      const driveTq = Math.abs(crankTq) * ratio * SPEC.drivelineEff; // at the hub
+      const tractionTq = Math.abs(engineForce) * WHEEL_RADIUS;       // resisting
+      if (drive.wheelOmega < omegaRoad) drive.wheelOmega = omegaRoad;
+      drive.wheelOmega += (driveTq - tractionTq) / Ihub * dt;
+      drive.wheelOmega = THREE.MathUtils.clamp(drive.wheelOmega, omegaRoad, omegaMax);
+    } else {
+      drive.wheelOmega = omegaRoad;                  // gripping → rolls with road
+    }
+    drive.engineRpm = THREE.MathUtils.clamp(
+      Math.max(drive.wheelOmega * ratio * 60 / (2 * Math.PI), SPEC.idleRpm),
+      SPEC.idleRpm, SPEC.redlineRpm);
+    drive.rpm = drive.engineRpm;
+    // Longitudinal slip ratio (drives the grip falloff next frame + telemetry).
+    const treadSpeed = drive.wheelOmega * WHEEL_RADIUS;
+    drive.slip = (treadSpeed - Math.abs(fwdSpd)) / Math.max(2.5, Math.abs(fwdSpd));
+
+    let brakeCmd = 0;
     if (brakeIn > 0.02) {
       if (drive.mode === 'D' && fwdSpd > 0.5) brakeCmd = brakeIn;
       else if (drive.mode === 'R' && fwdSpd < -0.5) brakeCmd = brakeIn;
@@ -386,9 +473,11 @@ export function createCar(world, materials, options = {}) {
     vehicle.setSteeringValue(drive.steer, 0);
     vehicle.setSteeringValue(drive.steer, 1);
 
-    // --- Per-wheel grip from the surface it is on ---
+    // --- Per-wheel grip: surface μ, scaled by how hard that corner is loaded
+    //     (load sensitivity) so weight transfer redistributes grip the way it
+    //     does on a real car. ---
     for (let i = 0; i < 4; i++) {
-      let mu = SPEC.mu[drive.surfaces[i]] ?? SPEC.mu.road;
+      let mu = loadMu(SPEC.mu[drive.surfaces[i]] ?? SPEC.mu.road, loads[i], avgLoad);
       // Handbrake breaks the rears loose.
       if (ctrl.handbrake && i >= 2) mu *= 0.55;
       vehicle.wheelInfos[i].frictionSlip = mu;
@@ -400,6 +489,7 @@ export function createCar(world, materials, options = {}) {
     telemetry.rpmFrac = THREE.MathUtils.clamp(
       (drive.smoothedRpm - SPEC.idleRpm) / (SPEC.redlineRpm - SPEC.idleRpm), 0, 1);
     telemetry.speedKmh = speed * 3.6;
+    telemetry.slip = drive.slip;
     if (speed < 0.6 && throttle < 0.05) telemetry.gearLabel = 'N';
     else if (drive.mode === 'R') telemetry.gearLabel = 'R';
     else telemetry.gearLabel = String(drive.gear);
@@ -442,6 +532,10 @@ export function createCar(world, materials, options = {}) {
     drive.shiftT = 0;
     drive.steer = 0;
     drive.rpm = SPEC.idleRpm;
+    drive.engineRpm = SPEC.idleRpm;
+    drive.wheelOmega = 0;
+    drive.smoothedRpm = SPEC.idleRpm;
+    drive.slip = 0;
     vehicle.applyEngineForce(0, 2);
     vehicle.applyEngineForce(0, 3);
     vehicle.setSteeringValue(0, 0);

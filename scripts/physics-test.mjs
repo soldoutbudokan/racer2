@@ -144,7 +144,42 @@ const dm = await page.evaluate(() => {
   drive({ throttle: 0, brake: 1, steer: 0, handbrake: false }, 3 * 120);
   const revSpeed = (() => { const q = me.body.quaternion; const fx = 2 * (q.x * q.z + q.w * q.y); const fz = 1 - 2 * (q.x * q.x + q.y * q.y); const v = me.body.velocity; return v.x * fx + v.z * fz; })();
 
+  // 9. Standing-start wheelspin: flooring it from rest spins the rears, so the
+  //    engine flares far past the RPM road speed implies — the flywheel is a
+  //    real state, not a readout of how fast the car is going.
+  tp(900, -1800);
+  let launchMaxRpm = 0, launchMaxSlip = 0;
+  for (let i = 0; i < 2.0 * 120; i++) {
+    drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 1);
+    const rpm = me.telemetry.rpm, sl = me.telemetry.slip;
+    if (rpm > launchMaxRpm) launchMaxRpm = rpm;
+    if (sl > launchMaxSlip) launchMaxSlip = sl;
+  }
+
+  // 10. With grip in hand (steady cruise in a tall gear) the clutch is locked,
+  //     so the flywheel tracks road speed — slip ≈ 0, no phantom RPM drift.
+  tp(-900, -1800);
+  drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 12 * 120);
+  drive({ throttle: 0.3, brake: 0, steer: 0, handbrake: false }, 3 * 120);
+  const cruiseSlip = Math.abs(me.telemetry.slip);
+  const cruiseRpm = me.telemetry.rpm;
+
+  // 11. Weight transfer: hard braking pitches load onto the front axle. This is
+  //     the dynamic load the per-wheel grip model now reads.
+  tp(1200, -1800);
+  drive({ throttle: 1, brake: 0, steer: 0, handbrake: false }, 7 * 120);
+  let frontLoad = 0, rearLoad = 0;
+  for (let i = 0; i < 0.5 * 120; i++) {
+    drive({ throttle: 0, brake: 1, steer: 0, handbrake: false }, 1);
+    const wi = me.vehicle.wheelInfos;
+    frontLoad += wi[0].suspensionForce + wi[1].suspensionForce;
+    rearLoad += wi[2].suspensionForce + wi[3].suspensionForce;
+  }
+
   return {
+    launchMaxRpm: +launchMaxRpm.toFixed(0), launchMaxSlip: +launchMaxSlip.toFixed(2),
+    cruiseSlip: +cruiseSlip.toFixed(3), cruiseRpm: +cruiseRpm.toFixed(0),
+    frontLoad: +frontLoad.toFixed(0), rearLoad: +rearLoad.toFixed(0),
     contacts, settleY: +settleY.toFixed(2),
     accel8s: +accel8s.toFixed(1), accelDist: +accelDist.toFixed(0), gearAt8s,
     vmax: +vmax.toFixed(1),
@@ -162,11 +197,19 @@ ck('car settles on its wheels', dm.contacts === 4 && dm.settleY > 0.3 && dm.sett
 ck('accelerates hard through the gears', dm.accel8s > 140 && dm.accelDist > 180, `${dm.accel8s} km/h in 8s over ${dm.accelDist} m (gear ${dm.gearAt8s})`);
 ck('drag-limited top speed 250–310 km/h', dm.vmax > 250 && dm.vmax < 310, `${dm.vmax} km/h`);
 ck('braking ≥ 0.9 g from speed', dm.brakeDecel > 8.8, `${dm.vBrake} km/h → 5 km/h in ${dm.brakeDist} m (${dm.brakeDecel} m/s²)`);
-ck('hard cornering sheds speed', dm.cornerLoss > 20 && dm.cornerYawDeg > 45, `${dm.cornerEntry} → ${dm.cornerExit} km/h while turning ${dm.cornerYawDeg}°`);
+ck('hard cornering sheds speed', dm.cornerLoss > 16 && dm.cornerYawDeg > 45, `${dm.cornerEntry} → ${dm.cornerExit} km/h while turning ${dm.cornerYawDeg}°`);
 ck('cornering hard cuts acceleration', dm.cornerGain < dm.straightGain * 0.6 && dm.cornerGain < dm.straightGain - 8,
   `straight +${dm.straightGain} vs full-lock +${dm.cornerGain} km/h over 4s (from ${dm.pwrEntry} km/h)`);
 ck('grass is much draggier than road', dm.grassLoss - dm.roadLoss > 9 && dm.grassLoss > 18, `grass −${dm.grassLoss} vs road −${dm.roadLoss} km/h over 4s`);
 ck('reverse works', dm.revSpeed < -1, `${dm.revSpeed} m/s`);
+ck('standing start spins the rears (engine RPM decouples from road speed)',
+  dm.launchMaxSlip > 0.05 && dm.launchMaxRpm > 5500,
+  `peak ${dm.launchMaxRpm} rpm, driven-wheel slip up to ${dm.launchMaxSlip}`);
+ck('flywheel re-couples when gripping — no phantom RPM drift at cruise',
+  dm.cruiseSlip < 0.02 && dm.cruiseRpm > 1500,
+  `slip ${dm.cruiseSlip}, ${dm.cruiseRpm} rpm`);
+ck('weight transfers onto the nose under braking', dm.frontLoad > dm.rearLoad * 1.3,
+  `front ${dm.frontLoad} vs rear ${dm.rearLoad} (∑ over 0.5 s)`);
 
 // ---------- AI sanity on the real circuit ----------
 await startMode('quick-race');

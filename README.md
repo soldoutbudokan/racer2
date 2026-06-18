@@ -50,14 +50,23 @@ demands speed the car can't actually build.
 
 The car is a ~480 hp GT racer simulated on top of a Cannon `RaycastVehicle`:
 
-- **Engine & gearbox** — a real torque curve through a 6-speed automatic with
-  shift cuts, engine braking and reverse. The tachometer shows actual RPM.
+- **Engine & flywheel** — a real torque curve through a 6-speed automatic with
+  shift cuts, engine braking and reverse. The engine has rotating inertia, so
+  RPM is a genuine state, not a readout of road speed: when the driven tyres
+  can't put all the torque down the surplus spins them up and the tach flares —
+  wheelspin — and when grip is in hand the wheels just roll and RPM tracks the
+  road. The tachometer shows that real flywheel speed.
 - **Aerodynamics** — quadratic drag (top speed is drag-limited around
   285 km/h) plus downforce that loads the tyres at speed.
 - **Tyres** — finite grip (μ ≈ 1.45 on the racing surface) with a true
   combined-slip friction circle: cornering at the limit leaves nothing for
   throttle, hard cornering scrubs off speed, and the handbrake breaks the
-  rears loose.
+  rears loose. Grip is **load-sensitive** — a tyre carrying more than its
+  share makes less grip per newton — so weight transfer matters: braking dives
+  onto (and works) the fronts, power squats and hooks up the rears, and an
+  overloaded outside tyre gives up grip mid-corner. Once a driven tyre is
+  spinning, grip eases toward a kinetic floor, so lighting up the rears out of
+  a slow corner actually costs you drive.
 - **Surfaces** — per-wheel detection of road / kerb / grass / gravel. Grass
   is slippery and draggy; the gravel traps at the heavy corners will genuinely
   ruin your lap.
@@ -104,7 +113,7 @@ src/
   hud.js        SVG tachometer + lap UI + pace pill + minimap
   carModels/    procedural car bodies, wheels, materials
 scripts/
-  physics-test.mjs  deterministic driving-model assertions (20 checks)
+  physics-test.mjs  deterministic driving-model assertions (23 checks)
   viewshot.mjs      deterministic drive + multi-angle screenshots
   smoke-car.mjs     car-builder geometry sanity
 ```
