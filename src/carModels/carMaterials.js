@@ -27,22 +27,22 @@ function tunePaint(hex) {
 export function makePaint(colorHex) {
   if (paintCache.has(colorHex)) return paintCache.get(colorHex);
   const flake = flakeNormal();
-  flake.repeat.set(8, 18);
+  flake.repeat.set(10, 22);
   // Automotive paint = a coloured DIELECTRIC base (low metalness) under a
   // strong clear coat. The clearcoat carries the sky reflection and the sun
   // hot-spot; the base stays deep and saturated.
   const m = new THREE.MeshPhysicalMaterial({
     color: tunePaint(colorHex),
-    metalness: 0.1,
-    roughness: 0.52,
+    metalness: 0.08,
+    roughness: 0.48,
     roughnessMap: paintRoughness(),
-    clearcoat: 0.9,
-    clearcoatRoughness: 0.13,
+    clearcoat: 0.95,
+    clearcoatRoughness: 0.09,   // shinier clear coat — closer to polished lacquer
     clearcoatNormalMap: orangePeelNormal(),
-    clearcoatNormalScale: new THREE.Vector2(0.05, 0.05),
+    clearcoatNormalScale: new THREE.Vector2(0.06, 0.06),
     normalMap: flake,
-    normalScale: new THREE.Vector2(0.05, 0.05),
-    envMapIntensity: 0.55,
+    normalScale: new THREE.Vector2(0.08, 0.08),   // more visible metallic sparkle
+    envMapIntensity: 0.65,
   });
   paintCache.set(colorHex, m);
   return m;
@@ -61,12 +61,12 @@ let _carbon = null;
 export function makeCarbon() {
   if (_carbon) return _carbon;
   const n = carbonNormal();
-  n.repeat.set(4, 4);
+  n.repeat.set(5, 5);
   _carbon = new THREE.MeshPhysicalMaterial({
-    color: 0x14171c, metalness: 0.45, roughness: 0.42,
-    clearcoat: 0.7, clearcoatRoughness: 0.18,
-    normalMap: n, normalScale: new THREE.Vector2(0.5, 0.5),
-    envMapIntensity: 1.0,
+    color: 0x11141a, metalness: 0.50, roughness: 0.38,
+    clearcoat: 0.75, clearcoatRoughness: 0.14,
+    normalMap: n, normalScale: new THREE.Vector2(0.70, 0.70),
+    envMapIntensity: 1.1,
   });
   return _carbon;
 }
@@ -75,17 +75,17 @@ let _glass = null;
 export function makeGlass() {
   if (_glass) return _glass;
   _glass = new THREE.MeshPhysicalMaterial({
-    color: 0x05080a,
-    metalness: 0.1,
-    roughness: 0.06,
-    transmission: 0.18,         // mostly dark tint, not see-through to red body
-    thickness: 0.3,
-    ior: 1.5,
-    envMapIntensity: 1.0,
+    color: 0x04080e,            // deep blue-black tint like smoked automotive glass
+    metalness: 0.05,
+    roughness: 0.04,
+    transmission: 0.15,         // mostly opaque dark tint
+    thickness: 0.35,
+    ior: 1.52,
+    envMapIntensity: 1.2,       // strong reflections on the glass surface
     clearcoat: 1.0,
-    clearcoatRoughness: 0.04,
+    clearcoatRoughness: 0.03,
     transparent: true,
-    opacity: 0.88,
+    opacity: 0.92,
     side: THREE.DoubleSide,
     polygonOffset: true,
     polygonOffsetFactor: -2,
@@ -98,7 +98,7 @@ let _chrome = null;
 export function makeChrome() {
   if (_chrome) return _chrome;
   _chrome = new THREE.MeshPhysicalMaterial({
-    color: 0xeef1f5, metalness: 1.0, roughness: 0.08, envMapIntensity: 1.5,
+    color: 0xf2f5f8, metalness: 1.0, roughness: 0.05, envMapIntensity: 1.8,
   });
   return _chrome;
 }
@@ -118,9 +118,9 @@ export function makeTire() {
   const n = treadNormal();
   n.repeat.set(8, 1);
   _tire = new THREE.MeshPhysicalMaterial({
-    color: 0x0a0a0b, roughness: 0.92, metalness: 0.0,
-    sheen: 0.25, sheenRoughness: 0.5,
-    normalMap: n, normalScale: new THREE.Vector2(0.6, 0.6),
+    color: 0x080809, roughness: 0.90, metalness: 0.0,
+    sheen: 0.40, sheenRoughness: 0.45,  // rubber sheen gives the characteristic highlight
+    normalMap: n, normalScale: new THREE.Vector2(0.75, 0.75),
   });
   return _tire;
 }
@@ -138,8 +138,9 @@ let _rim = null;
 export function makeRim() {
   if (_rim) return _rim;
   _rim = new THREE.MeshPhysicalMaterial({
-    color: 0xc7ccd3, metalness: 1.0, roughness: 0.22, clearcoat: 0.5,
-    envMapIntensity: 1.3,
+    color: 0xcdd2da, metalness: 1.0, roughness: 0.18, clearcoat: 0.65,
+    clearcoatRoughness: 0.08,
+    envMapIntensity: 1.5,
   });
   return _rim;
 }
@@ -176,8 +177,8 @@ let _head = null;
 export function makeHeadlight() {
   if (_head) return _head;
   _head = new THREE.MeshStandardMaterial({
-    color: 0xe9e6dd, emissive: 0xfff2d4, emissiveIntensity: 0.85,
-    roughness: 0.25, metalness: 0.0,
+    color: 0xeeeae0, emissive: 0xfff8e8, emissiveIntensity: 1.1,
+    roughness: 0.18, metalness: 0.0,
   });
   return _head;
 }

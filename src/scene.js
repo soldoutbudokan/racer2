@@ -22,7 +22,7 @@ export function createScene(canvas) {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.05;
+  renderer.toneMappingExposure = 1.08;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -44,18 +44,18 @@ export function createScene(canvas) {
   scene.add(sky);
   const sunPos = new THREE.Vector3();
   const skyU = sky.material.uniforms;
-  skyU.turbidity.value = 6.5;
-  skyU.rayleigh.value = 2.6;
-  skyU.mieCoefficient.value = 0.0045;
-  skyU.mieDirectionalG.value = 0.85;
-  // Golden-hour sun: low and warm.
-  const sunElev = THREE.MathUtils.degToRad(17);
-  const sunAzim = THREE.MathUtils.degToRad(125);
+  skyU.turbidity.value = 4.5;       // cleaner, more vivid sky
+  skyU.rayleigh.value = 2.2;        // rich blue away from the sun
+  skyU.mieCoefficient.value = 0.006; // slightly more haze near the horizon
+  skyU.mieDirectionalG.value = 0.80; // broader sun glow
+  // Low golden-hour sun — long dramatic shadows and warm light.
+  const sunElev = THREE.MathUtils.degToRad(11);
+  const sunAzim = THREE.MathUtils.degToRad(128);
   sunPos.setFromSphericalCoords(1, Math.PI / 2 - sunElev, sunAzim);
   skyU.sunPosition.value.copy(sunPos);
 
-  // Sun
-  const sun = new THREE.DirectionalLight(0xffdcae, 3.2);
+  // Sun — warm peach-orange at very low elevation
+  const sun = new THREE.DirectionalLight(0xffd5a0, 3.4);
   sun.position.copy(sunPos).multiplyScalar(800);
   sun.castShadow = true;
   sun.shadow.mapSize.set(4096, 4096);
@@ -91,8 +91,14 @@ export function createScene(canvas) {
   }
 
   // Sky-tinted hemisphere fill — keeps shadows from being pure black
-  const hemi = new THREE.HemisphereLight(0xa8c4e8, 0x4a3d2a, 0.5);
+  const hemi = new THREE.HemisphereLight(0x92b8e0, 0x3e3520, 0.6);
   scene.add(hemi);
+
+  // Subtle cool fill from the opposite azimuth — gives shaded car panels
+  // a blue-gray kick that reads as sky bounce rather than pure black.
+  const fill = new THREE.DirectionalLight(0x8cb4d4, 0.28);
+  fill.position.set(-sunPos.x * 300, 200, -sunPos.z * 300);
+  scene.add(fill);
 
   // IBL: render the (sky-only) scene through PMREM for crisp reflections.
   // We do this before adding any other geometry so the env captures the sky/sun.
@@ -105,7 +111,8 @@ export function createScene(canvas) {
   // Now that the env map is captured, add atmospheric fog for depth. Warm
   // golden haze, pushed far back so the circuit itself stays crisp and only
   // the distant scenery melts into the light.
-  scene.fog = new THREE.Fog(0xd9cdb4, 750, 3600);
+  // Warm atmospheric haze — pushed back so the circuit stays crisp.
+  scene.fog = new THREE.Fog(0xc8bba6, 900, 4200);
 
   // ---- Post-processing ----
   const composer = new EffectComposer(renderer);
@@ -117,9 +124,9 @@ export function createScene(canvas) {
 
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.18,  // strength — restrained so the scene doesn't go milky
-    0.7,   // radius
-    0.93   // threshold (only true highlights bloom)
+    0.22,  // strength — just enough for headlights/sun to pop
+    0.65,  // radius
+    0.91   // threshold (only bright highlights bloom)
   );
   composer.addPass(bloom);
 
@@ -155,8 +162,8 @@ const CinematicShader = {
     tDiffuse: { value: null },
     uTime: { value: 0 },
     uVignette: { value: 1.0 },
-    uCA: { value: 0.0011 },
-    uGrain: { value: 0.014 },
+    uCA: { value: 0.0009 },
+    uGrain: { value: 0.018 },
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;

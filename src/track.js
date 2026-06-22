@@ -545,26 +545,33 @@ function addGravelTraps(scene, frames, curvature, gravelFrames) {
 
 function makeAsphaltMaterial() {
   // Fine aggregate grain; the groove/patches/dust live in vertex colours.
+  // Real asphalt is a blue-gray slate tone with scattered bright/dark chips.
   const colorTex = makeNoiseTexture(1024, (x, y) => {
-    const grain = fractalNoise(x * 26, y * 26, 5);
-    const speck = fractalNoise(x * 90 + 11, y * 90 + 5, 2);
-    let v = 0.135 + grain * 0.075;
-    if (speck > 0.72) v += 0.05;              // bright aggregate chips
-    if (speck < 0.18) v -= 0.03;
-    return [v, v, v + 0.006];
+    const grain = fractalNoise(x * 28, y * 28, 5);
+    const speck = fractalNoise(x * 95 + 11, y * 95 + 5, 2);
+    const patch = fractalNoise(x * 7 + 4, y * 7 + 9, 3);
+    let v = 0.118 + grain * 0.068 + patch * 0.022;
+    if (speck > 0.74) v += 0.06;    // bright limestone chips
+    if (speck < 0.16) v -= 0.03;    // dark bitumen voids
+    // slight blue-gray tint — asphalt stone aggregate is slate
+    const r = v * 0.96;
+    const g = v * 0.98;
+    const b = v * 1.04;
+    return [r, g, b];
   });
   colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping;
   colorTex.repeat.set(3, 1);
   colorTex.anisotropy = 16;
   colorTex.colorSpace = THREE.SRGBColorSpace;
 
-  const normalTex = makeNormalTexture(512, 1.8);
+  const normalTex = makeNormalTexture(512, 2.4);
   normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
   normalTex.repeat.set(3, 1);
 
   const roughTex = makeNoiseTexture(512, (x, y) => {
-    const n = fractalNoise(x * 6 + 3, y * 6 + 7, 4) * 0.30 + 0.68;
-    return [n, n, n];
+    const n = fractalNoise(x * 6 + 3, y * 6 + 7, 4) * 0.26 + 0.70;
+    const worn = fractalNoise(x * 2 + 8, y * 2 + 2, 3) * 0.08;
+    return [n - worn, n - worn, n - worn];
   });
   roughTex.wrapS = roughTex.wrapT = THREE.RepeatWrapping;
   roughTex.repeat.set(3, 1);
@@ -573,12 +580,11 @@ function makeAsphaltMaterial() {
     map: colorTex,
     vertexColors: true,
     normalMap: normalTex,
-    normalScale: new THREE.Vector2(0.5, 0.5),
+    normalScale: new THREE.Vector2(0.65, 0.65),
     roughnessMap: roughTex,
-    roughness: 0.88,
+    roughness: 0.86,
     metalness: 0.0,
-    envMapIntensity: 0.5,
-    // pulled toward the camera so the asphalt always beats the ground plane
+    envMapIntensity: 0.55,
     polygonOffset: true,
     polygonOffsetFactor: -1,
     polygonOffsetUnits: -1,
@@ -586,31 +592,36 @@ function makeAsphaltMaterial() {
 }
 
 function makeGrassMaterial() {
-  // Two scales baked into one tile: micro blade noise + macro patchiness,
-  // with faint mowing bands.
+  // Multi-scale grass: micro blade noise, macro patchiness, dry/wet variation,
+  // subtle mowing bands. Richer saturation for a well-maintained circuit.
   const tex = makeNoiseTexture(1024, (x, y) => {
-    const blades = fractalNoise(x * 60, y * 60, 4);
+    const blades = fractalNoise(x * 65, y * 65, 5);
     const patch = fractalNoise(x * 5 + 9, y * 5 + 3, 4);
     const dry = fractalNoise(x * 11 + 31, y * 11 + 17, 3);
-    const mow = 1 + 0.05 * Math.sign(Math.sin(x * Math.PI * 8));
-    let g = (0.23 + blades * 0.16 + patch * 0.10) * mow;
-    let r = g * (0.52 + dry * 0.33);
-    let b = g * 0.42;
+    const lush = fractalNoise(x * 3 + 2, y * 3 + 7, 3);   // large wet/dry patches
+    const mow = 1 + 0.07 * Math.sign(Math.sin(x * Math.PI * 10));
+    let g = (0.26 + blades * 0.18 + patch * 0.10 + lush * 0.06) * mow;
+    let r = g * (0.44 + dry * 0.28);
+    let b = g * (0.36 + lush * 0.08);
     return [r, g, b];
   });
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(46, 46);
   tex.anisotropy = 16;
   tex.colorSpace = THREE.SRGBColorSpace;
+
+  // Normal map adds micro-terrain detail — blades catching light at grazing angles.
+  const grassNormal = makeNormalTexture(256, 0.9);
+  grassNormal.wrapS = grassNormal.wrapT = THREE.RepeatWrapping;
+  grassNormal.repeat.set(80, 80);
+
   return new THREE.MeshStandardMaterial({
     map: tex,
-    roughness: 0.96,
+    normalMap: grassNormal,
+    normalScale: new THREE.Vector2(0.35, 0.35),
+    roughness: 0.95,
     metalness: 0.0,
-    envMapIntensity: 0.35,
-    // Push the huge ground plane back in depth: at grazing chase-camera
-    // angles the 3 cm height difference to the road is below the depth
-    // buffer's precision a few hundred metres out, and the grass wins
-    // pixels on the road.
+    envMapIntensity: 0.3,
     polygonOffset: true,
     polygonOffsetFactor: 2,
     polygonOffsetUnits: 2,
@@ -674,22 +685,33 @@ function makeGravelMaterial() {
 }
 
 function makeKerbMaterial() {
+  // Higher-res canvas for sharper stripe edges; LinearMipmapLinear avoids
+  // the blocky NearestFilter look at distance.
   const c = document.createElement('canvas');
-  c.width = 32; c.height = 32;
+  c.width = 64; c.height = 64;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#cf2222'; ctx.fillRect(0, 0, 32, 32);
-  ctx.fillStyle = '#f4f4f4'; ctx.fillRect(0, 16, 32, 16);
+  ctx.fillStyle = '#e02020'; ctx.fillRect(0, 0, 64, 64);   // vivid racing red
+  ctx.fillStyle = '#f9f9f9'; ctx.fillRect(0, 32, 64, 32);  // clean white
+  // Subtle texture noise to look like painted concrete
+  for (let i = 0; i < 180; i++) {
+    const kx = Math.random() * 64, ky = Math.random() * 64;
+    const alpha = Math.random() * 0.06;
+    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+    ctx.fillRect(kx, ky, 1 + Math.random() * 2, 1 + Math.random() * 2);
+  }
   const tex = new THREE.CanvasTexture(c);
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  // Kerb UVs are in metres → repeat = 1 gives 1 m red + 1 m white stripes,
-  // which stays legible from the chase camera and TV-style shots.
   tex.repeat.set(1, 1);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.magFilter = THREE.NearestFilter;
+  tex.generateMipmaps = true;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.magFilter = THREE.LinearFilter;
+  tex.anisotropy = 8;
   return new THREE.MeshStandardMaterial({
     map: tex,
-    roughness: 0.55,
+    roughness: 0.48,  // painted concrete — a bit glossy
     metalness: 0.0,
+    envMapIntensity: 0.4,
     polygonOffset: true,
     polygonOffsetFactor: -2,
     polygonOffsetUnits: -2,
@@ -713,40 +735,49 @@ function makeStartFinishTexture() {
 
 // ---------- Scenery textures ----------
 
-// Leaf-cluster billboard with a transparent surround (alpha-tested).
-// Clusters are shaded sun-from-above: bright tops, deep shadowed undersides.
+// Leaf-cluster billboard — multi-layer for more depth: dark interior shadow,
+// mid-tone foliage body, bright sun-catch on the upper face.
 function makeFoliageTexture() {
-  const size = 256;
+  const size = 512;
   const c = document.createElement('canvas');
   c.width = c.height = size;
   const ctx = c.getContext('2d');
   ctx.clearRect(0, 0, size, size);
+
   const blobs = [];
-  for (let i = 0; i < 160; i++) {
+  for (let i = 0; i < 220; i++) {
     const a = Math.random() * Math.PI * 2;
-    const rad = Math.pow(Math.random(), 0.65) * size * 0.42;
+    const rad = Math.pow(Math.random(), 0.60) * size * 0.44;
     blobs.push({
-      x: size / 2 + Math.cos(a) * rad,
-      y: size / 2 + Math.sin(a) * rad * 0.92,
-      r: 8 + Math.random() * 22,
+      x: size / 2 + Math.cos(a) * rad * 1.05,
+      y: size / 2 + Math.sin(a) * rad * 0.88,
+      r: 9 + Math.random() * 28,
+      hue: 0.29 + (Math.random() - 0.5) * 0.08,   // green hue range
     });
   }
-  // paint deepest (lowest) blobs first so lit tops layer over shadow
+  // bottom-up: dark undersides first, bright tops last
   blobs.sort((a, b) => b.y - a.y);
+
   for (const bl of blobs) {
-    // vertical shading: top of canopy catches the light
-    const lit = 1 - (bl.y / size) * 0.85;
-    const g = (70 + lit * 105) | 0;
-    const r = (26 + lit * 52) | 0;
-    const b = (24 + lit * 30) | 0;
+    const yFrac = bl.y / size;
+    // 0=top (lit), 1=bottom (shadow)
+    const lit = Math.pow(1 - yFrac * 0.9, 1.4);
+    // warm golden-hour tint on the tops
+    const gBase = 60 + lit * 115;
+    const rBase = 18 + lit * 68 + lit * 20;   // warm bronze on the tips
+    const bBase = 16 + lit * 22;
+    const alpha = 0.88 + Math.random() * 0.10;
+
     const grad = ctx.createRadialGradient(
-      bl.x, bl.y - bl.r * 0.35, bl.r * 0.1, bl.x, bl.y, bl.r);
-    grad.addColorStop(0, `rgba(${r + 20},${Math.min(255, g + 26)},${b + 8},0.95)`);
-    grad.addColorStop(0.75, `rgba(${r},${g},${b},0.9)`);
-    grad.addColorStop(1, `rgba(${(r * 0.6) | 0},${(g * 0.6) | 0},${(b * 0.6) | 0},0)`);
+      bl.x, bl.y - bl.r * 0.40, bl.r * 0.06, bl.x, bl.y, bl.r * 1.05);
+    grad.addColorStop(0, `rgba(${(rBase + 28)|0},${Math.min(255,(gBase + 32)|0)},${(bBase + 10)|0},${alpha})`);
+    grad.addColorStop(0.55, `rgba(${rBase|0},${gBase|0},${bBase|0},${alpha * 0.9})`);
+    grad.addColorStop(0.85, `rgba(${(rBase * 0.55)|0},${(gBase * 0.52)|0},${(bBase * 0.45)|0},${alpha * 0.5})`);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(bl.x, bl.y, bl.r, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(bl.x, bl.y, bl.r * 1.05, 0, Math.PI * 2); ctx.fill();
   }
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -846,24 +877,46 @@ function makeMarkerTexture(label) {
   return tex;
 }
 
-// Puffy cumulus billboard.
+// Puffy cumulus billboard — warm-lit tops, blue-gray shadowed underbellies.
 function makeCloudTexture() {
-  const w = 256, h = 128;
+  const w = 512, h = 256;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
   const ctx = c.getContext('2d');
   ctx.clearRect(0, 0, w, h);
-  for (let i = 0; i < 46; i++) {
-    const x = w * 0.5 + (Math.random() - 0.5) * w * 0.72;
-    const y = h * 0.62 + (Math.random() - 0.5) * h * 0.4;
-    const r = 12 + Math.random() * 26;
-    const grad = ctx.createRadialGradient(x, y - r * 0.3, 2, x, y, r);
-    const lum = 235 + Math.random() * 20;
-    grad.addColorStop(0, `rgba(${lum},${lum},${lum + 4},0.55)`);
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
+
+  // Layered approach: dark shadow base, bright puffs on top
+  // Draw shadow core first
+  for (let i = 0; i < 18; i++) {
+    const x = w * 0.5 + (Math.random() - 0.5) * w * 0.65;
+    const y = h * 0.72 + (Math.random() - 0.5) * h * 0.28;
+    const r = 30 + Math.random() * 55;
+    const grad = ctx.createRadialGradient(x, y, 2, x, y, r);
+    const v = 165 + Math.random() * 20;
+    grad.addColorStop(0, `rgba(${v - 15},${v - 10},${v + 12},0.38)`);
+    grad.addColorStop(0.6, `rgba(${v - 20},${v - 15},${v + 8},0.18)`);
+    grad.addColorStop(1, 'rgba(200,210,230,0)');
     ctx.fillStyle = grad;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
   }
+
+  // Bright upper puffs
+  for (let i = 0; i < 60; i++) {
+    const x = w * 0.5 + (Math.random() - 0.5) * w * 0.78;
+    const y = h * 0.50 + (Math.random() - 0.5) * h * 0.46;
+    const r = 14 + Math.random() * 38;
+    const grad = ctx.createRadialGradient(x, y - r * 0.25, r * 0.05, x, y, r);
+    // warm sunlit tops (slight warm tint from golden hour)
+    const lum = 240 + Math.random() * 15;
+    const warmR = Math.min(255, lum + 8);
+    const warmG = Math.min(255, lum + 2);
+    grad.addColorStop(0,   `rgba(${warmR},${warmG},${lum - 5},0.68)`);
+    grad.addColorStop(0.55, `rgba(${lum},${lum},${lum + 3},0.42)`);
+    grad.addColorStop(1,   'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
+
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
@@ -959,19 +1012,20 @@ function makeNormalTexture(size, strength) {
 
 function scatterTrees(scene, frames) {
   const trunkMat = new THREE.MeshStandardMaterial({
-    color: 0x4a3520, roughness: 0.95, metalness: 0,
+    color: 0x3d2c18, roughness: 0.96, metalness: 0, envMapIntensity: 0.1,
   });
   // Crossed alpha-cutout foliage billboards read as full leafy canopies from
   // every angle yet stay cheap (instanced, alpha-tested → no sorting).
   const leavesMat = new THREE.MeshStandardMaterial({
     map: makeFoliageTexture(),
-    alphaTest: 0.45,
-    roughness: 0.9, metalness: 0,
+    alphaTest: 0.38,        // lower threshold to show more of the leaf blobs
+    roughness: 0.88, metalness: 0,
     side: THREE.DoubleSide,
+    envMapIntensity: 0.2,
   });
 
-  const trunkGeo = new THREE.CylinderGeometry(0.22, 0.42, 2.6, 7);
-  trunkGeo.translate(0, 1.3, 0);
+  const trunkGeo = new THREE.CylinderGeometry(0.20, 0.40, 3.2, 8);
+  trunkGeo.translate(0, 1.6, 0);
 
   // three quads crossing through a common vertical axis
   const quad = new THREE.PlaneGeometry(7.2, 7.4);
@@ -1007,8 +1061,8 @@ function scatterTrees(scene, frames) {
     m.compose(p, q, s);
     trunkInst.setMatrixAt(placed, m);
     leavesInst.setMatrixAt(placed, m);
-    // per-tree hue variation so the canopy isn't a flat green wall
-    col.setHSL(0.26 + (Math.random() - 0.5) * 0.06, 0.5, 0.32 + Math.random() * 0.12);
+    // per-tree hue variation: yellows, dark greens, olive tones for variety
+    col.setHSL(0.25 + (Math.random() - 0.5) * 0.10, 0.42 + Math.random() * 0.22, 0.28 + Math.random() * 0.16);
     leavesInst.setColorAt(placed, col);
     placed++;
   }
@@ -1026,10 +1080,11 @@ function addDistantMountains(scene) {
     vertexColors: true,
     roughness: 1.0,
     metalness: 0,
+    envMapIntensity: 0.3,
   });
-  const rock = new THREE.Color(0x6b7585);
-  const grass = new THREE.Color(0x4d5848);
-  const snow = new THREE.Color(0xdfe6ee);
+  const rock = new THREE.Color(0x7a8394);   // cooler slate-purple rock
+  const grass = new THREE.Color(0x4a5c40);  // darker, richer tree-line green
+  const snow = new THREE.Color(0xe8eff8);   // slightly blue-tinted snow
   const tmp = new THREE.Color();
   // Sparse, varied ridge — a solid ring of identical cones reads as a wall.
   const N = 13;
@@ -1393,20 +1448,27 @@ function addBrakeMarkers(scene, frames, curvature) {
 // Soft billboard clouds drifting above the haze.
 function addClouds(scene) {
   const tex = makeCloudTexture();
-  for (let i = 0; i < 11; i++) {
+  // More clouds, higher altitude, varied aspect ratios for a richer sky.
+  for (let i = 0; i < 16; i++) {
     const mat = new THREE.SpriteMaterial({
       map: tex,
       transparent: true,
-      opacity: 0.45 + Math.random() * 0.3,
+      opacity: 0.38 + Math.random() * 0.35,
       fog: false,
       depthWrite: false,
     });
     const sp = new THREE.Sprite(mat);
     const a = Math.random() * Math.PI * 2;
-    const r = 1100 + Math.random() * 1500;
-    sp.position.set(Math.cos(a) * r, 260 + Math.random() * 220, Math.sin(a) * r);
-    const s = 380 + Math.random() * 420;
-    sp.scale.set(s, s * (0.32 + Math.random() * 0.12), 1);
+    const r = 900 + Math.random() * 1800;
+    sp.position.set(
+      Math.cos(a) * r,
+      280 + Math.random() * 280,
+      Math.sin(a) * r
+    );
+    // Wide, flat cumulus aspect ratio
+    const sw = 450 + Math.random() * 550;
+    const sh = sw * (0.28 + Math.random() * 0.14);
+    sp.scale.set(sw, sh, 1);
     scene.add(sp);
   }
 }
