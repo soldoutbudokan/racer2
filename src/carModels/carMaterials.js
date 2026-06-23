@@ -19,7 +19,9 @@ function tunePaint(hex) {
   const hsl = {};
   c.getHSL(hsl);
   hsl.s = Math.min(1, hsl.s * 1.0);
-  hsl.l = hsl.l * 0.5;           // deep base so bright sun + ACES keeps it coloured
+  // Deep base so bright sun + ACES keeps it coloured, but not so dark the car
+  // reads as a black blob in the shadowed three-quarter views.
+  hsl.l = hsl.l * 0.56;
   c.setHSL(hsl.h, hsl.s, hsl.l);
   return c;
 }
@@ -42,7 +44,7 @@ export function makePaint(colorHex) {
     clearcoatNormalScale: new THREE.Vector2(0.06, 0.06),
     normalMap: flake,
     normalScale: new THREE.Vector2(0.08, 0.08),   // more visible metallic sparkle
-    envMapIntensity: 0.65,
+    envMapIntensity: 0.85,   // stronger sky reflection in the clear coat
   });
   paintCache.set(colorHex, m);
   return m;

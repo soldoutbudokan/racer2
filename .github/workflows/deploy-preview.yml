@@ -3,7 +3,7 @@ name: Deploy Preview
 on:
   push:
     branches:
-      - 'claude/compassionate-mccarthy-4zb3es'
+      - 'claude/upbeat-heisenberg-cvk0zm'
 
 permissions:
   contents: write

@@ -599,14 +599,18 @@ function makeGrassMaterial() {
     const patch = fractalNoise(x * 5 + 9, y * 5 + 3, 4);
     const dry = fractalNoise(x * 11 + 31, y * 11 + 17, 3);
     const lush = fractalNoise(x * 3 + 2, y * 3 + 7, 3);   // large wet/dry patches
-    const mow = 1 + 0.07 * Math.sign(Math.sin(x * Math.PI * 10));
-    let g = (0.26 + blades * 0.18 + patch * 0.10 + lush * 0.06) * mow;
-    let r = g * (0.44 + dry * 0.28);
-    let b = g * (0.36 + lush * 0.08);
+    // Soft mowing stripes (smooth, not hard-edged) — a groundskept circuit
+    // infield reads as alternating light/dark bands of cut grass.
+    const mow = 1 + 0.10 * Math.sin(x * Math.PI * 8);
+    // Richer, slightly darker base with bigger wet/dry swings so the field
+    // isn't a single flat green from the cockpit.
+    let g = (0.215 + blades * 0.16 + patch * 0.13 + lush * 0.10 + dry * 0.04) * mow;
+    let r = g * (0.46 + dry * 0.34);
+    let b = g * (0.34 + lush * 0.10);
     return [r, g, b];
   });
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(46, 46);
+  tex.repeat.set(38, 38);
   tex.anisotropy = 16;
   tex.colorSpace = THREE.SRGBColorSpace;
 
@@ -1076,52 +1080,79 @@ function scatterTrees(scene, frames) {
 }
 
 function addDistantMountains(scene) {
+  // Mountains read fake when they're crisp, evenly-spaced, saturated cones.
+  // Real distant ranges obey atmospheric perspective: the further the rock,
+  // the more it desaturates and washes toward the haze colour, and overlapping
+  // ridgelines stack into a soft silhouette rather than discrete teeth. We
+  // build THREE concentric bands at increasing distance; each band is denser,
+  // lower, hazier and lower-contrast than the one in front, and every vertex
+  // is lerped toward the haze colour by its distance so the back range melts
+  // into the sky exactly like the fog wants it to.
   const mat = new THREE.MeshStandardMaterial({
     vertexColors: true,
     roughness: 1.0,
     metalness: 0,
-    envMapIntensity: 0.3,
+    envMapIntensity: 0.25,
+    fog: true,
   });
-  const rock = new THREE.Color(0x7a8394);   // cooler slate-purple rock
-  const grass = new THREE.Color(0x4a5c40);  // darker, richer tree-line green
-  const snow = new THREE.Color(0xe8eff8);   // slightly blue-tinted snow
+  // Haze target — the warm sky/fog tone the ranges dissolve into.
+  const haze = new THREE.Color(0xb9c2c6);
+  const rock = new THREE.Color(0x6f7884);   // cool desaturated slate rock
+  const forest = new THREE.Color(0x53604c); // muted tree-line green
+  const snow = new THREE.Color(0xdfe6ee);   // soft blue-white snow
   const tmp = new THREE.Color();
-  // Sparse, varied ridge — a solid ring of identical cones reads as a wall.
-  const N = 13;
-  for (let i = 0; i < N; i++) {
-    const r = 1500 + Math.random() * 800;
-    const a = (i / N) * Math.PI * 2 + Math.random() * 0.35;
-    const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r;
-    const h = 130 + Math.random() * 240;
-    const w = 320 + Math.random() * 380;
-    const geo = new THREE.ConeGeometry(w, h, 14, 7);
-    // Displace radially with noise → ridged, eroded silhouette (no flatShading).
-    const pos = geo.getAttribute('position');
-    const colors = [];
-    const seed = i * 7.13;
-    for (let v = 0; v < pos.count; v++) {
-      const px = pos.getX(v), py = pos.getY(v), pz = pos.getZ(v);
-      const ang = Math.atan2(pz, px);
-      const yFrac = (py + h / 2) / h;             // 0 base .. 1 tip
-      const n = fractalNoise(ang * 2.2 + seed, yFrac * 3 + seed, 4);
-      const push = (0.6 + n * 0.8) * (1 - yFrac * 0.5);
-      pos.setX(v, px * (0.7 + push * 0.5));
-      pos.setZ(v, pz * (0.7 + push * 0.5));
-      pos.setY(v, py + (n - 0.5) * h * 0.12);
-      // colour by altitude with a noisy snow line
-      const snowLine = 0.74 + (n - 0.5) * 0.14;
-      if (yFrac > snowLine) tmp.copy(snow);
-      else if (yFrac < 0.18) tmp.copy(grass);
-      else tmp.copy(rock).lerp(snow, (yFrac - 0.18) / (snowLine - 0.18) * 0.4);
-      colors.push(tmp.r, tmp.g, tmp.b);
+
+  // [innerR, spanR, count, baseH, varH, baseHaze, hazePerFrac, snowy]
+  const bands = [
+    [1450,  650, 14, 150, 230, 0.18, 0.30, true],   // front range — most detail
+    [2350,  750, 20, 120, 180, 0.42, 0.34, true],   // mid range — hazier
+    [3300,  900, 26,  95, 140, 0.66, 0.28, false],  // far range — nearly sky
+  ];
+
+  for (let b = 0; b < bands.length; b++) {
+    const [innerR, spanR, N, baseH, varH, baseHaze, hazePerFrac, snowy] = bands[b];
+    for (let i = 0; i < N; i++) {
+      const r = innerR + Math.random() * spanR;
+      // jitter the angular position so peaks overlap into ridgelines
+      const a = (i / N) * Math.PI * 2 + (Math.random() - 0.5) * (Math.PI / N) * 1.6;
+      const x = Math.cos(a) * r;
+      const z = Math.sin(a) * r;
+      const h = baseH + Math.random() * varH;
+      const w = (320 + Math.random() * 360) * (1 + b * 0.25);
+      const geo = new THREE.ConeGeometry(w, h, 16, 8);
+      const pos = geo.getAttribute('position');
+      const colors = [];
+      const seed = (b * 31.7) + i * 7.13;
+      // Distance haze: front of band → its baseHaze, back → more. Clamp <1.
+      const distFrac = Math.min(1, (r - 1200) / 2600);
+      for (let v = 0; v < pos.count; v++) {
+        const px = pos.getX(v), py = pos.getY(v), pz = pos.getZ(v);
+        const ang = Math.atan2(pz, px);
+        const yFrac = (py + h / 2) / h;             // 0 base .. 1 tip
+        const n = fractalNoise(ang * 2.4 + seed, yFrac * 3 + seed, 4);
+        // Erode the silhouette: ridges and gullies around the cone, flattening
+        // toward the tip so peaks look weathered rather than perfectly conical.
+        const push = (0.55 + n * 0.85) * (1 - yFrac * 0.45);
+        pos.setX(v, px * (0.68 + push * 0.52));
+        pos.setZ(v, pz * (0.68 + push * 0.52));
+        pos.setY(v, py + (n - 0.5) * h * 0.16);
+        // base rock/forest/snow by altitude
+        const snowLine = 0.78 + (n - 0.5) * 0.12;
+        if (snowy && yFrac > snowLine) tmp.copy(snow);
+        else if (yFrac < 0.22) tmp.copy(forest).lerp(rock, n * 0.4);
+        else tmp.copy(rock).lerp(snow, snowy ? (yFrac - 0.22) / (snowLine - 0.22) * 0.35 : 0);
+        // Atmospheric perspective: wash toward haze by band + per-vertex dist.
+        const hazeAmt = Math.min(0.92, baseHaze + distFrac * hazePerFrac);
+        tmp.lerp(haze, hazeAmt);
+        colors.push(tmp.r, tmp.g, tmp.b);
+      }
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      geo.computeVertexNormals();
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, h / 2 - 12, z);
+      m.rotation.y = Math.random() * Math.PI;
+      scene.add(m);
     }
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geo.computeVertexNormals();
-    const m = new THREE.Mesh(geo, mat);
-    m.position.set(x, h / 2 - 8, z);
-    m.rotation.y = Math.random() * Math.PI;
-    scene.add(m);
   }
 }
 
