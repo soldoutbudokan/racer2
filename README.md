@@ -6,6 +6,11 @@ Inspired by the look of GT Racing 2: golden-hour light, rubbered-in racing
 groove, kerbs and gravel traps, a pit complex and grandstands, glossy
 clear-coated bodywork.
 
+Pick from **five themed circuits** — a fast GT autodromo, a wide easy oval, a
+walled-in city street circuit, an alpine mountain pass, and a desert canyon
+speedway — then choose a mode. Each circuit has its own layout, surfaces and
+scenery.
+
 **Play it:** <https://soldoutbudokan.github.io/racer2/>
 
 ## Run it
@@ -45,6 +50,22 @@ The HUD pill shows the ideal speed for where you are plus a verdict
 the same physics planning as the AI — corner speeds from line curvature,
 anticipatory braking — plus an acceleration-reachability pass so it never
 demands speed the car can't actually build.
+
+## Circuits
+
+Choose a circuit from the menu before picking a mode. Switching circuits rebuilds
+the track, scenery and minimap on the fly.
+
+| Circuit | Style | Difficulty | Notes |
+| ------- | ----- | ---------- | ----- |
+| **Autodromo** | Grand prix circuit | Medium | The full GT circuit: fast sweeps, heavy braking, gravel traps, grandstands. |
+| **Sunset Speedway** | Club oval | Easy | Wide, fast and forgiving D-oval with acres of run-off — a great first track. |
+| **Marina Street** | City grand prix | Hard | Tight street fight: 90° corners, a snap chicane, concrete walls at the kerb, skyscrapers all around. |
+| **Col du Pin** | Mountain pass | Medium-Hard | Flowing linked esses through dense pine forest, ringed by towering peaks, guardrail close. |
+| **Red Mesa** | Canyon speedway | Medium | Wide desert speedway: long flat-out straights, a sandy ess, red-rock mesas on the horizon. |
+
+Each circuit is pure data in `src/tracks.js` — a centreline plus a `theme` that
+selects the surface, barrier style and scenery — so new tracks are easy to add.
 
 ## Driving model
 
@@ -87,12 +108,16 @@ traffic awareness, and stuck-recovery.
   for image-based lighting + reflections; warm distance fog.
 - **Post-processing**: restrained `UnrealBloomPass`, cinematic shader
   (chromatic aberration + vignette + grain), `SMAAPass`, `OutputPass`.
-- **Track**: Catmull-Rom circuit with a vertex-coloured racing groove that
+- **Tracks**: Catmull-Rom circuits with a vertex-coloured racing groove that
   weaves with the racing line, 3D profiled rumble kerbs, dirt verges, skid
   marks, gravel traps wired into the physics, armco with posts, debris
   fencing, a 12-bay pit complex, tiered grandstands with an instanced crowd,
   a lattice start gantry with light rig, brake markers, sponsor boards, tyre
-  stacks, instanced trees, mountains and clouds.
+  stacks, instanced trees, mountains and clouds — plus per-theme scenery:
+  glowing-window city skylines and concrete walls, alpine pine forests under
+  near peaks, and desert sand with red-rock mesas. Each circuit is a data
+  definition; everything is parented to a disposable group so switching
+  circuits tears down and rebuilds cleanly.
 - **Cars**: procedurally lofted bodies (GT coupe, muscle, open-wheeler) with
   clear-coated paint, wheel-arch liners, smoked-lens light clusters and
   detailed alloy wheels — merged down to a handful of draw calls per car.
@@ -105,7 +130,8 @@ src/
   scene.js      renderer, sky, IBL, shadow-follow, post-processing
   car.js        visual + physics car: engine, gearbox, aero, tyres
   ai.js         lap speed profile, pure pursuit, traffic, recovery
-  track.js      circuit geometry, groove, kerbs, gravel, scenery
+  tracks.js     circuit catalogue: centrelines + per-circuit themes
+  track.js      circuit geometry, groove, kerbs, gravel, themed scenery
   racingLine.js perfect-line aid: ideal line, speed profile, live colours
   physics.js    Cannon world & contact materials
   controls.js   keyboard input with smoothing

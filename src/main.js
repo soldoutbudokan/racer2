@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { createPhysicsWorld } from './physics.js';
 import { createTrack } from './track.js';
+import { TRACKS, DEFAULT_TRACK_ID, getTrackById } from './tracks.js';
 import { createCar } from './car.js';
 import {
   createInput,
@@ -54,7 +55,7 @@ async function bootstrap() {
 
   setProgress(0.45, 'Laying asphalt');
   await frame();
-  const track = createTrack(scene, world, materials);
+  const track = createTrack(scene, world, materials, getTrackById(DEFAULT_TRACK_ID));
 
   setProgress(0.7, 'Calibrating telemetry');
   await frame();
@@ -76,6 +77,7 @@ async function bootstrap() {
   const ctx = {
     renderer, scene, camera, camera2, composer, world, materials, track, hud,
     racingLine,
+    selectedTrackId: DEFAULT_TRACK_ID,
     lineAid: false,
     updateShadowTarget,
     cars: [],
@@ -114,6 +116,21 @@ async function bootstrap() {
     }
   });
 
+  // ---- Circuit selection ----
+  // Swapping circuits tears down the current track (meshes + physics bodies)
+  // and the racing-line ribbon, then rebuilds both plus the minimap. Only ever
+  // called from the menu, where no cars hold a reference to the old track.
+  function rebuildTrack(def) {
+    ctx.track.dispose();
+    ctx.racingLine.dispose();
+    ctx.track = createTrack(scene, world, materials, def);
+    ctx.racingLine = createRacingLine(scene, ctx.track);
+    ctx.racingLine.setVisible(false);
+    ctx.hud.buildMinimap(ctx.track);
+    ctx.selectedTrackId = def.id;
+  }
+  buildTrackSelector(document.getElementById('track-list'), ctx, rebuildTrack);
+
   showMenu();
 
   // Start the loop now — it idles until a mode is active.
@@ -132,6 +149,35 @@ function showMenu() {
 }
 function hideMenu() {
   document.getElementById('menu').classList.add('hidden');
+}
+
+// Build the circuit picker cards in the menu. Selecting a card rebuilds the
+// track immediately so the minimap (and the next race) use it.
+function buildTrackSelector(container, ctx, rebuildTrack) {
+  if (!container) return;
+  container.innerHTML = '';
+  const cards = [];
+  for (const def of TRACKS) {
+    const btn = document.createElement('button');
+    btn.className = 'track-card' + (def.id === ctx.selectedTrackId ? ' selected' : '');
+    btn.dataset.track = def.id;
+    const diffClass = def.difficulty.toLowerCase().replace(/[^a-z]/g, '');
+    btn.innerHTML =
+      `<div class="track-head">` +
+        `<span class="track-name">${def.name}</span>` +
+        `<span class="track-diff diff-${diffClass}">${def.difficulty}</span>` +
+      `</div>` +
+      `<div class="track-sub">${def.subtitle}</div>` +
+      `<div class="track-blurb">${def.blurb}</div>`;
+    btn.addEventListener('click', () => {
+      if (ctx.selectedTrackId === def.id) return;
+      cards.forEach((c) => c.classList.remove('selected'));
+      btn.classList.add('selected');
+      rebuildTrack(def);
+    });
+    container.appendChild(btn);
+    cards.push(btn);
+  }
 }
 
 function startMode(ctx, mode) {

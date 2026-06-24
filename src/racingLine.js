@@ -172,5 +172,11 @@ export function createRacingLine(scene, track) {
     mesh.visible = v;
   }
 
-  return { profile, update, setVisible, mesh };
+  function dispose() {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+
+  return { profile, update, setVisible, mesh, dispose };
 }
