@@ -3,7 +3,7 @@ name: Deploy Preview
 on:
   push:
     branches:
-      - 'claude/upbeat-heisenberg-cvk0zm'
+      - 'claude/**'
 
 permissions:
   contents: write

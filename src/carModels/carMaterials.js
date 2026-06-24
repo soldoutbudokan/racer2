@@ -21,7 +21,7 @@ function tunePaint(hex) {
   hsl.s = Math.min(1, hsl.s * 1.0);
   // Deep base so bright sun + ACES keeps it coloured, but not so dark the car
   // reads as a black blob in the shadowed three-quarter views.
-  hsl.l = hsl.l * 0.56;
+  hsl.l = hsl.l * 0.60;
   c.setHSL(hsl.h, hsl.s, hsl.l);
   return c;
 }
@@ -35,16 +35,18 @@ export function makePaint(colorHex) {
   // hot-spot; the base stays deep and saturated.
   const m = new THREE.MeshPhysicalMaterial({
     color: tunePaint(colorHex),
-    metalness: 0.08,
-    roughness: 0.48,
+    // A touch more metal flake + a tighter base roughness gives the panels a
+    // metallic sheen and brightness falloff instead of reading as flat plastic.
+    metalness: 0.18,
+    roughness: 0.40,
     roughnessMap: paintRoughness(),
-    clearcoat: 0.95,
-    clearcoatRoughness: 0.09,   // shinier clear coat — closer to polished lacquer
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.07,   // polished lacquer — sharp sky + sun reflections
     clearcoatNormalMap: orangePeelNormal(),
-    clearcoatNormalScale: new THREE.Vector2(0.06, 0.06),
+    clearcoatNormalScale: new THREE.Vector2(0.05, 0.05),
     normalMap: flake,
-    normalScale: new THREE.Vector2(0.08, 0.08),   // more visible metallic sparkle
-    envMapIntensity: 0.85,   // stronger sky reflection in the clear coat
+    normalScale: new THREE.Vector2(0.11, 0.11),   // more visible metallic sparkle
+    envMapIntensity: 1.05,   // stronger sky reflection in the clear coat
   });
   paintCache.set(colorHex, m);
   return m;

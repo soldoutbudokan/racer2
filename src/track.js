@@ -550,9 +550,9 @@ function makeAsphaltMaterial() {
     const grain = fractalNoise(x * 28, y * 28, 5);
     const speck = fractalNoise(x * 95 + 11, y * 95 + 5, 2);
     const patch = fractalNoise(x * 7 + 4, y * 7 + 9, 3);
-    let v = 0.118 + grain * 0.068 + patch * 0.022;
-    if (speck > 0.74) v += 0.06;    // bright limestone chips
-    if (speck < 0.16) v -= 0.03;    // dark bitumen voids
+    let v = 0.116 + grain * 0.076 + patch * 0.024;
+    if (speck > 0.70) v += 0.075;   // more, brighter limestone chips catch light
+    if (speck < 0.16) v -= 0.035;   // dark bitumen voids
     // slight blue-gray tint — asphalt stone aggregate is slate
     const r = v * 0.96;
     const g = v * 0.98;
@@ -603,10 +603,11 @@ function makeGrassMaterial() {
     // infield reads as alternating light/dark bands of cut grass.
     const mow = 1 + 0.10 * Math.sin(x * Math.PI * 8);
     // Richer, slightly darker base with bigger wet/dry swings so the field
-    // isn't a single flat green from the cockpit.
-    let g = (0.215 + blades * 0.16 + patch * 0.13 + lush * 0.10 + dry * 0.04) * mow;
-    let r = g * (0.46 + dry * 0.34);
-    let b = g * (0.34 + lush * 0.10);
+    // isn't a single flat green from the cockpit. Stronger dry-yellow patches
+    // and more macro contrast break up the uniform "video-game green".
+    let g = (0.205 + blades * 0.15 + patch * 0.15 + lush * 0.11 + dry * 0.05) * mow;
+    let r = g * (0.52 + dry * 0.42);
+    let b = g * (0.35 + lush * 0.11);
     return [r, g, b];
   });
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -622,7 +623,7 @@ function makeGrassMaterial() {
   return new THREE.MeshStandardMaterial({
     map: tex,
     normalMap: grassNormal,
-    normalScale: new THREE.Vector2(0.35, 0.35),
+    normalScale: new THREE.Vector2(0.45, 0.45),
     roughness: 0.95,
     metalness: 0.0,
     envMapIntensity: 0.3,
@@ -1103,10 +1104,12 @@ function addDistantMountains(scene) {
   const tmp = new THREE.Color();
 
   // [innerR, spanR, count, baseH, varH, baseHaze, hazePerFrac, snowy]
+  // Taller, steeper peaks than before — real ranges tower well above the
+  // tree-line and present a broken, ridged skyline, not gentle green humps.
   const bands = [
-    [1450,  650, 14, 150, 230, 0.18, 0.30, true],   // front range — most detail
-    [2350,  750, 20, 120, 180, 0.42, 0.34, true],   // mid range — hazier
-    [3300,  900, 26,  95, 140, 0.66, 0.28, false],  // far range — nearly sky
+    [1450,  650, 15, 230, 300, 0.16, 0.30, true],   // front range — most detail
+    [2350,  750, 21, 180, 230, 0.40, 0.34, true],   // mid range — hazier
+    [3300,  900, 27, 130, 170, 0.64, 0.28, false],  // far range — nearly sky
   ];
 
   for (let b = 0; b < bands.length; b++) {
@@ -1118,8 +1121,10 @@ function addDistantMountains(scene) {
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       const h = baseH + Math.random() * varH;
-      const w = (320 + Math.random() * 360) * (1 + b * 0.25);
-      const geo = new THREE.ConeGeometry(w, h, 16, 8);
+      // Narrower, steeper cones so the eroded relief reads as alpine rock
+      // rather than a low mound; finer mesh so ridges stay crisp.
+      const w = (250 + Math.random() * 300) * (1 + b * 0.22);
+      const geo = new THREE.ConeGeometry(w, h, 22, 14);
       const pos = geo.getAttribute('position');
       const colors = [];
       const seed = (b * 31.7) + i * 7.13;
@@ -1129,18 +1134,30 @@ function addDistantMountains(scene) {
         const px = pos.getX(v), py = pos.getY(v), pz = pos.getZ(v);
         const ang = Math.atan2(pz, px);
         const yFrac = (py + h / 2) / h;             // 0 base .. 1 tip
-        const n = fractalNoise(ang * 2.4 + seed, yFrac * 3 + seed, 4);
-        // Erode the silhouette: ridges and gullies around the cone, flattening
-        // toward the tip so peaks look weathered rather than perfectly conical.
-        const push = (0.55 + n * 0.85) * (1 - yFrac * 0.45);
-        pos.setX(v, px * (0.68 + push * 0.52));
-        pos.setZ(v, pz * (0.68 + push * 0.52));
-        pos.setY(v, py + (n - 0.5) * h * 0.16);
-        // base rock/forest/snow by altitude
-        const snowLine = 0.78 + (n - 0.5) * 0.12;
+        // Ridged noise (1-|2n-1|) gives sharp crests instead of smooth bumps;
+        // a higher-frequency detail term breaks the faces, and a separate
+        // gully term carves valleys that pull the silhouette inward.
+        const ridge = fractalNoise(ang * 2.2 + seed, seed * 0.37, 5);
+        const rid = 1 - Math.abs(ridge * 2 - 1);
+        const detail = fractalNoise(ang * 6.5 + seed * 1.7, yFrac * 4 + seed, 4);
+        const gully = fractalNoise(ang * 3.4 + seed * 2.3, yFrac * 2 + seed, 3);
+        // Silhouette relief, strongest mid-height and tapering toward the tip;
+        // crests push out, gullies pull in, base stays planted.
+        const taper = 1 - yFrac * 0.35;
+        const relief = rid * 0.85 + detail * 0.5 - gully * 0.35;
+        const radial = (0.80 + relief * 0.62) * taper + 0.12;
+        pos.setX(v, px * radial);
+        pos.setZ(v, pz * radial);
+        // Raise crests and drop gullies so the skyline itself is jagged.
+        pos.setY(v, py + (rid - 0.45) * h * 0.24 + (detail - 0.5) * h * 0.10);
+        // Snow follows the crests: ridges (high rid) hold snow lower down,
+        // so caps streak along the ridgelines rather than sitting as a band.
+        const snowLine = 0.60 + (1 - rid) * 0.22 + (detail - 0.5) * 0.08;
         if (snowy && yFrac > snowLine) tmp.copy(snow);
-        else if (yFrac < 0.22) tmp.copy(forest).lerp(rock, n * 0.4);
-        else tmp.copy(rock).lerp(snow, snowy ? (yFrac - 0.22) / (snowLine - 0.22) * 0.35 : 0);
+        else if (yFrac < 0.20) tmp.copy(forest).lerp(rock, detail * 0.5);
+        else tmp.copy(rock).lerp(forest, Math.max(0, 0.34 - yFrac) * 1.3);
+        // Shade gullies darker, catch light on crests — fakes self-shadowing.
+        tmp.multiplyScalar(0.84 + relief * 0.20);
         // Atmospheric perspective: wash toward haze by band + per-vertex dist.
         const hazeAmt = Math.min(0.92, baseHaze + distFrac * hazePerFrac);
         tmp.lerp(haze, hazeAmt);
