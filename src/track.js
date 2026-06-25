@@ -578,9 +578,13 @@ function makeAsphaltMaterial() {
     const grain = fractalNoise(x * 28, y * 28, 5);
     const speck = fractalNoise(x * 95 + 11, y * 95 + 5, 2);
     const patch = fractalNoise(x * 7 + 4, y * 7 + 9, 3);
-    let v = 0.116 + grain * 0.076 + patch * 0.024;
-    if (speck > 0.70) v += 0.075;   // more, brighter limestone chips catch light
-    if (speck < 0.16) v -= 0.035;   // dark bitumen voids
+    // Larger, lower-frequency tone patches (resurfacing seams, sun-bleached
+    // lanes) keep the road from reading as one flat slate grey under the wide
+    // chase camera.
+    const macro = fractalNoise(x * 2.3 + 17, y * 2.3 + 6, 3);
+    let v = 0.112 + grain * 0.078 + patch * 0.028 + (macro - 0.5) * 0.045;
+    if (speck > 0.68) v += 0.090;   // more, brighter limestone chips catch light
+    if (speck < 0.16) v -= 0.040;   // dark bitumen voids
     // slight blue-gray tint — asphalt stone aggregate is slate
     const r = v * 0.96;
     const g = v * 0.98;
@@ -608,7 +612,7 @@ function makeAsphaltMaterial() {
     map: colorTex,
     vertexColors: true,
     normalMap: normalTex,
-    normalScale: new THREE.Vector2(0.65, 0.65),
+    normalScale: new THREE.Vector2(0.78, 0.78),
     roughnessMap: roughTex,
     roughness: 0.86,
     metalness: 0.0,
@@ -1107,8 +1111,10 @@ function scatterTrees(scene, frames, opts = {}) {
     m.compose(p, q, s);
     trunkInst.setMatrixAt(placed, m);
     leavesInst.setMatrixAt(placed, m);
-    // per-tree hue variation: yellows, dark greens, olive tones for variety
-    col.setHSL(0.25 + (Math.random() - 0.5) * 0.10, 0.42 + Math.random() * 0.22, 0.28 + Math.random() * 0.16);
+    // per-tree hue variation: yellows, dark greens, olive tones for variety.
+    // Lifted lightness + slightly softer saturation so distant stands read as
+    // sunlit summer canopies catching the golden light, not flat dark lumps.
+    col.setHSL(0.25 + (Math.random() - 0.5) * 0.10, 0.40 + Math.random() * 0.20, 0.34 + Math.random() * 0.18);
     leavesInst.setColorAt(placed, col);
     placed++;
   }
@@ -1247,9 +1253,12 @@ function addDistantMountains(scene, kind = 'far') {
       const z = Math.sin(a) * r;
       const h = baseH + Math.random() * varH;
       // Narrower, steeper cones so the eroded relief reads as alpine rock
-      // rather than a low mound; finer mesh so ridges stay crisp.
+      // rather than a low mound; finer mesh so ridges stay crisp. A denser ring
+      // (32 vs 22) lets the ridged noise carve a properly jagged skyline
+      // instead of a faceted near-cone — the old segment count was coarse
+      // enough that the relief averaged back out to a smooth silhouette.
       const w = (250 + Math.random() * 300) * (1 + b * 0.22);
-      const geo = new THREE.ConeGeometry(w, h, 22, 14);
+      const geo = new THREE.ConeGeometry(w, h, 36, 20);
       const pos = geo.getAttribute('position');
       const colors = [];
       const seed = (b * 31.7) + i * 7.13;
@@ -1269,8 +1278,8 @@ function addDistantMountains(scene, kind = 'far') {
         // Silhouette relief, strongest mid-height and tapering toward the tip;
         // crests push out, gullies pull in, base stays planted.
         const taper = 1 - yFrac * 0.35;
-        const relief = rid * 0.85 + detail * 0.5 - gully * 0.35;
-        const radial = (0.80 + relief * 0.62) * taper + 0.12;
+        const relief = rid * 1.02 + detail * 0.58 - gully * 0.42;
+        const radial = (0.74 + relief * 0.66) * taper + 0.12;
         pos.setX(v, px * radial);
         pos.setZ(v, pz * radial);
         // Raise crests and drop gullies so the skyline itself is jagged.

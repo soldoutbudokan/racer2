@@ -37,16 +37,21 @@ export function makePaint(colorHex) {
     color: tunePaint(colorHex),
     // A touch more metal flake + a tighter base roughness gives the panels a
     // metallic sheen and brightness falloff instead of reading as flat plastic.
-    metalness: 0.18,
-    roughness: 0.40,
+    metalness: 0.22,
+    roughness: 0.36,
     roughnessMap: paintRoughness(),
     clearcoat: 1.0,
-    clearcoatRoughness: 0.07,   // polished lacquer — sharp sky + sun reflections
+    clearcoatRoughness: 0.05,   // polished lacquer — sharp sky + sun reflections
     clearcoatNormalMap: orangePeelNormal(),
     clearcoatNormalScale: new THREE.Vector2(0.05, 0.05),
     normalMap: flake,
     normalScale: new THREE.Vector2(0.11, 0.11),   // more visible metallic sparkle
-    envMapIntensity: 1.05,   // stronger sky reflection in the clear coat
+    // A brighter, sharper sky reflection in the clear coat is what reads as a
+    // curved, modelled panel: the gradient from the bright sky down to the
+    // darker ground sweeps across the bodywork as it turns, instead of the
+    // panels sitting at one flat tone. This is the single biggest cure for the
+    // "flat red blob" look in the three-quarter views.
+    envMapIntensity: 1.35,
   });
   paintCache.set(colorHex, m);
   return m;
@@ -79,17 +84,21 @@ let _glass = null;
 export function makeGlass() {
   if (_glass) return _glass;
   _glass = new THREE.MeshPhysicalMaterial({
-    color: 0x04080e,            // deep blue-black tint like smoked automotive glass
-    metalness: 0.05,
-    roughness: 0.04,
-    transmission: 0.15,         // mostly opaque dark tint
+    color: 0x0a1622,            // cool blue-grey smoked tint — reads as glass, not a void
+    metalness: 0.0,
+    roughness: 0.03,
+    transmission: 0.25,         // dark tint, but enough to read as a glazed surface
     thickness: 0.35,
     ior: 1.52,
-    envMapIntensity: 1.2,       // strong reflections on the glass surface
+    // A strong, crisp sky reflection on the glazing is what separates the cabin
+    // from the bodywork: the canopy catches the bright sky and sun streak while
+    // the painted shell below carries the car's colour, so the greenhouse reads
+    // as a distinct glassy volume instead of melting into one red mass.
+    envMapIntensity: 1.6,
     clearcoat: 1.0,
-    clearcoatRoughness: 0.03,
+    clearcoatRoughness: 0.02,
     transparent: true,
-    opacity: 0.92,
+    opacity: 0.86,
     side: THREE.DoubleSide,
     polygonOffset: true,
     polygonOffsetFactor: -2,
