@@ -38,10 +38,10 @@ export function makePaint(colorHex) {
     // A touch more metal flake + a tighter base roughness gives the panels a
     // metallic sheen and brightness falloff instead of reading as flat plastic.
     metalness: 0.22,
-    roughness: 0.36,
+    roughness: 0.30,            // tighter base highlight → more "curved metal" falloff
     roughnessMap: paintRoughness(),
     clearcoat: 1.0,
-    clearcoatRoughness: 0.05,   // polished lacquer — sharp sky + sun reflections
+    clearcoatRoughness: 0.04,   // polished lacquer — sharp sky + sun reflections
     clearcoatNormalMap: orangePeelNormal(),
     clearcoatNormalScale: new THREE.Vector2(0.05, 0.05),
     normalMap: flake,
@@ -51,7 +51,7 @@ export function makePaint(colorHex) {
     // darker ground sweeps across the bodywork as it turns, instead of the
     // panels sitting at one flat tone. This is the single biggest cure for the
     // "flat red blob" look in the three-quarter views.
-    envMapIntensity: 1.35,
+    envMapIntensity: 1.55,
   });
   paintCache.set(colorHex, m);
   return m;

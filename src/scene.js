@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
@@ -122,6 +123,33 @@ export function createScene(canvas) {
   const renderPass = new RenderPass(scene, camera);
   composer.addPass(renderPass);
 
+  // Ground-truth ambient occlusion (GTAO): darkens the crevices light can't
+  // reach — wheel arches, the seam where a tyre meets the road, panel gaps,
+  // between kerb ripples, under the splitter/wing, beneath grandstands. This
+  // contact shading is the single biggest cue that separates a "real" render
+  // from a flat game look, and it touches the car, the track and the scenery
+  // all at once. Radius is kept tight (world units) so it only shades genuine
+  // contact and never muddies the open grass or asphalt.
+  // Run AO at half resolution — the poisson-denoise pass softens it anyway, so
+  // contact occlusion looks the same while costing ~a quarter of the fill rate.
+  // That keeps the driving framerate intact on modest GPUs.
+  const AO_SCALE = 0.5;
+  const gtao = new GTAOPass(
+    scene, camera,
+    Math.round(window.innerWidth * AO_SCALE),
+    Math.round(window.innerHeight * AO_SCALE),
+  );
+  gtao.output = GTAOPass.OUTPUT.Default;
+  gtao.blendIntensity = 0.9;
+  gtao.updateGtaoMaterial({
+    radius: 0.6,            // metres — contact-scale occlusion only
+    distanceExponent: 1.0,
+    thickness: 1.0,
+    scale: 1.0,
+    samples: 16,
+  });
+  composer.addPass(gtao);
+
   const bloom = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
     0.22,  // strength — just enough for headlights/sun to pop
@@ -148,6 +176,7 @@ export function createScene(canvas) {
     const h = window.innerHeight;
     renderer.setSize(w, h);
     composer.setSize(w, h);
+    gtao.setSize(Math.round(w * AO_SCALE), Math.round(h * AO_SCALE));
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     bloom.resolution.set(w, h);
