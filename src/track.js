@@ -921,6 +921,40 @@ function makeMarkerTexture(label) {
   return tex;
 }
 
+// Ribbed roller-shutter door for the pit garages — light industrial steel with
+// horizontal slats, a soft left-to-right sheen, and a small handle band.
+function makeRollerDoorTexture() {
+  const w = 96, h = 128;
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  // A mid steel grey, clearly darker than the pale concrete wall, with a
+  // left-to-right sheen so the door reads as curved sheet metal.
+  const grad = ctx.createLinearGradient(0, 0, w, 0);
+  grad.addColorStop(0.0, '#2b2e34');
+  grad.addColorStop(0.5, '#565b62');
+  grad.addColorStop(1.0, '#33363c');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, w, h);
+  // Horizontal slats with a strong groove shadow and a catch-light beneath, so
+  // the ribbing still reads from across the track.
+  const slats = 15;
+  for (let i = 1; i < slats; i++) {
+    const y = Math.round((i * h) / slats);
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(0, y - 1, w, 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.16)';
+    ctx.fillRect(0, y + 1, w, 1);
+  }
+  // Pull handle band near the bottom.
+  ctx.fillStyle = '#2c2e33';
+  ctx.fillRect(0, h - 18, w, 6);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  return tex;
+}
+
 // Puffy cumulus billboard — warm-lit tops, blue-gray shadowed underbellies.
 function makeCloudTexture() {
   const w = 512, h = 256;
@@ -1438,10 +1472,6 @@ function addPitComplex(scene, startFrame) {
   const trimMat = new THREE.MeshStandardMaterial({
     color: 0x23262b, roughness: 0.6, metalness: 0.4,
   });
-  const openingMat = new THREE.MeshStandardMaterial({
-    color: 0x0c0d10, roughness: 0.95, metalness: 0,
-  });
-
   const Z0 = -45, Z1 = 100;                 // extent along the straight
   const LEN = Z1 - Z0;
   const ZC = (Z0 + Z1) / 2;
@@ -1465,17 +1495,36 @@ function addPitComplex(scene, startFrame) {
   bldg.castShadow = bldg.receiveShadow = true;
   g.add(bldg);
 
-  // Garage bays along the face (x = -26.5)
+  // Garage bays along the face (x = -26.5): closed ribbed roller-shutter doors
+  // set into proud frames, so the row reads as a building full of garages
+  // instead of a colonnade of flat black voids. The door sits a touch behind
+  // the frame so GTAO darkens the reveal and gives each bay real depth.
+  const doorMat = new THREE.MeshStandardMaterial({
+    map: makeRollerDoorTexture(), roughness: 0.78, metalness: 0.15,
+  });
+  const jambGeo = new THREE.BoxGeometry(0.22, 3.4, 0.22);
   const bayCount = 12;
   for (let i = 0; i < bayCount; i++) {
     const z = Z0 + 8 + i * ((LEN - 16) / (bayCount - 1));
-    const bay = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 3.1), openingMat);
-    bay.position.set(-26.44, 1.65, z);
-    bay.rotation.y = Math.PI / 2;
-    g.add(bay);
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.5, 5.2), trimMat);
-    lintel.position.set(-26.5, 3.5, z);
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 3.1), doorMat);
+    door.position.set(-26.46, 1.65, z);   // just proud of the wall face (−26.5) to avoid z-fighting
+    door.rotation.y = Math.PI / 2;
+    door.receiveShadow = true;
+    g.add(door);
+    // Proud frame: lintel over the top, jambs down each side, sill at the floor.
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.42, 5.0), trimMat);
+    lintel.position.set(-26.4, 3.42, z);
+    lintel.castShadow = true;
     g.add(lintel);
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.12, 5.0), concreteDark);
+    sill.position.set(-26.38, 0.07, z);
+    g.add(sill);
+    for (const dz of [-2.4, 2.4]) {
+      const jamb = new THREE.Mesh(jambGeo, trimMat);
+      jamb.position.set(-26.4, 1.7, z + dz);
+      jamb.castShadow = true;
+      g.add(jamb);
+    }
   }
 
   // Glazed suite band above the garages.

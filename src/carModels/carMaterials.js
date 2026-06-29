@@ -41,17 +41,21 @@ export function makePaint(colorHex) {
     roughness: 0.30,            // tighter base highlight → more "curved metal" falloff
     roughnessMap: paintRoughness(),
     clearcoat: 1.0,
-    clearcoatRoughness: 0.04,   // polished lacquer — sharp sky + sun reflections
+    // Real clear coat is glossy but not a perfect mirror: a touch of roughness
+    // spreads the sky reflection into a soft gradient that wraps the panel,
+    // instead of a razor-sharp mirror band that clips the bright sky straight
+    // to white across the hood and roof.
+    clearcoatRoughness: 0.085,
     clearcoatNormalMap: orangePeelNormal(),
     clearcoatNormalScale: new THREE.Vector2(0.05, 0.05),
     normalMap: flake,
     normalScale: new THREE.Vector2(0.11, 0.11),   // more visible metallic sparkle
-    // A brighter, sharper sky reflection in the clear coat is what reads as a
-    // curved, modelled panel: the gradient from the bright sky down to the
-    // darker ground sweeps across the bodywork as it turns, instead of the
-    // panels sitting at one flat tone. This is the single biggest cure for the
-    // "flat red blob" look in the three-quarter views.
-    envMapIntensity: 1.55,
+    // The sky reflection in the clear coat still sweeps from bright (up-facing
+    // panels) to dark (the flanks) so the bodywork reads as curved metal rather
+    // than a flat tone — but pulled back from 1.55 so the up-facing panels keep
+    // the car's colour under the bright golden-hour sky + ACES instead of
+    // blowing out to a white cap that erases the paint entirely.
+    envMapIntensity: 1.12,
   });
   paintCache.set(colorHex, m);
   return m;
