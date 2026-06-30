@@ -80,6 +80,17 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-06-30** (preview, pending review) — Sky slabs fixed: the cloud
+  billboards were `THREE.Sprite`s (already camera-facing) but the cloud texture
+  never feathered to the quad edges, so densely-packed puffs filled most of the
+  rectangle and a backlit cloud read as a hard grey slab over the mountains
+  (`front34` viewshot). In `makeCloudTexture` (`src/track.js`): (1) lightened the
+  shadow-base puffs (grey ~165 → pale ~208, lower alpha) so backlit clouds stay
+  luminous, (2) added an elliptical smoothstep alpha feather over the whole
+  texture so the quad edge can never show, and in `addClouds` (3) dropped sprite
+  opacity, raised altitude (280→420 base) and slightly shrank/pushed clouds out
+  so big ones don't clip the top of frame as a band. Verified across 3 random
+  cloud layouts + all 5 angles; `physics-test.mjs` 23/23, smoke OK, build clean.
 - **2026-06-29** (`1579f92`) — Car paint: tamed the clear-coat sky reflection
   (`envMapIntensity` 1.55→1.12, `clearcoatRoughness` 0.04→0.085 in
   `src/carModels/carMaterials.js`) so up-facing panels keep their colour instead
@@ -92,12 +103,11 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Backlog (open realism items — pick the highest impact)
 
-- **Sky slabs when facing the sun** (env): faint translucent grey rectangles
-  float over the mountains in toward-sun views (e.g. the `front34` viewshot
-  angle). Almost certainly the cloud billboards (`makeCloudTexture` / cloud
-  placement in `src/track.js`) showing their rectangular quad when backlit.
-  Try: make them camera-facing, soften the alpha falloff, and/or break the hard
-  quad edge so the backlit side reads as a soft puff, not a slab.
+- ~~**Sky slabs when facing the sun**~~ — addressed 2026-06-30 (cloud-texture
+  alpha feather + lighter shadow base + higher placement). A faint feathered
+  cloud rim can still clip the very top edge of frame in some toward-sun views,
+  but it now reads as a soft puff, not a hard slab. Re-open only if review finds
+  it still distracting.
 - **Distant trees look like cardboard** (env): the far treeline is single flat
   billboards in near-straight rows. Vary spacing/scale/yaw and use crossed
   planes (already used for near foliage) so they read as 3D canopies.

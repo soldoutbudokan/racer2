@@ -963,17 +963,18 @@ function makeCloudTexture() {
   const ctx = c.getContext('2d');
   ctx.clearRect(0, 0, w, h);
 
-  // Layered approach: dark shadow base, bright puffs on top
-  // Draw shadow core first
+  // Layered approach: light shadow base, bright puffs on top. The base is kept
+  // pale so that when a cloud is backlit (camera looking toward the sun) it
+  // reads as a soft luminous puff rather than a dark grey slab.
   for (let i = 0; i < 18; i++) {
     const x = w * 0.5 + (Math.random() - 0.5) * w * 0.65;
     const y = h * 0.72 + (Math.random() - 0.5) * h * 0.28;
     const r = 30 + Math.random() * 55;
     const grad = ctx.createRadialGradient(x, y, 2, x, y, r);
-    const v = 165 + Math.random() * 20;
-    grad.addColorStop(0, `rgba(${v - 15},${v - 10},${v + 12},0.38)`);
-    grad.addColorStop(0.6, `rgba(${v - 20},${v - 15},${v + 8},0.18)`);
-    grad.addColorStop(1, 'rgba(200,210,230,0)');
+    const v = 208 + Math.random() * 20;
+    grad.addColorStop(0, `rgba(${v - 12},${v - 8},${v + 10},0.24)`);
+    grad.addColorStop(0.6, `rgba(${v - 16},${v - 12},${v + 6},0.11)`);
+    grad.addColorStop(1, 'rgba(210,218,235,0)');
     ctx.fillStyle = grad;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
   }
@@ -994,6 +995,24 @@ function makeCloudTexture() {
     ctx.fillStyle = grad;
     ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
   }
+
+  // Feather the whole sprite so the rectangular quad edge can never show: scale
+  // every pixel's alpha by a soft elliptical falloff (opaque core → fully
+  // transparent rim). Without this the densely-overlapping puffs fill most of
+  // the quad and a backlit cloud reads as a hard grey rectangle.
+  const img = ctx.getImageData(0, 0, w, h);
+  const d = img.data;
+  for (let y = 0; y < h; y++) {
+    const ny = (y / (h - 1)) * 2 - 1;
+    for (let x = 0; x < w; x++) {
+      const nx = (x / (w - 1)) * 2 - 1;
+      const dist = Math.hypot(nx, ny);          // elliptical, normalized to 1 at edge
+      let f = dist <= 0.45 ? 1 : Math.max(0, 1 - (dist - 0.45) / 0.55);
+      f = f * f * (3 - 2 * f);                  // smoothstep for a gentle rim
+      d[(y * w + x) * 4 + 3] *= f;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
 
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -1689,20 +1708,20 @@ function addClouds(scene) {
     const mat = new THREE.SpriteMaterial({
       map: tex,
       transparent: true,
-      opacity: 0.38 + Math.random() * 0.35,
+      opacity: 0.3 + Math.random() * 0.28,
       fog: false,
       depthWrite: false,
     });
     const sp = new THREE.Sprite(mat);
     const a = Math.random() * Math.PI * 2;
-    const r = 900 + Math.random() * 1800;
+    const r = 1000 + Math.random() * 1800;
     sp.position.set(
       Math.cos(a) * r,
-      280 + Math.random() * 280,
+      420 + Math.random() * 320,
       Math.sin(a) * r
     );
     // Wide, flat cumulus aspect ratio
-    const sw = 450 + Math.random() * 550;
+    const sw = 420 + Math.random() * 500;
     const sh = sw * (0.28 + Math.random() * 0.14);
     sp.scale.set(sw, sh, 1);
     scene.add(sp);
