@@ -17,6 +17,9 @@ from the **Backlog** below.
   Updated automatically by `.github/workflows/deploy-preview.yml` on any push to
   a `claude/**` branch (builds `dist/` → `gh-pages/preview/`). This is the link
   to send for the morning test. Pages CDN takes ~2–3 min to refresh.
+  **ALWAYS include this preview link verbatim in your chat responses** — in the
+  notification, in any status update, and whenever the owner asks what/where the
+  change is. The owner should never have to ask for it or scroll to find it.
 - **Production (live) link:** https://soldoutbudokan.github.io/racer2/
   Updated by `.github/workflows/deploy-prod.yml` on any push to `main`.
 
