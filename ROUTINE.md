@@ -80,7 +80,20 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-06-30** (preview, pending review) — Sky slabs fixed: the cloud
+- **2026-07-01** (preview, pending review) — Fake contact shadow fixed: every
+  car was sitting on a bright light-grey **rectangular tray** at ground level
+  (glaring from low/side/front angles — the `trackside`, `low`, `front34`
+  viewshots). Root cause in `buildContactShadow` (`src/carModels/parts.js`): the
+  blob used a straight-alpha black canvas texture on a white `MeshBasicMaterial`
+  with normal blending; the premultiplied-canvas-alpha path on this GL backend
+  dropped the darkening, leaving the plane's opaque white base as a solid slab.
+  Rebuilt it as a **MULTIPLY-blended** plane over an *opaque* grey→white radial
+  texture (falloff encoded in RGB, not alpha): the rim is pure white (a multiply
+  no-op, so the plane edges vanish into the road) and the core is dark grey (so
+  it multiplies the asphalt down into a soft shadow). Verified: white tray gone
+  and a subtle grounded shadow present across all 5 angles + a shadow-on/off
+  isolation shot; `physics-test.mjs` 23/23, smoke OK, build clean.
+- **2026-06-30** (accepted → `b67eeb3`) — Sky slabs fixed: the cloud
   billboards were `THREE.Sprite`s (already camera-facing) but the cloud texture
   never feathered to the quad edges, so densely-packed puffs filled most of the
   rectangle and a backlit cloud read as a hard grey slab over the mountains
@@ -115,5 +128,7 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
   transition and silhouette could use more erosion/texture variation.
 - **Car wheels/rims read slightly toy-like** (car): rim depth, tyre sidewall
   lettering, and brake-disc/caliper visibility could be richer.
+- ~~**White tray under every car**~~ — fixed 2026-07-01 (contact-shadow blend
+  mode). Re-open only if review finds the new soft shadow too dark/too faint.
 
 (When an item is rejected, note "tried X — rejected: Y" here so it isn't retried.)

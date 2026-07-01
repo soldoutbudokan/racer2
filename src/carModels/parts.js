@@ -285,24 +285,34 @@ export function buildArchLiners({
 }
 
 // ---- Soft fake contact shadow blob under the car (works in 1P and 2P) ----
+// Rendered with MULTIPLY blending over an OPAQUE grey→white radial texture:
+// the rim is pure white (a multiply no-op, so the plane's edges vanish into the
+// road instead of showing as a bright slab) and the core is dark grey (which
+// multiplies the asphalt down into a soft shadow). Encoding the falloff in RGB
+// rather than the alpha channel sidesteps the premultiplied-canvas-alpha quirk
+// that made the old straight-alpha version render as a solid white tray under
+// the car on some GL backends.
 let _shadowTex = null;
 function contactShadowTexture() {
   if (_shadowTex) return _shadowTex;
   const c = document.createElement('canvas');
   c.width = c.height = 128;
   const ctx = c.getContext('2d');
-  const g = ctx.createRadialGradient(64, 64, 8, 64, 64, 62);
-  g.addColorStop(0, 'rgba(0,0,0,0.55)');
-  g.addColorStop(0.6, 'rgba(0,0,0,0.28)');
-  g.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0, 0, 128, 128);
+  const g = ctx.createRadialGradient(64, 64, 6, 64, 64, 62);
+  g.addColorStop(0, 'rgb(64,64,68)');       // darkest directly beneath the car
+  g.addColorStop(0.5, 'rgb(150,150,156)');
+  g.addColorStop(0.82, 'rgb(214,214,218)');
+  g.addColorStop(1, 'rgb(255,255,255)');    // no-op white at the rim
   ctx.fillStyle = g; ctx.fillRect(0, 0, 128, 128);
   _shadowTex = new THREE.CanvasTexture(c);
+  _shadowTex.colorSpace = THREE.SRGBColorSpace;
   return _shadowTex;
 }
 export function buildContactShadow({ y = -0.355, w = 2.3, len = 4.8 } = {}) {
   const mat = new THREE.MeshBasicMaterial({
     map: contactShadowTexture(), transparent: true, depthWrite: false,
-    opacity: 0.8,
+    blending: THREE.MultiplyBlending, toneMapped: false,
   });
   const m = new THREE.Mesh(new THREE.PlaneGeometry(w, len), mat);
   m.rotation.x = -Math.PI / 2;
