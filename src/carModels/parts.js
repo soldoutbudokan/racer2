@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  makeTrim, makeCarbon, makeChrome, makeSatin, makeHeadlight, makeLens,
+  makeTrim, makeCarbon, makeSatin, makeHeadlight, makeLens,
   makeTaillight, makeGrille, makePaint,
 } from './carMaterials.js';
 import { plateTexture, badgeTexture } from './texgen.js';
@@ -53,13 +53,13 @@ export function buildHeadlights({ z = 1.92, y = 0.64, x = 0.60 } = {}) {
 export function buildTaillights({ z = -2.04, y = 0.74, width = 1.5 } = {}) {
   const g = new THREE.Group();
   const housing = new THREE.Mesh(
-    new THREE.BoxGeometry(width + 0.06, 0.16, 0.10), makeTrim());
+    new THREE.BoxGeometry(width + 0.05, 0.12, 0.08), makeTrim());
   housing.position.set(0, y, z + 0.02);
   g.add(housing);
 
   const brakeMat = makeTaillight();
   const bar = new THREE.Mesh(
-    new THREE.BoxGeometry(width, 0.09, 0.05), brakeMat);
+    new THREE.BoxGeometry(width, 0.07, 0.05), brakeMat);
   bar.position.set(0, y, z - 0.02);
   bar.userData.noMerge = true;   // pulsed per-frame; keep as its own mesh
   g.add(bar);
@@ -67,7 +67,7 @@ export function buildTaillights({ z = -2.04, y = 0.74, width = 1.5 } = {}) {
   // light-pipe accents at the ends
   for (const sx of [-1, 1]) {
     const pod = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.05, 0.05, 0.12, 16), brakeMat);
+      new THREE.CylinderGeometry(0.04, 0.04, 0.10, 16), brakeMat);
     pod.rotation.z = Math.PI / 2;
     pod.position.set(sx * (width / 2 - 0.02), y, z - 0.02);
     g.add(pod);
@@ -75,28 +75,37 @@ export function buildTaillights({ z = -2.04, y = 0.74, width = 1.5 } = {}) {
   return { group: g, brakeMesh: bar };
 }
 
-// ---- Side mirrors on stalks ----
+// ---- Side mirrors: a small angular pod (boxy housing, flat smoked face) on
+// a thin blade stalk. Sized like a real door mirror (~0.16 long); the old
+// scaled-sphere version blew out into a floating white ball. ----
+let _mirrorFaceMat = null;
+function mirrorFaceMaterial() {
+  if (_mirrorFaceMat) return _mirrorFaceMat;
+  _mirrorFaceMat = new THREE.MeshStandardMaterial({
+    color: 0x272c33, metalness: 1.0, roughness: 0.14, envMapIntensity: 0.7,
+  });
+  return _mirrorFaceMat;
+}
+
 export function buildMirrors({ z = 0.5, y = 0.98, x = 0.95, color = 0xc8161d } = {}) {
   const g = new THREE.Group();
   const paint = makePaint(color);
-  const mirrorFace = new THREE.MeshPhysicalMaterial({
-    color: 0x8a9099, metalness: 1.0, roughness: 0.03,
-  });
   for (const sx of [-1, 1]) {
     const m = new THREE.Group();
-    const stalk = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.018, 0.03, 0.16, 10), makeCarbon());
-    stalk.rotation.z = sx * 0.9;
-    stalk.position.set(sx * 0.08, 0.02, 0);
+    // thin blade stalk leaning down-inward onto the door shoulder
+    const stalk = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.022, 0.05), makeTrim());
+    stalk.rotation.z = sx * 0.5;
+    stalk.position.set(sx * 0.04, -0.03, 0);
     m.add(stalk);
-    const housing = new THREE.Mesh(
-      new THREE.SphereGeometry(0.09, 14, 10), paint);
-    housing.scale.set(1.1, 0.7, 0.7);
-    housing.position.set(sx * 0.17, 0.05, 0);
+    // angular painted housing
+    const housing = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.068, 0.095), paint);
+    housing.rotation.y = sx * 0.08;
+    housing.position.set(sx * 0.12, 0.01, 0);
     m.add(housing);
-    const face = new THREE.Mesh(new THREE.CircleGeometry(0.06, 14), mirrorFace);
-    face.position.set(sx * 0.18, 0.05, -0.06);
-    face.rotation.y = Math.PI;
+    // flat smoked mirror face on the rear of the pod
+    const face = new THREE.Mesh(new THREE.PlaneGeometry(0.125, 0.05), mirrorFaceMaterial());
+    face.rotation.y = Math.PI + sx * 0.08;
+    face.position.set(sx * 0.124, 0.01, -0.052);
     m.add(face);
     m.position.set(sx * x, y, z);
     g.add(m);
@@ -118,35 +127,35 @@ export function buildGrille({ z = 2.02, y = 0.44, w = 0.9, h = 0.22 } = {}) {
   return g;
 }
 
-// ---- Front splitter (carbon lip wrapping the nose) ----
-export function buildSplitter({ z = 1.98, y = 0.28, w = 1.95 } = {}) {
+// ---- Front splitter: a thin dark lip tucked under the bumper, barely proud
+// of the fascia. Real splitters are near-invisible edge-on — not a stack of
+// grey planks past the nose. Lightless undertray material: the carbon
+// clearcoat mirrored the bright sky and read as a white plank from above.
+// z is the lip centre; front edge ≈ z + 0.10. ----
+export function buildSplitter({ z = 1.98, y = -0.19, w = 1.3 } = {}) {
   const g = new THREE.Group();
-  const lip = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, 0.34), makeCarbon());
+  const lip = new THREE.Mesh(new THREE.BoxGeometry(w, 0.024, 0.20), undertrayMaterial());
   lip.position.set(0, y, z);
   lip.castShadow = true;
   g.add(lip);
-  // dive-plane canards
-  for (const sx of [-1, 1]) {
-    const c = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.02, 0.12), makeCarbon());
-    c.position.set(sx * (w / 2 - 0.05), y + 0.08, z - 0.05);
-    c.rotation.z = sx * 0.12;
-    g.add(c);
-  }
   return g;
 }
 
-// ---- Rear diffuser with vertical strakes ----
-export function buildDiffuser({ z = -2.0, y = 0.30, w = 1.8 } = {}) {
+// ---- Rear diffuser: a kicked-up dark ramp tucked under the tail (rear edge
+// rises toward the bumper cut-out) with short strakes, all in the lightless
+// undertray material so it reads as a shadowed cavity. ----
+export function buildDiffuser({ z = -1.95, y = -0.27, w = 1.44 } = {}) {
   const g = new THREE.Group();
-  const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, 0.5), makeCarbon());
+  const mat = undertrayMaterial();
+  const base = new THREE.Mesh(new THREE.BoxGeometry(w, 0.035, 0.44), mat);
+  base.rotation.x = 0.30;                     // kick up toward the tail
   base.position.set(0, y, z);
-  base.castShadow = true;
   g.add(base);
-  const n = 7;
+  const n = 5;
   for (let i = 0; i < n; i++) {
-    const strake = new THREE.Mesh(
-      new THREE.BoxGeometry(0.03, 0.18, 0.5), makeCarbon());
-    strake.position.set((i / (n - 1) - 0.5) * (w * 0.92), y + 0.02, z);
+    const strake = new THREE.Mesh(new THREE.BoxGeometry(0.022, 0.09, 0.38), mat);
+    strake.rotation.x = 0.30;
+    strake.position.set((i / (n - 1) - 0.5) * (w * 0.88), y + 0.05, z);
     g.add(strake);
   }
   return g;
@@ -156,9 +165,9 @@ export function buildDiffuser({ z = -2.0, y = 0.30, w = 1.8 } = {}) {
 export function buildWing({ z = -1.92, y = 1.06, span = 1.62, deckY = 0.82, style = 'gt' } = {}) {
   const g = new THREE.Group();
   if (style === 'ducktail') {
-    // muscle: a lip spoiler off the rear deck instead of a wing
-    const lip = new THREE.Mesh(new THREE.BoxGeometry(span, 0.06, 0.34), makePaint(0x111316));
-    lip.position.set(0, deckY + 0.10, z + 0.18);
+    // muscle: a lip spoiler rising straight off the rear deck (not hovering)
+    const lip = new THREE.Mesh(new THREE.BoxGeometry(span, 0.05, 0.30), makePaint(0x111316));
+    lip.position.set(0, deckY + 0.03, z + 0.16);
     lip.rotation.x = -0.18;
     g.add(lip);
     return g;
@@ -196,25 +205,26 @@ export function buildWing({ z = -1.92, y = 1.06, span = 1.62, deckY = 0.82, styl
     ep.position.set(sx * span / 2, y, z);
     g.add(ep);
   }
-  // swan-neck posts
+  // swan-neck posts — satin, not chrome (chrome blew out to white sticks)
   for (const sx of [-1, 1]) {
-    const post = new THREE.Mesh(new THREE.BoxGeometry(0.04, y - deckY + 0.06, 0.10), makeChrome());
+    const post = new THREE.Mesh(new THREE.BoxGeometry(0.04, y - deckY + 0.06, 0.10), makeSatin());
     post.position.set(sx * 0.55, (y + deckY) / 2, z + 0.02);
     g.add(post);
   }
   return g;
 }
 
-// ---- Exhaust tips ----
+// ---- Exhaust tips — satin steel, not chrome (chrome blew out to white
+// donuts under the bright sky) ----
 export function buildExhaust({ z = -2.07, y = 0.38, x = 0.45, count = 2 } = {}) {
   const g = new THREE.Group();
-  const tipGeo = new THREE.CylinderGeometry(0.06, 0.07, 0.16, 18);
+  const tipGeo = new THREE.CylinderGeometry(0.05, 0.058, 0.14, 18);
   tipGeo.rotateX(Math.PI / 2);
-  const innerGeo = new THREE.CylinderGeometry(0.045, 0.045, 0.17, 14);
+  const innerGeo = new THREE.CylinderGeometry(0.038, 0.038, 0.15, 14);
   innerGeo.rotateX(Math.PI / 2);
-  const xs = count === 4 ? [-x - 0.12, -x + 0.04, x - 0.04, x + 0.12] : [-x, x];
+  const xs = count === 4 ? [-x - 0.1, -x + 0.04, x - 0.04, x + 0.1] : [-x, x];
   for (const sx of xs) {
-    const tip = new THREE.Mesh(tipGeo, makeChrome());
+    const tip = new THREE.Mesh(tipGeo, makeSatin());
     tip.position.set(sx, y, z);
     g.add(tip);
     const inner = new THREE.Mesh(innerGeo, makeTrim());
@@ -224,33 +234,72 @@ export function buildExhaust({ z = -2.07, y = 0.38, x = 0.45, count = 2 } = {}) 
   return g;
 }
 
-// ---- Badges + license plate ----
-export function buildBadgesAndPlate({ frontZ = 2.06, rearZ = -2.06, plateY = 0.42 } = {}) {
+// ---- Badges + license plate. Callers pass the fascia-face positions so the
+// thin badge discs sit flat ON the bodywork (the old hard-coded heights left
+// them floating in mid-air above the hood/tail). ----
+let _badgeMat = null, _plateMat = null;
+export function buildBadgesAndPlate({
+  frontZ = 2.06, frontY = 0.06, rearZ = -2.06, rearY = 0.22, plateY = -0.04,
+} = {}) {
   const g = new THREE.Group();
-  const badgeMat = new THREE.MeshStandardMaterial({
-    map: badgeTexture(), metalness: 0.6, roughness: 0.3,
-  });
-  const badgeGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.012, 20);
+  if (!_badgeMat) {
+    _badgeMat = new THREE.MeshStandardMaterial({
+      map: badgeTexture(), metalness: 0.4, roughness: 0.4,
+    });
+  }
+  const badgeGeo = new THREE.CylinderGeometry(0.042, 0.042, 0.010, 18);
   badgeGeo.rotateX(Math.PI / 2);
-  const bF = new THREE.Mesh(badgeGeo, badgeMat);
-  bF.position.set(0, 0.64, frontZ); g.add(bF);
-  const bR = new THREE.Mesh(badgeGeo, badgeMat);
-  bR.position.set(0, 0.84, rearZ); bR.rotation.y = Math.PI; g.add(bR);
+  const bF = new THREE.Mesh(badgeGeo, _badgeMat);
+  bF.position.set(0, frontY, frontZ); g.add(bF);
+  const bR = new THREE.Mesh(badgeGeo, _badgeMat);
+  bR.position.set(0, rearY, rearZ); bR.rotation.y = Math.PI; g.add(bR);
 
-  const plateMat = new THREE.MeshStandardMaterial({
-    map: plateTexture(), roughness: 0.6, metalness: 0.0,
-  });
+  if (!_plateMat) {
+    _plateMat = new THREE.MeshStandardMaterial({
+      map: plateTexture(), roughness: 0.6, metalness: 0.0,
+    });
+  }
   const plateGeo = new THREE.PlaneGeometry(0.42, 0.13);
-  const pR = new THREE.Mesh(plateGeo, plateMat);
-  pR.position.set(0, plateY, rearZ - 0.01);
+  const pR = new THREE.Mesh(plateGeo, _plateMat);
+  pR.position.set(0, plateY, rearZ - 0.005);
   pR.rotation.y = Math.PI;
   g.add(pR);
   return g;
 }
 
-// ---- Flat underbody panel so you never see through the car ----
-export function buildUnderbody({ y = 0.20, w = 1.7, len = 3.8 } = {}) {
-  const u = new THREE.Mesh(new THREE.BoxGeometry(w, 0.04, len), makeTrim());
+// ---- Matte lightless underside material. A real underfloor is a shadowed
+// void: zero env reflection + full roughness so it can never render as a
+// bright grey tray no matter the sky. Shared by underbody/splitter/diffuser.
+let _undertrayMat = null;
+function undertrayMaterial() {
+  if (_undertrayMat) return _undertrayMat;
+  _undertrayMat = new THREE.MeshStandardMaterial({
+    color: 0x060708, roughness: 1.0, metalness: 0.0, envMapIntensity: 0.0,
+  });
+  return _undertrayMat;
+}
+
+// ---- Underbody pan so you never see through the car. Chamfered corners and
+// bevelled edges, tucked well inside the rocker line and raised so only a dark
+// sliver shows below the sills instead of a protruding slab. ----
+export function buildUnderbody({ y = -0.26, w = 1.42, len = 3.5 } = {}) {
+  const hw = w / 2, hl = len / 2, c = 0.30;    // c = corner chamfer
+  const s = new THREE.Shape();
+  s.moveTo(-hw + c, -hl);
+  s.lineTo(hw - c, -hl);
+  s.lineTo(hw, -hl + c);
+  s.lineTo(hw, hl - c);
+  s.lineTo(hw - c, hl);
+  s.lineTo(-hw + c, hl);
+  s.lineTo(-hw, hl - c);
+  s.lineTo(-hw, -hl + c);
+  s.closePath();
+  const geo = new THREE.ExtrudeGeometry(s, {
+    depth: 0.03, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.04,
+    bevelSegments: 1,
+  });
+  geo.rotateX(-Math.PI / 2);                   // footprint flat in XZ, thin in Y
+  const u = new THREE.Mesh(geo, undertrayMaterial());
   u.position.set(0, y, 0);
   return u;
 }
@@ -267,7 +316,7 @@ function archMaterial() {
 }
 
 export function buildArchLiners({
-  zF = 1.45, zR = -1.45, x = 0.86, r = 0.47, width = 0.36,
+  zF = 1.45, zR = -1.45, x = 0.86, r = 0.42, width = 0.36,
 } = {}) {
   const g = new THREE.Group();
   // Open half-cylinder spanning the top half (after rotateZ the θ∈[0,π]

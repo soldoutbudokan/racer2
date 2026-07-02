@@ -18,10 +18,12 @@ function tunePaint(hex) {
   const c = new THREE.Color(hex);
   const hsl = {};
   c.getHSL(hsl);
-  hsl.s = Math.min(1, hsl.s * 1.0);
-  // Deep base so bright sun + ACES keeps it coloured, but not so dark the car
-  // reads as a black blob in the shadowed three-quarter views.
-  hsl.l = hsl.l * 0.60;
+  // Slight saturation push + a deeper base so bright sun + ACES keeps the
+  // paint coloured (the lighter base drifted bubble-gum pink under the
+  // golden-hour sky), but not so dark the car reads as a black blob in the
+  // shadowed three-quarter views.
+  hsl.s = Math.min(1, hsl.s * 1.12);
+  hsl.l = hsl.l * 0.44;
   c.setHSL(hsl.h, hsl.s, hsl.l);
   return c;
 }
@@ -35,10 +37,13 @@ export function makePaint(colorHex) {
   // hot-spot; the base stays deep and saturated.
   const m = new THREE.MeshPhysicalMaterial({
     color: tunePaint(colorHex),
-    // A touch more metal flake + a tighter base roughness gives the panels a
-    // metallic sheen and brightness falloff instead of reading as flat plastic.
-    metalness: 0.22,
-    roughness: 0.30,            // tighter base highlight → more "curved metal" falloff
+    // A touch of metal flake gives the panels a metallic sheen and brightness
+    // falloff instead of reading as flat plastic. NOTE: roughness MULTIPLIES
+    // the map (values ~0.2..0.36), so the scalar stays high — 0.30 here made
+    // the effective base a 0.06 near-mirror that washed sunlit panels to
+    // pale pink under the bright sky.
+    metalness: 0.16,
+    roughness: 0.85,            // × map → effective ~0.17..0.31 base highlight
     roughnessMap: paintRoughness(),
     clearcoat: 1.0,
     // Real clear coat is glossy but not a perfect mirror: a touch of roughness
@@ -64,8 +69,11 @@ export function makePaint(colorHex) {
 let _trim = null;       // matte black plastic trim
 export function makeTrim() {
   if (_trim) return _trim;
+  // Low metalness + weak clearcoat: real black trim stays dark under a bright
+  // sky instead of mirroring it into a mid-grey sheen.
   _trim = new THREE.MeshPhysicalMaterial({
-    color: 0x0c0d10, metalness: 0.3, roughness: 0.55, clearcoat: 0.4,
+    color: 0x0b0c0f, metalness: 0.12, roughness: 0.62, clearcoat: 0.18,
+    envMapIntensity: 0.6,
   });
   return _trim;
 }
@@ -75,11 +83,13 @@ export function makeCarbon() {
   if (_carbon) return _carbon;
   const n = carbonNormal();
   n.repeat.set(5, 5);
+  // Kept dark: carbon aero reads near-black at a distance, only the weave
+  // highlight betrays it. High metalness + env made it blow out light grey.
   _carbon = new THREE.MeshPhysicalMaterial({
-    color: 0x11141a, metalness: 0.50, roughness: 0.38,
-    clearcoat: 0.75, clearcoatRoughness: 0.14,
+    color: 0x0e1116, metalness: 0.35, roughness: 0.42,
+    clearcoat: 0.55, clearcoatRoughness: 0.16,
     normalMap: n, normalScale: new THREE.Vector2(0.70, 0.70),
-    envMapIntensity: 1.1,
+    envMapIntensity: 0.8,
   });
   return _carbon;
 }
@@ -105,8 +115,10 @@ export function makeGlass() {
     opacity: 0.86,
     side: THREE.DoubleSide,
     polygonOffset: true,
-    polygonOffsetFactor: -2,
-    polygonOffsetUnits: -2,
+    // Strong offset: at glancing angles -2 was not enough and the paint shell
+    // bled through the canopy as thin coloured streaks.
+    polygonOffsetFactor: -4,
+    polygonOffsetUnits: -4,
   });
   return _glass;
 }

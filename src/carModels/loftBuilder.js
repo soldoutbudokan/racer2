@@ -49,19 +49,27 @@ function sampleField(keys, field, u) {
 //   p.topW half-width at the top (greenhouse width / deck width -> tumblehome)
 function halfProfile(p, N) {
   const hw = p.hw, yb = p.yb, hip = p.hip, yt = p.yt, topW = p.topW;
-  // Flatter roof + fuller lower body so the cross-section reads as a car
-  // (rounded box with a defined shoulder/beltline) rather than an egg.
-  const handles = [
-    new THREE.Vector2(0, yb),                                       // floor centre
-    new THREE.Vector2(hw * 0.78, yb + 0.015),                       // full rocker
-    new THREE.Vector2(hw, hip),                                     // max width / shoulder
-    new THREE.Vector2(hw * 0.93, hip + (yt - hip) * 0.32),          // hold width, begin tuck
-    new THREE.Vector2(topW + (hw - topW) * 0.22, yt - (yt - hip) * 0.14), // greenhouse (tumblehome)
-    new THREE.Vector2(topW, yt - 0.012),                            // roof edge
-    new THREE.Vector2(0, yt),                                       // flat roof centre
-  ];
-  const spline = new THREE.SplineCurve(handles);
-  const pts = spline.getPoints(N - 1); // N points, endpoints included
+  // TWO splines meeting at the shoulder point with different tangents: the
+  // tangent break is a crisp beltline crease (the strongest stamped-steel cue),
+  // while a single spline through the same handles reads as melted soap.
+  // Flat handles at the floor and crown keep the hood/roof/deck as planes.
+  const nLow = Math.max(3, Math.round(N * 0.55));
+  const nUp = N - nLow;
+  const lower = new THREE.SplineCurve([
+    new THREE.Vector2(0, yb),                                   // floor centre
+    new THREE.Vector2(hw * 0.72, yb),                           // flat floor out to the rocker
+    new THREE.Vector2(hw * 0.955, yb + (hip - yb) * 0.42),      // near-vertical body side
+    new THREE.Vector2(hw, hip),                                 // shoulder / beltline crease
+  ]);
+  const upper = new THREE.SplineCurve([
+    new THREE.Vector2(hw * 0.955, hip + (yt - hip) * 0.10),     // tuck in above the crease
+    new THREE.Vector2(topW + (hw - topW) * 0.42, hip + (yt - hip) * 0.56), // tumblehome
+    new THREE.Vector2(topW, yt - 0.006),                        // top corner
+    new THREE.Vector2(topW * 0.52, yt),                         // flat crown / deck plane
+    new THREE.Vector2(0, yt),                                   // top centre
+  ]);
+  const pts = lower.getPoints(nLow - 1)          // nLow points, crease included
+    .concat(upper.getPoints(nUp - 1));           // nUp points above the crease
   // Clamp x>=0 so the centre line never crosses itself, and force the exact
   // centre verts to x=0 so the mirror shares them (no spine crease).
   for (const q of pts) if (q.x < 0) q.x = 0;

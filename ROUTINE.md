@@ -83,6 +83,24 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-02** (accepted → `main`, owner-directed interactive session) — Big
+  model-realism overhaul across cars, wheels and environment (multi-agent).
+  Cars (`src/carModels/*`): the bright-grey underbody tray/splitter/diffuser
+  planks are now a chamfered near-black undertray tucked inside the rockers;
+  badges/plate/grille/lights re-seated ON the fascia surfaces (they floated or
+  were buried); mirrors rebuilt as angular pods (were blown-out spheres);
+  loft profile gained a real shoulder crease, flat hood/roof/deck planes and
+  arch blisters; paint bug fixed (base roughness 0.30 multiplied the roughness
+  map into a near-mirror — now 0.85). Wheels (`wheels.js`): dished faces,
+  profiled tires, rotor/caliper depth. Environment (`track.js`): black monolith
+  was the catch-fence strip stitching one backwards quad across the lap seam
+  (now contiguous runs + analytic normals); grey sky slabs were cloud sprites
+  drawn un-billboarded by GTAO's override-material prepass (clouds are now
+  static quads + `hideFromOverridePasses()` helper); treeline reworked into
+  clustered copses with lumpy multi-lobe canopies + instanced pines; mountains
+  got leaning summits, dithered snow lines, gullies; armco/fence/boards
+  darkened to weathered steel. Verified: physics-test 23/23, smoke OK, build
+  clean, viewshots at 6s/9s with zero console errors.
 - **2026-07-01** (preview, pending review) — Fake contact shadow fixed: every
   car was sitting on a bright light-grey **rectangular tray** at ground level
   (glaring from low/side/front angles — the `trackside`, `low`, `front34`
@@ -119,19 +137,35 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Backlog (open realism items — pick the highest impact)
 
-- ~~**Sky slabs when facing the sun**~~ — addressed 2026-06-30 (cloud-texture
-  alpha feather + lighter shadow base + higher placement). A faint feathered
-  cloud rim can still clip the very top edge of frame in some toward-sun views,
-  but it now reads as a soft puff, not a hard slab. Re-open only if review finds
-  it still distracting.
-- **Distant trees look like cardboard** (env): the far treeline is single flat
-  billboards in near-straight rows. Vary spacing/scale/yaw and use crossed
-  planes (already used for near foliage) so they read as 3D canopies.
-- **Mountains a touch CGI-smooth** (env): recently improved but the snow/rock
-  transition and silhouette could use more erosion/texture variation.
-- **Car wheels/rims read slightly toy-like** (car): rim depth, tyre sidewall
-  lettering, and brake-disc/caliper visibility could be richer.
-- ~~**White tray under every car**~~ — fixed 2026-07-01 (contact-shadow blend
-  mode). Re-open only if review finds the new soft shadow too dark/too faint.
+Open items below are the un-fixed findings from the 2026-07-02 overhaul's
+critique panel (its fix round was cut short by session limits — these are
+confirmed against the `after-*` shots, highest impact first):
+
+- **Arch liners read as black crescents pasted on the fenders** (car, high):
+  the dark half-tube liners protrude outside the body silhouette in profile
+  and 3/4 views. Shrink radius/width or clip them inside the hull.
+- **Tires read hollow in side views** (wheels, high): thin bright rim hoop
+  with body paint showing through the upper wheel opening; far-side spokes can
+  poke past the tire face. Close the barrel/back face and check both sides.
+- **GT body still soft in profile** (car, high): no hood/door cutlines or
+  pillar breaks, nose droops to a rounded point, and there is a pinched mesh
+  fold in the roof just above the windshield.
+- **Open-wheel car flanks still read as white planks** (car, medium): the
+  side-pod/chassis construction predates the overhaul standards.
+- **Racing-line aid bleeds under the cars** (env/aid, medium): the green
+  stripe z-bleeds beneath the rear bumper and glows at tire contact patches
+  under the multiply contact shadow. Keep the aid + its colours (it is a
+  control); just raise its lift/mask it under car footprints.
+- **Trackside billboards** (env, medium): the dying fix agent DID land edits
+  here (sponsor faces, weathered backs) but never verified them — spot-check
+  boards from both sides on the next run; one panel may still float above its
+  stub posts.
+- **Misc polish** (low): grass banding seams at high angles; 1-2px needle
+  spikes on two mountain summits; distant sponsor banners render as magenta
+  confetti dashes at the horizon. (Grandstand back-wall gap and noise-texture
+  tile seams got unverified fixes on 2026-07-02 — re-verify rather than redo.)
+- ~~**Distant trees look like cardboard**~~ / ~~**Mountains CGI-smooth**~~ /
+  ~~**Wheels toy-like**~~ / ~~**Sky slabs**~~ / ~~**White tray under every
+  car**~~ — all addressed by the 2026-07-02 overhaul (see Changelog).
 
 (When an item is rejected, note "tried X — rejected: Y" here so it isn't retried.)

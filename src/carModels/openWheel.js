@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {
-  makePaint, makeCarbon, makeTrim, makeChrome, makeTaillight, makeSatin,
+  makePaint, makeCarbon, makeTrim, makeTaillight, makeSatin,
 } from './carMaterials.js';
-import { buildExhaust } from './parts.js';
+import { buildExhaust, buildUnderbody } from './parts.js';
 
 // Open-wheel (F1-ish) — slim central tub with a pointed nose, raised airbox /
 // roll hoop, halo, sidepods, and big front + rear wings. Wheels are EXPOSED
@@ -10,14 +10,14 @@ import { buildExhaust } from './parts.js';
 // Axle-centred frame (wheel centre y 0, ground -0.36).
 
 export const keys = [
-  { z: -2.10, hw: 0.28, yb: -0.08, hip: 0.00, yt: 0.20, topW: 0.18 }, // tail / diffuser
-  { z: -1.55, hw: 0.40, yb: -0.10, hip: 0.00, yt: 0.40, topW: 0.28 }, // engine cover
-  { z: -0.95, hw: 0.44, yb: -0.10, hip: 0.04, yt: 0.56, topW: 0.34 }, // airbox / roll hoop
-  { z: -0.35, hw: 0.50, yb: -0.12, hip: 0.05, yt: 0.34, topW: 0.44 }, // cockpit (opening)
-  { z:  0.35, hw: 0.46, yb: -0.12, hip: 0.03, yt: 0.28, topW: 0.40 }, // chassis
-  { z:  1.05, hw: 0.36, yb: -0.10, hip: 0.00, yt: 0.20, topW: 0.30 }, // narrowing
-  { z:  1.55, hw: 0.28, yb: -0.08, hip: 0.00, yt: 0.16, topW: 0.22 }, // nose
-  { z:  2.05, hw: 0.15, yb: -0.02, hip: 0.00, yt: 0.12, topW: 0.12 }, // nose tip
+  { z: -2.10, hw: 0.24, yb: -0.10, hip: 0.00, yt: 0.16, topW: 0.14 }, // tail / diffuser
+  { z: -1.55, hw: 0.36, yb: -0.12, hip: 0.00, yt: 0.36, topW: 0.18 }, // engine cover spine
+  { z: -0.95, hw: 0.42, yb: -0.12, hip: 0.02, yt: 0.56, topW: 0.22 }, // airbox / roll hoop
+  { z: -0.35, hw: 0.48, yb: -0.13, hip: 0.04, yt: 0.34, topW: 0.40 }, // cockpit (opening)
+  { z:  0.35, hw: 0.44, yb: -0.13, hip: 0.02, yt: 0.26, topW: 0.36 }, // chassis
+  { z:  1.05, hw: 0.32, yb: -0.10, hip: 0.00, yt: 0.18, topW: 0.24 }, // narrowing
+  { z:  1.60, hw: 0.22, yb: -0.07, hip: 0.00, yt: 0.13, topW: 0.15 }, // nose
+  { z:  2.05, hw: 0.11, yb: -0.03, hip: 0.00, yt: 0.08, topW: 0.07 }, // slender nose tip
 ];
 
 export const wheelStyle = 'openWheel';
@@ -132,13 +132,13 @@ export function decorate(body, ctx) {
   body.add(rain);
   const pipe = new THREE.Mesh(
     (() => { const g = new THREE.CylinderGeometry(0.06, 0.06, 0.2, 14); g.rotateX(Math.PI / 2); return g; })(),
-    makeChrome());
+    makeSatin());
   pipe.position.set(0, 0.06, -2.12);
   body.add(pipe);
 
-  // ---- floor / plank ----
-  const floor = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.04, 3.4), makeTrim());
-  floor.position.set(0, -0.32, -0.1);
+  // ---- floor / plank — matte lightless pan, tucked under the tub ----
+  const floor = buildUnderbody({ y: -0.28, w: 0.95, len: 3.2 });
+  floor.position.z = -0.1;
   body.add(floor);
 
   return { brakeLights: rain };
