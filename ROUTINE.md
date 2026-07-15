@@ -83,7 +83,7 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-15** (preview, pending review — `claude/dazzling-albattani-5o283x`) —
+- **2026-07-15** (accepted → `main`, owner replied "go") —
   Wheel-arch liners no longer read as black crescents pasted on the fenders
   (top Backlog item). Root cause in `buildArchLiners` (`src/carModels/parts.js`):
   the dark half-tube's OUTER edge (x = `x` + `width`/2 = 0.86+0.18 = 1.04 for the
@@ -158,9 +158,9 @@ critique panel (its fix round was cut short by session limits — these are
 confirmed against the `after-*` shots, highest impact first):
 
 - ~~**Arch liners read as black crescents pasted on the fenders**~~ (car,
-  high) — addressed 2026-07-15 (see Changelog): narrowed the liner width so its
-  outer edge tucks inside the fender lip (was flush with the body skin) + a
-  small radius trim. Pending owner review.
+  high) — DONE 2026-07-15, accepted → `main` (see Changelog): narrowed the liner
+  width so its outer edge tucks inside the fender lip (was flush with the body
+  skin) + a small radius trim.
 - **Tires read hollow in side views** (wheels, high): thin bright rim hoop
   with body paint showing through the upper wheel opening; far-side spokes can
   poke past the tire face. Close the barrel/back face and check both sides.
