@@ -83,6 +83,22 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-15** (preview, pending review — `claude/dazzling-albattani-5o283x`) —
+  Wheel-arch liners no longer read as black crescents pasted on the fenders
+  (top Backlog item). Root cause in `buildArchLiners` (`src/carModels/parts.js`):
+  the dark half-tube's OUTER edge (x = `x` + `width`/2 = 0.86+0.18 = 1.04 for the
+  GT, 0.88+0.18 = 1.06 for the muscle) landed exactly on the body skin, which
+  flares to hw ~1.04–1.09 at the arches — so the near-black tube was drawn flush
+  on the outer painted surface, reading as a horseshoe pasted onto the fender in
+  the `trackside`/`front34`/`low` shots. Fix: narrowed `width` 0.36→0.30 so the
+  outer rim sits ~1.01–1.03 — tucked a few cm INSIDE the fender lip, so the liner
+  recedes into shadow as a proper wheel well; and trimmed `r` 0.42→0.41 to thin
+  the crescent over the tyre while keeping 0.05 clearance over the 0.36 tyre for
+  suspension travel (wheels bob relative to the body; `maxSuspensionTravel` 0.3,
+  so the tread must not poke through the liner crest). Verified: physics-test
+  23/23, smoke OK (no NaN, outward winding), build clean, viewshots zero console
+  errors; crescents gone across all 5 angles with no see-through through the
+  openings.
 - **2026-07-02** (accepted → `main`, owner-directed interactive session) — Big
   model-realism overhaul across cars, wheels and environment (multi-agent).
   Cars (`src/carModels/*`): the bright-grey underbody tray/splitter/diffuser
@@ -141,9 +157,10 @@ Open items below are the un-fixed findings from the 2026-07-02 overhaul's
 critique panel (its fix round was cut short by session limits — these are
 confirmed against the `after-*` shots, highest impact first):
 
-- **Arch liners read as black crescents pasted on the fenders** (car, high):
-  the dark half-tube liners protrude outside the body silhouette in profile
-  and 3/4 views. Shrink radius/width or clip them inside the hull.
+- ~~**Arch liners read as black crescents pasted on the fenders**~~ (car,
+  high) — addressed 2026-07-15 (see Changelog): narrowed the liner width so its
+  outer edge tucks inside the fender lip (was flush with the body skin) + a
+  small radius trim. Pending owner review.
 - **Tires read hollow in side views** (wheels, high): thin bright rim hoop
   with body paint showing through the upper wheel opening; far-side spokes can
   poke past the tire face. Close the barrel/back face and check both sides.
