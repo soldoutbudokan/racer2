@@ -83,6 +83,24 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-16** (preview, pending review) — Tyres no longer read hollow in
+  side/oblique views (top Backlog item). Root cause in `buildTemplateRaw`
+  (`src/carModels/wheels.js`): the dark rim well (`barrel`) was only radius
+  0.208 and 0.10 wide, so it covered just the middle 0.10 of the 0.28-wide
+  tyre and stopped 0.035 short of the bead (0.243) — leaving an unbacked
+  annular gap. From the `trackside`/`low` angles the upper wheel opening showed
+  a thin bright rim hoop with daylight/body paint behind it instead of a
+  shadowed well. Fix: widened the barrel to 0.230 × 0.18 (fills nearly
+  bead-to-bead, radius tucked just inside the bead and behind the dish) and
+  enlarged the mid-well back plug 0.209→0.230 to seal the annulus between the
+  rotor edge and the bore. The plug's thin disc sits inside the rotor's axial
+  span (±0.016) at small radii, so it never z-fights the brake face nor hides
+  the caliper/rotor detail that stays proud of it. Physics stance untouched
+  (`RADIUS`/`WIDTH` unchanged). Verified: smoke OK (no NaN, outward winding,
+  6086→ unchanged tri budget), physics-test 23/23 (incl. "no console errors"),
+  build clean, viewshots + new `scripts/wheelshot.mjs` before/after showed the
+  hollow ring gone and interior solidly dark on BOTH sides with brakes still
+  visible; no see-through at the front-3/4 oblique.
 - **2026-07-15** (accepted → `main`, owner replied "go") —
   Wheel-arch liners no longer read as black crescents pasted on the fenders
   (top Backlog item). Root cause in `buildArchLiners` (`src/carModels/parts.js`):
@@ -161,9 +179,11 @@ confirmed against the `after-*` shots, highest impact first):
   high) — DONE 2026-07-15, accepted → `main` (see Changelog): narrowed the liner
   width so its outer edge tucks inside the fender lip (was flush with the body
   skin) + a small radius trim.
-- **Tires read hollow in side views** (wheels, high): thin bright rim hoop
-  with body paint showing through the upper wheel opening; far-side spokes can
-  poke past the tire face. Close the barrel/back face and check both sides.
+- ~~**Tires read hollow in side views**~~ (wheels, high) — DONE 2026-07-16,
+  preview pending review (see Changelog): widened the dark rim well to back the
+  full tyre bore bead-to-bead + enlarged the mid-well back plug so nothing
+  shows through the opening from either side. (No sign of far-side spokes
+  poking past the tyre face in the after shots.)
 - **GT body still soft in profile** (car, high): no hood/door cutlines or
   pillar breaks, nose droops to a rounded point, and there is a pinched mesh
   fold in the roof just above the windshield.
