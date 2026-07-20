@@ -316,11 +316,21 @@ function archMaterial() {
 }
 
 export function buildArchLiners({
-  zF = 1.45, zR = -1.45, x = 0.86, r = 0.42, width = 0.36,
+  zF = 1.45, zR = -1.45, x = 0.86, r = 0.41, width = 0.30,
 } = {}) {
   const g = new THREE.Group();
   // Open half-cylinder spanning the top half (after rotateZ the θ∈[0,π]
   // half maps onto y ≥ 0), axis along X so it wraps the wheel.
+  //
+  // `width` (X extent) is kept just narrow enough to back the tyre barrel
+  // (tyre width 0.28) without the liner's OUTER edge reaching the body skin:
+  // the bodies flare to hw ~1.04–1.09 at the arches, so with x≈0.86–0.88 the
+  // 0.30 width keeps the outer rim at ~1.01–1.03 — tucked a few cm INSIDE the
+  // fender lip so the dark half-tube reads as a recessed wheel well in shadow
+  // instead of a black crescent painted onto the outer fender surface (which
+  // is what a body-flush edge produced in profile / 3-4 views). `r` clears the
+  // 0.36 tyre by 0.05 — enough for suspension travel without the tread poking
+  // through the liner crest.
   const geo = new THREE.CylinderGeometry(r, r, width, 22, 1, true, 0, Math.PI);
   geo.rotateZ(Math.PI / 2);
   for (const z of [zF, zR]) {

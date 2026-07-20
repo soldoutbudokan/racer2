@@ -205,17 +205,27 @@ function buildTemplateRaw(styleKey, style) {
     group.add(sw);
   }
 
-  // Rim well (dark, seen between the spokes behind the dish).
+  // Rim well (dark, seen between the spokes behind the dish). Sized to fill the
+  // whole tyre bore: radius reaches just inside the bead (0.243) and the barrel
+  // spans nearly bead-to-bead, so from a side/oblique view the dark wall — not
+  // daylight or bodywork — backs the wheel opening across its full width. The
+  // old 0.208 × 0.10 well left an unbacked annular gap out to the bead and only
+  // covered the middle 0.10 of the 0.28-wide tyre, so the upper opening read as
+  // a hollow ring with body paint showing through.
   const barrel = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.208, 0.208, 0.10, 24, 1, true),
+    new THREE.CylinderGeometry(0.230, 0.230, 0.18, 28, 1, true),
     makeRimDark(),
   );
   barrel.rotateZ(Math.PI / 2);
   group.add(barrel);
-  // Thin capped plug at mid-well: the barrel wall is edge-on from a side view,
-  // so without this the bodywork shows through between the spokes.
+  // Solid back wall at mid-well: seals every straight-through sightline (the
+  // barrel wall alone is edge-on from a pure side view). Radius matches the
+  // barrel so the annulus between the rotor edge and the bore is closed; the
+  // thin disc tucks inside the rotor's axial span (±0.016) at small radii, so
+  // it never z-fights the brake face and never hides the caliper/rotor detail
+  // that sits proud of it.
   const plug = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.209, 0.209, 0.012, 24),
+    new THREE.CylinderGeometry(0.230, 0.230, 0.012, 28),
     makeRimDark(),
   );
   plug.rotateZ(Math.PI / 2);

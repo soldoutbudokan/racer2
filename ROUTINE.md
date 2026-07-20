@@ -83,6 +83,40 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-16** (preview, pending review) — Tyres no longer read hollow in
+  side/oblique views (top Backlog item). Root cause in `buildTemplateRaw`
+  (`src/carModels/wheels.js`): the dark rim well (`barrel`) was only radius
+  0.208 and 0.10 wide, so it covered just the middle 0.10 of the 0.28-wide
+  tyre and stopped 0.035 short of the bead (0.243) — leaving an unbacked
+  annular gap. From the `trackside`/`low` angles the upper wheel opening showed
+  a thin bright rim hoop with daylight/body paint behind it instead of a
+  shadowed well. Fix: widened the barrel to 0.230 × 0.18 (fills nearly
+  bead-to-bead, radius tucked just inside the bead and behind the dish) and
+  enlarged the mid-well back plug 0.209→0.230 to seal the annulus between the
+  rotor edge and the bore. The plug's thin disc sits inside the rotor's axial
+  span (±0.016) at small radii, so it never z-fights the brake face nor hides
+  the caliper/rotor detail that stays proud of it. Physics stance untouched
+  (`RADIUS`/`WIDTH` unchanged). Verified: smoke OK (no NaN, outward winding,
+  6086→ unchanged tri budget), physics-test 23/23 (incl. "no console errors"),
+  build clean, viewshots + new `scripts/wheelshot.mjs` before/after showed the
+  hollow ring gone and interior solidly dark on BOTH sides with brakes still
+  visible; no see-through at the front-3/4 oblique.
+- **2026-07-15** (accepted → `main`, owner replied "go") —
+  Wheel-arch liners no longer read as black crescents pasted on the fenders
+  (top Backlog item). Root cause in `buildArchLiners` (`src/carModels/parts.js`):
+  the dark half-tube's OUTER edge (x = `x` + `width`/2 = 0.86+0.18 = 1.04 for the
+  GT, 0.88+0.18 = 1.06 for the muscle) landed exactly on the body skin, which
+  flares to hw ~1.04–1.09 at the arches — so the near-black tube was drawn flush
+  on the outer painted surface, reading as a horseshoe pasted onto the fender in
+  the `trackside`/`front34`/`low` shots. Fix: narrowed `width` 0.36→0.30 so the
+  outer rim sits ~1.01–1.03 — tucked a few cm INSIDE the fender lip, so the liner
+  recedes into shadow as a proper wheel well; and trimmed `r` 0.42→0.41 to thin
+  the crescent over the tyre while keeping 0.05 clearance over the 0.36 tyre for
+  suspension travel (wheels bob relative to the body; `maxSuspensionTravel` 0.3,
+  so the tread must not poke through the liner crest). Verified: physics-test
+  23/23, smoke OK (no NaN, outward winding), build clean, viewshots zero console
+  errors; crescents gone across all 5 angles with no see-through through the
+  openings.
 - **2026-07-02** (accepted → `main`, owner-directed interactive session) — Big
   model-realism overhaul across cars, wheels and environment (multi-agent).
   Cars (`src/carModels/*`): the bright-grey underbody tray/splitter/diffuser
@@ -141,12 +175,15 @@ Open items below are the un-fixed findings from the 2026-07-02 overhaul's
 critique panel (its fix round was cut short by session limits — these are
 confirmed against the `after-*` shots, highest impact first):
 
-- **Arch liners read as black crescents pasted on the fenders** (car, high):
-  the dark half-tube liners protrude outside the body silhouette in profile
-  and 3/4 views. Shrink radius/width or clip them inside the hull.
-- **Tires read hollow in side views** (wheels, high): thin bright rim hoop
-  with body paint showing through the upper wheel opening; far-side spokes can
-  poke past the tire face. Close the barrel/back face and check both sides.
+- ~~**Arch liners read as black crescents pasted on the fenders**~~ (car,
+  high) — DONE 2026-07-15, accepted → `main` (see Changelog): narrowed the liner
+  width so its outer edge tucks inside the fender lip (was flush with the body
+  skin) + a small radius trim.
+- ~~**Tires read hollow in side views**~~ (wheels, high) — DONE 2026-07-16,
+  preview pending review (see Changelog): widened the dark rim well to back the
+  full tyre bore bead-to-bead + enlarged the mid-well back plug so nothing
+  shows through the opening from either side. (No sign of far-side spokes
+  poking past the tyre face in the after shots.)
 - **GT body still soft in profile** (car, high): no hood/door cutlines or
   pillar breaks, nose droops to a rounded point, and there is a pinched mesh
   fold in the roof just above the windshield.
