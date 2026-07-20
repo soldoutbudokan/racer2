@@ -83,7 +83,9 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-16** (preview, pending review) — Tyres no longer read hollow in
+- **2026-07-16** (adopted into the `claude/track-variety-audit` preview on
+  2026-07-19 at the owner's direction; original preview branch deleted) —
+  Tyres no longer read hollow in
   side/oblique views (top Backlog item). Root cause in `buildTemplateRaw`
   (`src/carModels/wheels.js`): the dark rim well (`barrel`) was only radius
   0.208 and 0.10 wide, so it covered just the middle 0.10 of the 0.28-wide
@@ -180,7 +182,7 @@ confirmed against the `after-*` shots, highest impact first):
   width so its outer edge tucks inside the fender lip (was flush with the body
   skin) + a small radius trim.
 - ~~**Tires read hollow in side views**~~ (wheels, high) — DONE 2026-07-16,
-  preview pending review (see Changelog): widened the dark rim well to back the
+  riding the `claude/track-variety-audit` preview (see Changelog): widened the dark rim well to back the
   full tyre bore bead-to-bead + enlarged the mid-well back plug so nothing
   shows through the opening from either side. (No sign of far-side spokes
   poking past the tyre face in the after shots.)
