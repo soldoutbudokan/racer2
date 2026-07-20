@@ -83,9 +83,20 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-16** (adopted into the `claude/track-variety-audit` preview on
-  2026-07-19 at the owner's direction; original preview branch deleted) —
-  Tyres no longer read hollow in
+- **2026-07-19** (accepted → `main`, owner replied "go ahead and push") —
+  Interactive session, not a routine run: full track-catalogue overhaul.
+  Every circuit is now hand-authored F1-style data (the stadium()/wavyLoop()
+  generators are deleted — do not reintroduce them): the oval became a
+  flowing national circuit, the street circuit a Baku-style layout, the
+  sine-flower alpine loop a real pass with two switchback hairpins, the
+  desert blob a Sakhir-style speedway, plus a NEW sixth track (`parco`,
+  Monza-style parkland). Horizons diversified: new low `hills` preset in
+  `addDistantMountains` (track.js); peaks only where thematic. New
+  `scripts/track-geometry.mjs` validates layouts (corner radii, barrier
+  gaps, start straightness) — run it after any tracks.js edit.
+- **2026-07-16** (accepted → `main` 2026-07-19: adopted into the
+  `claude/track-variety-audit` preview at the owner's direction and merged
+  with it) — Tyres no longer read hollow in
   side/oblique views (top Backlog item). Root cause in `buildTemplateRaw`
   (`src/carModels/wheels.js`): the dark rim well (`barrel`) was only radius
   0.208 and 0.10 wide, so it covered just the middle 0.10 of the 0.28-wide
@@ -182,7 +193,7 @@ confirmed against the `after-*` shots, highest impact first):
   width so its outer edge tucks inside the fender lip (was flush with the body
   skin) + a small radius trim.
 - ~~**Tires read hollow in side views**~~ (wheels, high) — DONE 2026-07-16,
-  riding the `claude/track-variety-audit` preview (see Changelog): widened the dark rim well to back the
+  accepted → `main` 2026-07-19 (see Changelog): widened the dark rim well to back the
   full tyre bore bead-to-bead + enlarged the mid-well back plug so nothing
   shows through the opening from either side. (No sign of far-side spokes
   poking past the tyre face in the after shots.)
