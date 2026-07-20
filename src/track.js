@@ -1412,9 +1412,10 @@ function addDistantMountains(scene, kind = 'far') {
     fog: true,
   });
   // Palette + range layout vary by setting:
-  //   far  — the GP/oval default: cool slate ranges far on the horizon.
-  //   near — the alpine pass: taller peaks pulled in close so they loom.
-  //   mesa — the desert: warm red rock buttes, no snow, mid distance.
+  //   far   — the GP default: cool slate ranges far on the horizon.
+  //   near  — the alpine pass: taller peaks pulled in close so they loom.
+  //   mesa  — the desert: warm red rock buttes, no snow, mid distance.
+  //   hills — low rolling farmland ridges: golden-green, no rock, no snow.
   // [innerR, spanR, count, baseH, varH, baseHaze, hazePerFrac, snowy]
   const PRESETS = {
     far: {
@@ -1439,6 +1440,16 @@ function addDistantMountains(scene, kind = 'far') {
         [1100, 520, 12, 190, 230, 0.14, 0.30, false],
         [1950, 700, 18, 150, 190, 0.40, 0.32, false],
         [2950, 900, 24, 120, 150, 0.62, 0.28, false],
+      ],
+    },
+    hills: {
+      // Heights a fraction of the peak presets against the same base widths,
+      // so every silhouette is a long low ridge, not a summit.
+      haze: 0xd6c8a8, rock: 0x8f9060, forest: 0x5c6c44, snow: 0xeee6cf,
+      bands: [
+        [1350, 500, 11, 85, 100, 0.18, 0.30, false],
+        [2150, 650, 16, 65, 85, 0.46, 0.32, false],
+        [3000, 800, 21, 50, 70, 0.72, 0.26, false],
       ],
     },
   };

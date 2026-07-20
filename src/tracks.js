@@ -8,50 +8,16 @@
  * flat physics plane, so "mountains" etc. are scenery, not real elevation).
  * controlPoints[0] is the start/finish; lay 2–3 collinear points around it so
  * the Catmull tangents settle onto a straight where the grid is painted.
+ *
+ * Every circuit is hand-authored. Real circuits are asymmetric: straights of
+ * unequal length, corner sequences that tighten or open, one signature
+ * feature per track (a hairpin, a chicane, a carousel). Generated geometry
+ * (ovals, sine-modulated loops) reads as a shape, not a place — don't add it
+ * back. Verify new layouts with scratchpad geometry checks: min corner
+ * radius ≥ ~30 m for open circuits (chicanes may pinch tighter), and
+ * non-adjacent road sections at least 2 × (roadWidth/2 + runoff + 0.5)
+ * apart so the barriers never overlap.
  */
-
-// ---- Layout helpers (kept tiny; complex circuits are hand-authored) ----
-
-// A stadium / D-oval: two straights of half-length L up the x = ±R sides,
-// joined by semicircular ends. Travel runs +z up the right side, so the start
-// (first point) sits mid-right-straight heading +z — a dead-straight grid.
-function stadium(R, L, capPts = 3) {
-  const pts = [];
-  // Start mid-right-straight so the grid lands on a dead-straight section.
-  pts.push([R, 0], [R, L]);
-  // top semicircle, east→west over the top (centre 0,L)
-  for (let k = 1; k <= capPts; k++) {
-    const a = (k / (capPts + 1)) * Math.PI;
-    pts.push([Math.cos(a) * R, L + Math.sin(a) * R]);
-  }
-  // left straight, top→bottom (heading -z)
-  pts.push([-R, L], [-R, 0], [-R, -L]);
-  // bottom semicircle, west→east under the bottom (centre 0,-L)
-  for (let k = 1; k <= capPts; k++) {
-    const a = Math.PI + (k / (capPts + 1)) * Math.PI;
-    pts.push([Math.cos(a) * R, -L + Math.sin(a) * R]);
-  }
-  // back up the right straight, stopping short of the start point
-  pts.push([R, -L]);
-  return pts;
-}
-
-// A smooth closed "flower" loop: radius modulated by sin(lobes·θ). Star-convex
-// (r > 0 everywhere) so it never self-intersects. Rotated so the start lands on
-// a low-curvature stretch, then the first few points are nudged collinear to
-// give a short start straight.
-function wavyLoop(baseR, amp, lobes, n, phase = 0, cx = 0, cz = 0) {
-  const pts = [];
-  for (let i = 0; i < n; i++) {
-    const t = i / n;
-    const a = t * Math.PI * 2 + phase;
-    const r = baseR + amp * Math.sin(lobes * a);
-    pts.push([cx + Math.cos(a) * r, cz + Math.sin(a) * r]);
-  }
-  return pts;
-}
-
-// ---------------------------------------------------------------------------
 
 export const TRACKS = [
   // -------------------------------------------------------------------------
@@ -88,21 +54,32 @@ export const TRACKS = [
   },
 
   // -------------------------------------------------------------------------
-  // EASY — a wide, fast, forgiving club oval. Two big sweepers, huge run-off,
-  // no gravel to punish a wide line. Perfect first track.
+  // EASY — a fast, flowing national circuit at golden hour. Wide road, huge
+  // run-off, no gravel: every corner is a sweeper you can see all the way
+  // through. One honest braking zone (the last double-apex) to learn on.
   // -------------------------------------------------------------------------
   {
     id: 'sprint',
     name: 'SUNSET SPEEDWAY',
-    subtitle: 'CLUB OVAL',
+    subtitle: 'NATIONAL CIRCUIT',
     difficulty: 'EASY',
-    blurb: 'Wide open D-oval. Two gentle sweepers, acres of run-off — flat out and friendly.',
+    blurb: 'Fast and friendly: flowing sweepers, one easy ess, acres of run-off to learn on.',
     roadWidth: 20,
     kerbWidth: 2.2,
     runoffWidth: 9,
     closed: true,
     tension: 0.5,
-    controlPoints: stadium(135, 120, 3),
+    controlPoints: [
+      [0, 0], [0, 110],           // front straight past the pits
+      [26, 170], [86, 204],       // T1 — fast right sweeper
+      [160, 212], [226, 186],     // T2 — gentle right kink
+      [268, 128], [278, 58],      // T3 — long carousel right onto the east side
+      [258, -8], [280, -72],      // T4/T5 — easy left-right ess
+      [258, -148], [200, -192],   // T6 — wide right
+      [120, -210],                // back run
+      [46, -196], [8, -156],      // T7 — double-apex right, the one braking zone
+      [0, -110],                  // settles onto the front straight
+    ],
     theme: {
       ground: 'grass',
       fog: [0xc8bba6, 1000, 4400],
@@ -110,15 +87,15 @@ export const TRACKS = [
       kerbs: true, gravel: false, skid: true,
       pit: true, catchFence: false, grandstands: true, sponsors: true,
       tireStacks: false, brakeMarkers: false,
-      trees: { type: 'broadleaf', count: 420 },
-      mountains: 'far',
+      trees: { type: 'broadleaf', count: 460 },
+      mountains: 'hills',
       clouds: true,
     },
   },
 
   // -------------------------------------------------------------------------
-  // CITY F1 — a tight street circuit: long pit straight, 90° corners, a flick
-  // chicane, walls right at the kerb, skyscrapers and ad-boards all around.
+  // CITY F1 — a Baku-style street circuit: two long straights, unequal city
+  // blocks, a flick chicane on the bottom street, walls right at the kerb.
   // -------------------------------------------------------------------------
   {
     id: 'downtown',
@@ -132,14 +109,18 @@ export const TRACKS = [
     closed: true,
     tension: 0.5,
     controlPoints: [
-      [0, 0], [0, 60], [0, 150],      // pit straight, heading +z
-      [18, 184], [70, 198],           // Turn 1 — 90° right
-      [170, 198], [202, 180],         // Turn 2 — 90° right, onto the back run
-      [214, 130], [214, 44],
-      [196, 10], [216, -24], [214, -54], // snap chicane (left-right)
-      [214, -118], [196, -150],       // Turn 3 — 90° right
-      [150, -166], [40, -166],        // bottom straight, heading -x
-      [4, -150], [0, -108], [0, -60], // Turn 4 — sweeps back onto the pit straight
+      [0, 0], [0, 96], [0, 168],      // pit straight, heading +z (start at [0,0])
+      [22, 204], [72, 216],           // T1 — 90° right
+      [150, 216],                     // cross street
+      [196, 200], [210, 152],         // T2 — 90° right, heading back south
+      [210, 96],
+      [224, 62], [268, 50],           // T3 — 90° left, short block east
+      [304, 34], [316, -12],          // T4 — 90° right onto the sea-front run
+      [316, -120],                    // long run south
+      [302, -166], [258, -182],       // T5 — 90° right
+      [160, -182], [118, -182],       // bottom straight, heading -x
+      [78, -160], [42, -156],         // snap chicane — lane jumps toward the marina
+      [8, -134], [0, -96],            // T6 — sweeps back onto the pit straight
     ],
     theme: {
       ground: 'city',
@@ -156,24 +137,38 @@ export const TRACKS = [
   },
 
   // -------------------------------------------------------------------------
-  // MOUNTAINS — a flowing alpine ribbon ringed by tall, close peaks and dense
-  // pine forest, with steel guardrail on the edges. No straights to speak of.
+  // MOUNTAINS — a proper pass road: a climbing sweep, esses along the ridge,
+  // two genuine switchback hairpins and a carousel drop back to the valley.
+  // Tall close peaks and dense pines; guardrail on the edges.
   // -------------------------------------------------------------------------
   {
     id: 'alpine',
     name: 'COL DU PIN',
     subtitle: 'MOUNTAIN PASS',
     difficulty: 'MEDIUM-HARD',
-    blurb: 'A flowing pass through the pines: linked esses, blind crests of rock, guardrail close.',
+    blurb: 'A pass road through the pines: ridge-top esses, two switchback hairpins, a carousel drop.',
     roadWidth: 13,
     kerbWidth: 1.6,
     runoffWidth: 3.0,
     closed: true,
     tension: 0.5,
-    // tri-lobe flower → three big linked sweeps (min radius ≈ 44 m); the phase
-    // is tuned so the start/finish lands on the gentlest stretch (≈200 m
-    // radius), giving a clean grid without a dead-straight.
-    controlPoints: wavyLoop(180, 48, 3, 22, 2.09),
+    controlPoints: [
+      [0, -210], [90, -210],            // valley straight, heading +x
+      [168, -198], [216, -158],         // T1 — left, the climb begins
+      [240, -92],                       // east ramp heading north
+      [218, -30], [246, 36],            // T2/T3 — flick left-right
+      [226, 108], [164, 144],           // T4 — left onto the ridge
+      [92, 138], [24, 158], [-48, 142], // ridge road, rolling kinks
+      [-116, 166], [-182, 150],         // ridge esses
+      [-240, 140], [-272, 104], [-252, 66], // T8 — switchback hairpin left
+      [-188, 48], [-124, 34],           // shelf road heading back east
+      [-66, 44], [-6, 20],              // gentle right-left flow
+      [44, -8], [64, -52],              // T11 — right, turning down the face
+      [44, -96], [-4, -110],            // T12 — switchback hairpin right
+      [-92, -124], [-156, -112],        // lower shelf heading west
+      [-224, -128], [-262, -166],       // T14 — carousel left begins
+      [-244, -204], [-180, -214], [-90, -210], // sweeps down onto the valley straight
+    ],
     theme: {
       ground: 'alpine',
       fog: [0xccd6dd, 680, 3400],
@@ -188,28 +183,33 @@ export const TRACKS = [
   },
 
   // -------------------------------------------------------------------------
-  // DESERT (bonus) — a fast canyon speedway: three long straights, big
-  // sweepers, sand traps, and red-rock mesas rising out of the dust.
+  // DESERT — a Sakhir-style speedway: one huge front straight into a heavy
+  // braking left, a flick behind the dunes, a fast top ess and a long
+  // west-side run. Sand traps at the big stops, mesas on the horizon.
   // -------------------------------------------------------------------------
   {
     id: 'dunes',
     name: 'RED MESA',
     subtitle: 'CANYON SPEEDWAY',
     difficulty: 'MEDIUM',
-    blurb: 'Wide desert speedway: long flat-out straights, one sandy ess, mesas on the horizon.',
+    blurb: 'Desert speedway: a 400 m drag into a heavy stop, fast esses, sand waiting off-line.',
     roadWidth: 16,
     kerbWidth: 2.0,
     runoffWidth: 6.5,
     closed: true,
     tension: 0.5,
     controlPoints: [
-      [0, -168], [70, -166], [120, -158],   // bottom straight, heading +x
-      [165, -120], [180, -55],              // sweep up the right
-      [168, 35], [128, 110],                // toward the top
-      [60, 178], [-20, 196], [-95, 168],    // long top sweeper
-      [-160, 110], [-176, 35],              // down the left
-      [-150, -20], [-182, -70], [-150, -118], // sandy ess on the left
-      [-120, -150], [-60, -168],            // back onto the bottom straight
+      [0, -200], [110, -200],           // front straight, heading +x
+      [188, -192], [228, -166],         // T1 — heavy braking left, gravel outside
+      [242, -126], [240, -88],          // rounds through and opens up
+      [216, -32], [242, 30],            // T2/T3 — flick left-right
+      [224, 96], [166, 134],            // T4 — left onto the top road
+      [64, 142], [-22, 140],            // top straight
+      [-88, 160], [-148, 124],          // T5/T6 — fast left-right ess
+      [-206, 112], [-236, 68],          // T7 — left, carrying speed
+      [-240, -10], [-238, -96],         // west straight, heading south
+      [-232, -150], [-198, -184],       // T8 — sweeps through the last corner
+      [-140, -198],                     // onto the front straight
     ],
     theme: {
       ground: 'sand',
@@ -221,6 +221,53 @@ export const TRACKS = [
       trees: false,
       mountains: 'mesa',
       rocks: true,
+      clouds: true,
+    },
+  },
+
+  // -------------------------------------------------------------------------
+  // PARKLAND — a temple of speed in a broadleaf forest: two chicanes chopped
+  // into very long straights, a pair of medium rights, and one endless
+  // parabolic sweeper home. Flat horizon, no mountains anywhere.
+  // -------------------------------------------------------------------------
+  {
+    id: 'parco',
+    name: 'PARCO VELOCE',
+    subtitle: 'TEMPLE OF SPEED',
+    difficulty: 'MEDIUM',
+    blurb: 'Old-school parkland speed: two hard chicanes, twin right-handers, one endless sweeper.',
+    roadWidth: 13,
+    kerbWidth: 2.0,
+    runoffWidth: 5.0,
+    closed: true,
+    tension: 0.5,
+    controlPoints: [
+      [-260, 0], [-260, 120],           // pit straight through the trees
+      [-252, 178],
+      [-228, 202],                      // T1 — chicane, hard right...
+      [-208, 228], [-170, 240],         // ...flick left out
+      [-100, 248], [-20, 230], [28, 192], // Curva Grande — one long right
+      [56, 140],
+      [50, 92], [76, 58],               // T4/T5 — fast right-left flick
+      [104, 44], [122, 10],             // Lesmo-style right one
+      [124, -34],
+      [112, -82], [78, -116],           // right two, opening onto the back run
+      [-8, -162], [-80, -196],          // long diagonal back straight
+      [-96, -240],                      // T8/T9 — fast left flick...
+      [-140, -262], [-176, -264],       // ...right out onto the bottom lane
+      [-204, -262],                     // short kinked straight
+      [-244, -244], [-262, -196],       // the parabolic sweeper begins
+      [-264, -130], [-260, -40],        // and pulls flat-out onto the pit straight
+    ],
+    theme: {
+      ground: 'grass',
+      fog: [0xbfc7b2, 800, 4000],
+      barrier: 'armco',
+      kerbs: true, gravel: true, skid: true,
+      pit: true, catchFence: true, grandstands: true, sponsors: true,
+      tireStacks: false, brakeMarkers: true,
+      trees: { type: 'broadleaf', count: 900 },
+      mountains: false,
       clouds: true,
     },
   },
