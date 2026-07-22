@@ -115,10 +115,12 @@ export function makeGlass() {
     opacity: 0.86,
     side: THREE.DoubleSide,
     polygonOffset: true,
-    // Strong offset: at glancing angles -2 was not enough and the paint shell
-    // bled through the canopy as thin coloured streaks.
-    polygonOffsetFactor: -4,
-    polygonOffsetUnits: -4,
+    // Light offset only: the greenhouse geometry now sits physically proud of
+    // the paint (see buildGreenhouseShell), so it already draws in front. A
+    // gentle bias just seals the beltline seam; the old strong -4 forced an
+    // inset canopy forward and made it z-fight through the roof as a serrated welt.
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
   });
   return _glass;
 }
