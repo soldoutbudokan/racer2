@@ -214,7 +214,12 @@ export function buildGreenhouseShell(keys, opts = {}) {
   const iBelt = Math.round(beltFrac * (N - 1));
   const zStart = opts.zStart, zEnd = opts.zEnd;
   const steps = opts.steps ?? 24;
-  const inset = opts.inset ?? 0.012;            // pull inward off the paint
+  // Stand the glazing a hair PROUD of the paint (outward along the surface
+  // normal) so it draws cleanly in front of the painted cabin as a canopy over
+  // the shell. Sitting it *under* the paint and forcing it forward with a strong
+  // depth bias made the two near-parallel roof surfaces z-fight into a serrated
+  // welt along the crown ("pinched fold above the windshield").
+  const proud = opts.proud ?? 0.012;
 
   const segs = keys.length - 1;
   const zAt = (u) => sampleField(keys, 'z', u);
@@ -247,10 +252,11 @@ export function buildGreenhouseShell(keys, opts = {}) {
     for (let k = N - 2; k >= iBelt; k--) arc.push(new THREE.Vector2(-half[k].x, half[k].y));
     P = arc.length;
     for (let a = 0; a < P; a++) {
-      // pull each point toward the cabin centre/axis slightly so it sits under
-      // the paint shell rather than fighting it.
-      const px = arc[a].x * (1 - inset * 1.5);
-      const py = arc[a].y - inset;
+      // push each point outward from the cabin axis and up over the crown so the
+      // canopy sits just above the paint skin — a real standoff, not a depth
+      // bias, which is what keeps the roof from z-fighting.
+      const px = arc[a].x * (1 + proud * 0.7);
+      const py = arc[a].y + proud;
       positions.push(px, py, z);
       uvs.push(a / (P - 1), s / steps);
     }
