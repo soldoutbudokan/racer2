@@ -83,7 +83,7 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-22** (preview, pending review — branch
+- **2026-07-22** (accepted → `main` 2026-07-24, owner replied "go"; was branch
   `claude/dazzling-albattani-ldg9cy`) — Killed the "pinched mesh fold in the
   roof just above the windshield" (a sub-item of the top Backlog entry, *GT
   body still soft in profile*). Root cause was NOT the loft geometry: hiding
@@ -220,7 +220,8 @@ confirmed against the `after-*` shots, highest impact first):
   poking past the tyre face in the after shots.)
 - **GT body still soft in profile** (car, high): no hood/door cutlines or
   pillar breaks, nose droops to a rounded point. ~~pinched mesh fold in the
-  roof just above the windshield~~ — DONE 2026-07-22 (preview, see Changelog):
+  roof just above the windshield~~ — DONE 2026-07-22, accepted → `main`
+  2026-07-24 (see Changelog):
   it was the glass canopy z-fighting through the roof paint, not a loft fold;
   stood the glazing proud of the paint and softened its polygonOffset. The
   cutlines and drooping nose remain — note the nose fix must not disturb the
