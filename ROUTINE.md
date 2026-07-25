@@ -83,7 +83,7 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-24** (preview, pending review — `claude/track-detail-realism`) —
+- **2026-07-24** (accepted → `main`, owner replied "go") —
   Owner-directed interactive session: full detail/realism pass over all six
   circuits after a screenshot audit of each (new tool:
   `scripts/audit-shots.mjs` — per-track overview/oblique/on-course shots).
