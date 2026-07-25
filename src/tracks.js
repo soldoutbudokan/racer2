@@ -9,36 +9,48 @@
  * controlPoints[0] is the start/finish; lay 2–3 collinear points around it so
  * the Catmull tangents settle onto a straight where the grid is painted.
  *
- * Every circuit is hand-authored. Real circuits are asymmetric: straights of
- * unequal length, corner sequences that tighten or open, one signature
- * feature per track (a hairpin, a chicane, a carousel). Generated geometry
- * (ovals, sine-modulated loops) reads as a shape, not a place — don't add it
- * back. Verify new layouts with scratchpad geometry checks: min corner
- * radius ≥ ~30 m for open circuits (chicanes may pinch tighter), and
- * non-adjacent road sections at least 2 × (roadWidth/2 + runoff + 0.5)
- * apart so the barriers never overlap.
+ * Every circuit is hand-authored, and (owner direction, 2026-07-24) each
+ * road circuit is modelled on a real F1 venue — the corner sequences below
+ * name their inspirations. The one deliberate exception: SUNSET SPEEDWAY is
+ * a literal perfect oval (owner-requested); its points lie on an exact
+ * stadium (two straights + two semicircles) — keep it geometric, don't
+ * "hand-wobble" it. Don't reintroduce procedural layout generators.
+ * Verify new layouts with scripts/track-geometry.mjs: min corner radius
+ * ≥ ~18 m (chicanes may pinch tighter), and non-adjacent road sections at
+ * least 2 × (roadWidth/2 + runoff + 0.5) apart so barriers never overlap.
  */
 
 export const TRACKS = [
   // -------------------------------------------------------------------------
-  // The original showcase circuit — kept exactly as it was.
+  // Interlagos-inspired: anticlockwise, the Senna-S left-right into a long
+  // left carousel, a back straight, a lake-side double-left, a twisty
+  // infield, and the climbing sweep back onto the pit straight.
   // -------------------------------------------------------------------------
   {
     id: 'gp',
     name: 'AUTODROMO',
     subtitle: 'GRAND PRIX CIRCUIT',
     difficulty: 'MEDIUM',
-    blurb: 'The full GT circuit: fast sweeps, heavy braking zones, gravel and grandstands.',
+    blurb: 'Interlagos in miniature: the Senna S, a long back straight, a twisty infield climb.',
     roadWidth: 14,
     kerbWidth: 2.0,
     runoffWidth: 5.5,
     closed: true,
     tension: 0.5,
     controlPoints: [
-      [0, 0], [0, 140], [10, 240], [90, 290], [200, 290], [280, 240],
-      [300, 150], [240, 90], [180, 60], [200, -20], [280, -80], [300, -160],
-      [240, -220], [120, -240], [0, -220], [-90, -180],
-      [-160, -115], [-115, -85], [-50, -105], [0, -110], [0, -55],
+      [0, 0], [0, 100], [0, 160],           // pit straight, heading north
+      [-14, 204], [-48, 214],               // T1/T2 — the Senna S: hard left...
+      [-90, 206],                           // ...flick right at the bottom
+      [-146, 186], [-184, 146], [-196, 98], // Curva do Sol — long left carousel
+      [-198, 20], [-196, -64],              // Reta Oposta — back straight south
+      [-186, -108], [-156, -130], [-116, -134], // Descida do Lago double-left
+      [-76, -128],                          // short run east
+      [-48, -130], [-28, -156], [-34, -190], [-62, -206], // Ferradura — right horseshoe
+      [-88, -224], [-96, -252],             // Mergulho — left, dropping south
+      [-80, -276], [-48, -282],             // Juncao — left onto the bottom run
+      [-10, -272],                          // flat-out east
+      [8, -248], [14, -206],                // the climb turns up the east edge
+      [6, -150], [2, -100], [0, -44],       // Subida dos Boxes — onto the straight
     ],
     theme: {
       ground: 'grass',
@@ -55,31 +67,37 @@ export const TRACKS = [
   },
 
   // -------------------------------------------------------------------------
-  // EASY — a fast, flowing national circuit at golden hour. Wide road, huge
-  // run-off, no gravel: every corner is a sweeper you can see all the way
-  // through. One honest braking zone (the last double-apex) to learn on.
+  // EASY — a literal perfect oval (owner-requested): an exact stadium shape,
+  // two 260 m straights joined by two 115 m-radius semicircles, raced
+  // anticlockwise like a speedway. The points below lie ON that geometry
+  // (30-degree arc steps) — do not hand-wobble them.
   // -------------------------------------------------------------------------
   {
     id: 'sprint',
     name: 'SUNSET SPEEDWAY',
-    subtitle: 'NATIONAL CIRCUIT',
+    subtitle: 'SPEEDWAY OVAL',
     difficulty: 'EASY',
-    blurb: 'Fast and friendly: flowing sweepers, one easy ess, acres of run-off to learn on.',
+    blurb: 'A perfect oval: two long straights, two sweeping 115 m turns, flat-out forever.',
     roadWidth: 20,
     kerbWidth: 2.2,
     runoffWidth: 9,
     closed: true,
     tension: 0.5,
     controlPoints: [
-      [0, 0], [0, 110],           // front straight past the pits
-      [26, 170], [86, 204],       // T1 — fast right sweeper
-      [160, 212], [226, 186],     // T2 — gentle right kink
-      [268, 128], [278, 58],      // T3 — long carousel right onto the east side
-      [258, -8], [280, -72],      // T4/T5 — easy left-right ess
-      [258, -148], [200, -192],   // T6 — wide right
-      [120, -210],                // back run
-      [46, -196], [8, -156],      // T7 — double-apex right, the one braking zone
-      [0, -110],                  // settles onto the front straight
+      // front stretch, heading north
+      [0, 0], [0, 70], [0, 100], [0, 130],
+      // turn 1/2 — exact semicircle, centre [-115, 130], R 115, 15° steps
+      [-3.9, 159.8], [-15.4, 187.5], [-33.7, 211.3], [-57.5, 229.6],
+      [-85.2, 241.1], [-115, 245], [-144.8, 241.1], [-172.5, 229.6],
+      [-196.3, 211.3], [-214.6, 187.5], [-226.1, 159.8], [-230, 130],
+      // back stretch, heading south
+      [-230, 100], [-230, 40], [-230, -40], [-230, -100], [-230, -130],
+      // turn 3/4 — exact semicircle, centre [-115, -130]
+      [-226.1, -159.8], [-214.6, -187.5], [-196.3, -211.3], [-172.5, -229.6],
+      [-144.8, -241.1], [-115, -245], [-85.2, -241.1], [-57.5, -229.6],
+      [-33.7, -211.3], [-15.4, -187.5], [-3.9, -159.8], [0, -130],
+      // onto the front stretch
+      [0, -100], [0, -70],
     ],
     theme: {
       ground: 'grass',
@@ -97,33 +115,38 @@ export const TRACKS = [
   },
 
   // -------------------------------------------------------------------------
-  // CITY F1 — a Baku-style street circuit: two long straights, unequal city
-  // blocks, a flick chicane on the bottom street, walls right at the kerb.
+  // Marina Bay-inspired street circuit (mirrored): the T1-2-3 flick complex,
+  // a boulevard straight, right-angle blocks stepping out to the water, a
+  // long waterfront run, and the Singapore-Sling-style chicane on the way
+  // home. Walls at the kerb the whole lap.
   // -------------------------------------------------------------------------
   {
     id: 'downtown',
     name: 'MARINA STREET',
     subtitle: 'CITY GRAND PRIX',
     difficulty: 'HARD',
-    blurb: 'A street fight between the barriers: square corners, a snap chicane, zero room for error.',
+    blurb: 'Marina Bay by night-race rules: a snap T1 complex, right-angle blocks, a waterfront run.',
     roadWidth: 12,
     kerbWidth: 1.1,
     runoffWidth: 1.3,
     closed: true,
     tension: 0.5,
     controlPoints: [
-      [0, 0], [0, 96], [0, 168],      // pit straight, heading +z (start at [0,0])
-      [22, 204], [72, 216],           // T1 — 90° right
-      [150, 216],                     // cross street
-      [196, 200], [210, 152],         // T2 — 90° right, heading back south
-      [210, 96],
-      [224, 62], [268, 50],           // T3 — 90° left, short block east
-      [304, 34], [316, -12],          // T4 — 90° right onto the sea-front run
-      [316, -120],                    // long run south
-      [302, -166], [258, -182],       // T5 — 90° right
-      [160, -182], [118, -182],       // bottom straight, heading -x
-      [78, -160], [42, -156],         // snap chicane — lane jumps toward the marina
-      [8, -134], [0, -96],            // T6 — sweeps back onto the pit straight
+      [0, 0], [0, 90], [0, 150],      // pit straight, heading north
+      [18, 194], [52, 206],           // T1 — right, opening the lap
+      [88, 216], [118, 202],          // T2/T3 — left-right flick complex
+      [156, 200], [216, 200],         // boulevard straight east
+      [252, 188], [262, 152],         // T7 — 90 right, heading south
+      [262, 110],                     // short block
+      [278, 92], [306, 88],           // T8 — 90 left, stepping out to the water
+      [326, 74], [330, 40],           // T9 — 90 right onto the waterfront
+      [330, -40], [330, -110],        // waterfront straight along the marina
+      [318, -152], [284, -166],       // T14 — 90 right off the water
+      [220, -166], [150, -166],       // esplanade street west
+      [112, -150], [80, -160],        // Sling-style chicane — lane jumps inland
+      [40, -160],                     // short squirt west
+      [8, -150], [-2, -116],          // T19 — right, sweeping up...
+      [0, -60],                       // ...onto the pit straight
     ],
     theme: {
       ground: 'city',
@@ -143,37 +166,34 @@ export const TRACKS = [
   },
 
   // -------------------------------------------------------------------------
-  // MOUNTAINS — a proper pass road: a climbing sweep, esses along the ridge,
-  // two genuine switchback hairpins and a carousel drop back to the valley.
-  // Tall close peaks and dense pines; guardrail on the edges.
+  // Spa-inspired mountain pass: the Eau Rouge/Raidillon uphill flick into a
+  // long Kemmel climb, Les Combes, the Pouhon double-left plunge, a Fagnes
+  // chicane, Stavelot, and the La Source hairpin just before the line.
   // -------------------------------------------------------------------------
   {
     id: 'alpine',
     name: 'COL DU PIN',
     subtitle: 'MOUNTAIN PASS',
     difficulty: 'MEDIUM-HARD',
-    blurb: 'A pass road through the pines: ridge-top esses, two switchback hairpins, a carousel drop.',
+    blurb: 'Spa through the pines: an Eau Rouge flick, a long climb, Pouhon, one hairpin at home.',
     roadWidth: 13,
     kerbWidth: 1.6,
     runoffWidth: 3.0,
     closed: true,
     tension: 0.5,
     controlPoints: [
-      [0, -210], [90, -210],            // valley straight, heading +x
-      [168, -198], [216, -158],         // T1 — left, the climb begins
-      [240, -92],                       // east ramp heading north
-      [218, -30], [246, 36],            // T2/T3 — flick left-right
-      [226, 108], [164, 144],           // T4 — left onto the ridge
-      [92, 138], [24, 158], [-48, 142], // ridge road, rolling kinks
-      [-116, 166], [-182, 150],         // ridge esses
-      [-240, 140], [-272, 104], [-252, 66], // T8 — switchback hairpin left
-      [-188, 48], [-124, 34],           // shelf road heading back east
-      [-66, 44], [-6, 20],              // gentle right-left flow
-      [44, -8], [64, -52],              // T11 — right, turning down the face
-      [44, -96], [-4, -110],            // T12 — switchback hairpin right
-      [-92, -124], [-156, -112],        // lower shelf heading west
-      [-224, -128], [-262, -166],       // T14 — carousel left begins
-      [-244, -204], [-180, -214], [-90, -210], // sweeps down onto the valley straight
+      [0, 0], [90, 0],                  // valley straight, heading east
+      [148, -8], [192, 10], [218, 48],  // Eau Rouge/Raidillon — dip, flick, climb
+      [232, 120],                       // Kemmel straight up the shoulder
+      [224, 190], [192, 204], [162, 190], // Les Combes — right-left at the top
+      [120, 178], [60, 184], [0, 176],  // ridge road west, rolling kinks
+      [-62, 182],                       // last ridge crest
+      [-104, 162], [-124, 128], [-118, 92], // Pouhon — long double-left plunge
+      [-120, 44],                       // descending the west face
+      [-132, 12], [-124, -14],          // Fagnes — soft left-right on the descent
+      [-126, -40], [-112, -58], [-88, -52], // La Source — the one hairpin
+      [-74, -24], [-64, -4],            // the climb crests...
+      [-44, 4], [-20, 0],               // ...and settles onto the valley straight
     ],
     theme: {
       ground: 'alpine',
@@ -190,33 +210,34 @@ export const TRACKS = [
   },
 
   // -------------------------------------------------------------------------
-  // DESERT — a Sakhir-style speedway: one huge front straight into a heavy
-  // braking left, a flick behind the dunes, a fast top ess and a long
-  // west-side run. Sand traps at the big stops, mesas on the horizon.
+  // Bahrain-inspired desert circuit (clockwise): a long drag into the heavy
+  // T1 right, a jink behind it, the T5-6-7 esses, a low-road left-right
+  // complex, and the long climb up the west side back to the top.
   // -------------------------------------------------------------------------
   {
     id: 'dunes',
     name: 'RED MESA',
     subtitle: 'CANYON SPEEDWAY',
     difficulty: 'MEDIUM',
-    blurb: 'Desert speedway: a 400 m drag into a heavy stop, fast esses, sand waiting off-line.',
+    blurb: 'Sakhir in the canyon: a 280 m drag into a hard stop, snaking esses, sand off-line.',
     roadWidth: 16,
     kerbWidth: 2.0,
     runoffWidth: 6.5,
     closed: true,
     tension: 0.5,
     controlPoints: [
-      [0, -200], [110, -200],           // front straight, heading +x
-      [188, -192], [228, -166],         // T1 — heavy braking left, gravel outside
-      [242, -126], [240, -88],          // rounds through and opens up
-      [216, -32], [242, 30],            // T2/T3 — flick left-right
-      [224, 96], [166, 134],            // T4 — left onto the top road
-      [64, 142], [-22, 140],            // top straight
-      [-88, 160], [-148, 124],          // T5/T6 — fast left-right ess
-      [-206, 112], [-236, 68],          // T7 — left, carrying speed
-      [-240, -10], [-238, -96],         // west straight, heading south
-      [-232, -150], [-198, -184],       // T8 — sweeps through the last corner
-      [-140, -198],                     // onto the front straight
+      [0, 0], [60, 0], [155, 0],        // main straight, heading east
+      [206, -12], [228, -46],           // T1 — the heavy stop, hard right
+      [234, -86],                       // T2 — left jog
+      [224, -124], [202, -160], [164, -174], // T3/T4 — right, rounding south-west
+      [124, -162], [84, -178], [44, -166],   // T5/6/7 — the esses, heading west
+      [8, -178], [-8, -214],            // T8 — left, dropping to the low road
+      [-48, -232], [-84, -222],         // T9/T10 — right, back heading west
+      [-124, -212],                     // low road west
+      [-158, -196], [-172, -156],       // T11 — long right, turning north
+      [-174, -100], [-172, -48],        // west straight north
+      [-158, -8], [-122, 6],            // T13 — right at the top
+      [-86, 0], [-60, -3],              // T14/15 — settles onto the main straight
     ],
     theme: {
       ground: 'sand',
@@ -234,38 +255,34 @@ export const TRACKS = [
   },
 
   // -------------------------------------------------------------------------
-  // PARKLAND — a temple of speed in a broadleaf forest: two chicanes chopped
-  // into very long straights, a pair of medium rights, and one endless
-  // parabolic sweeper home. Flat horizon, no mountains anywhere.
+  // Monza-inspired temple of speed (clockwise): the Rettifilo chicane off a
+  // very long pit straight, Curva Grande, the Roggia chicane, both Lesmos,
+  // the Ascari complex, and a Parabolica sweeping home. Flat horizon, trees.
   // -------------------------------------------------------------------------
   {
     id: 'parco',
     name: 'PARCO VELOCE',
     subtitle: 'TEMPLE OF SPEED',
     difficulty: 'MEDIUM',
-    blurb: 'Old-school parkland speed: two hard chicanes, twin right-handers, one endless sweeper.',
+    blurb: 'Monza in the park: the Rettifilo, Curva Grande, both Lesmos, Ascari, Parabolica.',
     roadWidth: 13,
     kerbWidth: 2.0,
     runoffWidth: 5.0,
     closed: true,
     tension: 0.5,
     controlPoints: [
-      [-260, 0], [-260, 120],           // pit straight through the trees
-      [-252, 178],
-      [-228, 202],                      // T1 — chicane, hard right...
-      [-208, 228], [-170, 240],         // ...flick left out
-      [-100, 248], [-20, 230], [28, 192], // Curva Grande — one long right
-      [56, 140],
-      [50, 92], [76, 58],               // T4/T5 — fast right-left flick
-      [104, 44], [122, 10],             // Lesmo-style right one
-      [124, -34],
-      [112, -82], [78, -116],           // right two, opening onto the back run
-      [-8, -162], [-80, -196],          // long diagonal back straight
-      [-96, -240],                      // T8/T9 — fast left flick...
-      [-140, -262], [-176, -264],       // ...right out onto the bottom lane
-      [-204, -262],                     // short kinked straight
-      [-244, -244], [-262, -196],       // the parabolic sweeper begins
-      [-264, -130], [-260, -40],        // and pulls flat-out onto the pit straight
+      [0, 0], [0, 110], [0, 180],       // pit straight north (tail runs from Parabolica)
+      [10, 224], [34, 238],             // Rettifilo chicane — right-left...
+      [42, 264],                        // ...rejoining the original line offset east
+      [76, 294], [130, 310], [184, 296], [218, 258], // Curva Grande — long right
+      [236, 224], [220, 196],           // della Roggia — left-right chicane
+      [212, 158], [190, 136],           // Lesmo one — right
+      [150, 112], [118, 94],            // Lesmo two — right, heading south-west
+      [92, 64], [86, 18],               // Serraglio — gentle left, running south
+      [100, -20], [76, -48], [84, -84], // Ascari — left-right-left complex
+      [102, -118], [110, -150],         // short run to the last corner
+      [94, -189], [55, -205], [16, -189], // Parabolica — one long right...
+      [0, -150], [0, -90],              // ...sweeping onto the pit straight
     ],
     theme: {
       ground: 'grass',

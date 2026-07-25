@@ -83,6 +83,24 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-24** (accepted → `main`, owner replied "go"; was branch
+  `claude/f1-inspired-layouts`) —
+  Owner-directed: every track's layout re-authored. Five circuits now model
+  real F1 venues (owner: "inspired by actual F1 tracks"): `gp` → Interlagos
+  (Senna S, Curva do Sol, back straight, infield horseshoe, climb to the
+  line), `downtown` → Marina Bay (T1 flick complex, 90° blocks stepping to a
+  waterfront run, Sling chicane), `alpine` → Spa (Eau Rouge/Raidillon,
+  Kemmel, Les Combes, Pouhon, La Source), `dunes` → Bahrain (heavy T1 stop,
+  esses, low-road complex, west climb), `parco` → Monza (Rettifilo, Curva
+  Grande, Roggia, Lesmos, Ascari, Parabolica). `sprint` is now a LITERAL
+  perfect oval (owner-requested exception to the no-generated-shapes rule):
+  points lie on an exact stadium — two 260 m straights + two R115 semis at
+  15° steps; do NOT hand-wobble it. Design lesson recorded: Catmull kinks
+  come from uneven control-point spacing (keep neighbours comparable) and
+  descents must not cross other legs at grade — `track-geometry.mjs` catches
+  both (minGap FAIL / tiny minR). Verified: geometry all OK, physics-test
+  23/23 on the new default layout, build clean, SVG plots + full
+  audit-shots pass on all six.
 - **2026-07-24** (accepted → `main`, owner replied "go") —
   Owner-directed interactive session: full detail/realism pass over all six
   circuits after a screenshot audit of each (new tool:
