@@ -83,6 +83,33 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-24** (accepted → `main`, owner replied "go") —
+  Owner-directed interactive session: full detail/realism pass over all six
+  circuits after a screenshot audit of each (new tool:
+  `scripts/audit-shots.mjs` — per-track overview/oblique/on-course shots).
+  Obstruction-class fixes: buttes and boulders on `dunes` were placed with no
+  clearance against the circuit (one butte stood at the guardrail) — all
+  scenery now uses `distToTrack`/`rectClearOfTrack` whole-circuit tests
+  (buttes, rocks, buildings, grandstands, marshals, fields, huts); the pit
+  complex was hard-coded for the GP circuit's dimensions and its pit wall sat
+  INSIDE Sunset Speedway's wider run-off (now slides outward with `D.armco`);
+  gravel-trap winding flipped normals down on one side (charcoal slabs).
+  City overhaul (`downtown`): buildings rebuilt as axis-aligned merged blocks
+  (podium + tower, 3 facade styles, real 3 m floor scale — the old UV mapping
+  gave 0.5 m doll-house windows), storefront podiums, sidewalks + kerbs,
+  instanced streetlights, zebra crossings, hazed skyline ring (sea sector
+  open), and a marina: water plane, quay + railing, palm promenade, boats.
+  De-mountaining: GP far ranges pushed out/lowered; sprint got warm golden
+  hills + farmland (crop fields, barns, silos, hay bales); parco got a real
+  forest (1300 trees banded near the circuit); dunes got scrub + saguaros and
+  strata-banded buttes; alpine peaks narrower/craggier + timber chalets.
+  Marshal posts at heavy corners on race circuits. Grass/sand/city ground
+  noise now wrapped in `makeTileable` (kills the overhead plaid); mow bands
+  softened; pit apron concrete lightened (read as a black slab); catch fence
+  is arc-based (parco now gets one). Verified: track-geometry all OK,
+  physics-test 23/23 incl. no console errors, build clean, before/after
+  audit shots on all six tracks.
+
 - **2026-07-19** (accepted → `main`, owner replied "go ahead and push") —
   Interactive session, not a routine run: full track-catalogue overhaul.
   Every circuit is now hand-authored F1-style data (the stadium()/wavyLoop()
