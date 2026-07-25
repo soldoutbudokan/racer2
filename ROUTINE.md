@@ -83,7 +83,8 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-24** (preview, pending review — `claude/f1-inspired-layouts`) —
+- **2026-07-24** (accepted → `main`, owner replied "go"; was branch
+  `claude/f1-inspired-layouts`) —
   Owner-directed: every track's layout re-authored. Five circuits now model
   real F1 venues (owner: "inspired by actual F1 tracks"): `gp` → Interlagos
   (Senna S, Curva do Sol, back straight, infield horseshoe, climb to the
