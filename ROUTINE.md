@@ -83,6 +83,37 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-25** (accepted → `main`, owner replied "go"; was branch
+  `claude/stoic-thompson-aw10sy`) —
+  Panel structure on the GT and muscle cars: the *cutlines and pillar breaks*
+  half of the top Backlog item ("GT body still soft in profile"). New
+  `buildPanelSeams` in `src/carModels/loftBuilder.js` builds thin ribbons that
+  ride the hull skin along authored `(z, profile-fraction)` paths — sampled off
+  the SAME N-point polyline the hull mesh is built from, so they sit on the
+  skin instead of sinking under the chords on convex sections, and offset a
+  real distance along the surface normal (the standoff trick from the
+  2026-07-22 canopy fix) rather than leaning on a depth bias. Each car authors
+  two sets: near-black shut lines (`makeShutline`, new) around hood, doors and
+  boot lid, and a body-coloured window surround (A-pillar → roof-side rail →
+  C-pillar) standing proud of the glass canopy — previously the greenhouse was
+  one unbroken tinted band from cowl to tail with nothing to read the cabin by.
+  Three bugs found and fixed while building it, all worth remembering:
+  (1) interpolating the signed side-fraction across the centre line dives
+  through f=0 — down one flank to the FLOOR and back up the other — so paths
+  now interpolate in a continuous ring coordinate c∈[0,2] that walks over the
+  crown; (2) the ribbon quads were wound inward, so every seam was
+  backface-culled and the only thing visible was the far-side seam showing
+  THROUGH the glass (looked like a wide stripe on the roof — if a decal ever
+  seems to render "on the wrong side", check winding before anything else);
+  (3) at a corner the ribbon's width direction swings ~90° in one step and the
+  band flares into a flag — fixed with a miter widen plus `roundCorners`, which
+  chamfers path corners over 9 cm (also gives the door loop a realistic
+  radius). New tool: `scripts/bodyshot.mjs` — tight orbit close-ups of one
+  chosen car (side/flank/quarter/front34/rear34/cabin/hood/top); the routine's
+  other shooters are all too far out to judge panel work. Verified:
+  physics-test 23/23 incl. no console errors, smoke OK (no NaN, outward
+  winding, +1.2k tris/car), build clean, before/after bodyshots on both cars +
+  all five viewshot angles at race distance.
 - **2026-07-24** (accepted → `main`, owner replied "go"; was branch
   `claude/f1-inspired-layouts`) —
   Owner-directed: every track's layout re-authored. Five circuits now model
@@ -263,16 +294,26 @@ confirmed against the `after-*` shots, highest impact first):
   full tyre bore bead-to-bead + enlarged the mid-well back plug so nothing
   shows through the opening from either side. (No sign of far-side spokes
   poking past the tyre face in the after shots.)
-- **GT body still soft in profile** (car, high): no hood/door cutlines or
-  pillar breaks, nose droops to a rounded point. ~~pinched mesh fold in the
+- **GT body still soft in profile** (car, high): ~~no hood/door cutlines or
+  pillar breaks~~, nose droops to a rounded point. ~~pinched mesh fold in the
   roof just above the windshield~~ — DONE 2026-07-22, accepted → `main`
   2026-07-24 (see Changelog):
   it was the glass canopy z-fighting through the roof paint, not a loft fold;
-  stood the glazing proud of the paint and softened its polygonOffset. The
-  cutlines and drooping nose remain — note the nose fix must not disturb the
-  grille/splitter/badge parts placed against the hull at z≈2.2.
+  stood the glazing proud of the paint and softened its polygonOffset.
+  Cutlines + pillars DONE 2026-07-25 (accepted → `main`) via `buildPanelSeams` —
+  applied to the muscle car too. **The drooping nose is what remains of this
+  item** — note the nose fix must not disturb the grille/splitter/badge parts
+  placed against the hull at z≈2.2, and the hood's leading-edge shut line now
+  sits at z 1.94 (GT) / 2.00 (muscle), so re-check it after any nose reshape.
 - **Open-wheel car flanks still read as white planks** (car, medium): the
   side-pod/chassis construction predates the overhaul standards.
+- **The GT/muscle roof is entirely glass** (car, low — new 2026-07-25): the
+  greenhouse shell sweeps belt-to-belt over the crown, so with the new pillars
+  in place the cabin now reads as a panoramic glass roof. Defensible for the
+  GT, wrong for the muscle car. A proper fix means teaching
+  `buildGreenhouseShell` a `topFrac` so the side glazing stops at the roof rail
+  and the crown stays painted — a bigger change than one run, hence not done
+  here.
 - **Racing-line aid bleeds under the cars** (env/aid, medium): the green
   stripe z-bleeds beneath the rear bumper and glows at tire contact patches
   under the multiply contact shadow. Keep the aid + its colours (it is a

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { buildGreenhouseShell } from './loftBuilder.js';
-import { makeGlass, makeTrim, makeCarbon } from './carMaterials.js';
+import { buildGreenhouseShell, buildPanelSeams } from './loftBuilder.js';
+import { makeGlass, makeTrim, makeCarbon, makePaint, makeShutline } from './carMaterials.js';
 import {
   buildHeadlights, buildTaillights, buildMirrors, buildGrille, buildSplitter,
   buildDiffuser, buildWing, buildExhaust, buildBadgesAndPlate, buildUnderbody,
@@ -27,12 +27,53 @@ export const keys = [
 
 export const wheelStyle = 'muscle';
 
+// Panel structure — see gtCoupe.js for the (z, profile-fraction) convention.
+// The long flat hood and the upright cabin make the shut lines matter more
+// here than on the GT: without them the whole flank is one pressing.
+const SHUT_LINES = [
+  // Hood: cowl edge, leading edge (behind the headlights at z 2.10), and the
+  // fender seam down each flank.
+  { path: [[0.32, 0.80], [0.32, 1.00], [0.32, -0.80]] },
+  { path: [[2.00, 0.80], [2.00, 1.00], [2.00, -0.80]] },
+  { path: [[0.34, 0.80], [2.00, 0.80]], mirror: true },
+  // Door — long, as a two-door coupe's is, top edge on the glass sill.
+  {
+    path: [[0.62, 0.27], [0.62, 0.59], [-1.00, 0.59], [-1.00, 0.27], [0.62, 0.27]],
+    mirror: true,
+  },
+  // Boot lid, running under the ducktail lip (which sits on it, z -1.95..-1.65).
+  { path: [[-1.18, 0.80], [-1.18, 1.00], [-1.18, -0.80]] },
+  { path: [[-2.02, 0.80], [-2.02, 1.00], [-2.02, -0.80]] },
+  { path: [[-1.18, 0.80], [-2.02, 0.80]], mirror: true },
+];
+
+// A-pillar / roof rail / C-pillar, upright to match the cabin.
+const SURROUND = [
+  { path: [[0.40, 0.60], [0.16, 0.70], [-0.04, 0.77], [-0.22, 0.80],
+    [-0.78, 0.80], [-0.94, 0.74], [-1.08, 0.62]], mirror: true,
+  width: 0.050, proud: 0.022 },
+];
+
 export function decorate(body, ctx) {
   const glass = new THREE.Mesh(
     buildGreenhouseShell(keys, { zStart: 0.40, zEnd: -1.10, beltFrac: 0.62, steps: 24 }),
     makeGlass(),
   );
   body.add(glass);
+
+  const shut = buildPanelSeams(keys, SHUT_LINES, { profilePoints: 16 });
+  if (shut) {
+    const m = new THREE.Mesh(shut, makeShutline());
+    m.receiveShadow = true;
+    body.add(m);
+  }
+  const surround = buildPanelSeams(keys, SURROUND, { profilePoints: 16 });
+  if (surround) {
+    const m = new THREE.Mesh(surround, makePaint(ctx.color));
+    m.castShadow = true;
+    m.receiveShadow = true;
+    body.add(m);
+  }
 
   // power-bulge hood scoop, half-sunk into the flat hood plane (yt ~0.47)
   const scoop = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.10, 0.85), makeTrim());
