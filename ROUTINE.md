@@ -83,7 +83,8 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-25** (preview, pending review; branch `claude/stoic-thompson-aw10sy`) —
+- **2026-07-25** (accepted → `main`, owner replied "go"; was branch
+  `claude/stoic-thompson-aw10sy`) —
   Panel structure on the GT and muscle cars: the *cutlines and pillar breaks*
   half of the top Backlog item ("GT body still soft in profile"). New
   `buildPanelSeams` in `src/carModels/loftBuilder.js` builds thin ribbons that
@@ -299,7 +300,7 @@ confirmed against the `after-*` shots, highest impact first):
   2026-07-24 (see Changelog):
   it was the glass canopy z-fighting through the roof paint, not a loft fold;
   stood the glazing proud of the paint and softened its polygonOffset.
-  Cutlines + pillars DONE 2026-07-25 (preview, pending) via `buildPanelSeams` —
+  Cutlines + pillars DONE 2026-07-25 (accepted → `main`) via `buildPanelSeams` —
   applied to the muscle car too. **The drooping nose is what remains of this
   item** — note the nose fix must not disturb the grille/splitter/badge parts
   placed against the hull at z≈2.2, and the hood's leading-edge shut line now
