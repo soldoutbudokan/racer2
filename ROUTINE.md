@@ -110,6 +110,27 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
   physics-test 23/23 incl. no console errors, build clean, before/after
   audit shots on all six tracks.
 
+- **2026-07-22** (accepted → `main` 2026-07-24, owner replied "go"; was branch
+  `claude/dazzling-albattani-ldg9cy`) — Killed the "pinched mesh fold in the
+  roof just above the windshield" (a sub-item of the top Backlog entry, *GT
+  body still soft in profile*). Root cause was NOT the loft geometry: hiding
+  the greenhouse glass made the serrated welt vanish, proving it was the
+  tinted glass canopy z-fighting THROUGH the painted roof. `buildGreenhouseShell`
+  (`src/carModels/loftBuilder.js`) placed the glass *inset* 0.012 **below** the
+  paint, then `makeGlass` (`src/carModels/carMaterials.js`) forced it forward
+  with a strong `polygonOffset -4/-4`; on the near-flat roof crown that depth
+  bias punched the inset canopy back through the paint in a zippered line. Fix:
+  stand the glazing a real 0.012 **proud** of the paint along the surface
+  normal (outboard in x, up over the crown) so it genuinely draws in front as a
+  canopy, and drop the bias to a gentle `-1/-1` (just seals the beltline seam).
+  Both directions now push the same way, so it is strictly more robust against
+  the old "paint streaks bleed through the canopy" failure too. Bonus: the side
+  greenhouse now reads as a distinct dark glazed volume instead of a faint tint.
+  Applies to BOTH the GT and muscle cars (shared code) — verified both. The
+  drooping nose and missing cutlines/pillar breaks are still open under that
+  Backlog item. Verified: physics-test 23/23 (incl. no console errors), smoke OK
+  (outward winding, no NaN), build clean; before/after multi-angle + glass-on/off
+  isolation shots show the welt gone and a clean canopy on both cars.
 - **2026-07-19** (accepted → `main`, owner replied "go ahead and push") —
   Interactive session, not a routine run: full track-catalogue overhaul.
   Every circuit is now hand-authored F1-style data (the stadium()/wavyLoop()
@@ -225,8 +246,13 @@ confirmed against the `after-*` shots, highest impact first):
   shows through the opening from either side. (No sign of far-side spokes
   poking past the tyre face in the after shots.)
 - **GT body still soft in profile** (car, high): no hood/door cutlines or
-  pillar breaks, nose droops to a rounded point, and there is a pinched mesh
-  fold in the roof just above the windshield.
+  pillar breaks, nose droops to a rounded point. ~~pinched mesh fold in the
+  roof just above the windshield~~ — DONE 2026-07-22, accepted → `main`
+  2026-07-24 (see Changelog):
+  it was the glass canopy z-fighting through the roof paint, not a loft fold;
+  stood the glazing proud of the paint and softened its polygonOffset. The
+  cutlines and drooping nose remain — note the nose fix must not disturb the
+  grille/splitter/badge parts placed against the hull at z≈2.2.
 - **Open-wheel car flanks still read as white planks** (car, medium): the
   side-pod/chassis construction predates the overhaul standards.
 - **Racing-line aid bleeds under the cars** (env/aid, medium): the green
