@@ -78,6 +78,20 @@ export function makeTrim() {
   return _trim;
 }
 
+// Panel shut line — the dark slot between two pressed panels. Near-black and
+// matte so it reads as a shadowed gap rather than a painted stripe; a light
+// depth bias (the ribbon already sits physically proud of the skin) keeps it
+// off the paint it lies on without punching through from the far side.
+let _shutline = null;
+export function makeShutline() {
+  if (_shutline) return _shutline;
+  _shutline = new THREE.MeshStandardMaterial({
+    color: 0x0d1013, metalness: 0.0, roughness: 0.95, envMapIntensity: 0.35,
+    polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+  });
+  return _shutline;
+}
+
 let _carbon = null;
 export function makeCarbon() {
   if (_carbon) return _carbon;

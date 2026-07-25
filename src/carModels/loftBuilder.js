@@ -174,6 +174,186 @@ export function buildLoftHull(keys, opts = {}) {
   return geo;
 }
 
+// Station parameters interpolated at an arbitrary z (the loft is monotonic in
+// z, so invert z(u) by bisection).
+function paramsAtZ(keys, z) {
+  const segs = keys.length - 1;
+  let lo = 0, hi = segs;
+  for (let it = 0; it < 36; it++) {
+    const mid = (lo + hi) / 2;
+    if (sampleField(keys, 'z', mid) < z) lo = mid; else hi = mid;
+  }
+  const u = (lo + hi) / 2;
+  return {
+    hw: sampleField(keys, 'hw', u), yb: sampleField(keys, 'yb', u),
+    hip: sampleField(keys, 'hip', u), yt: sampleField(keys, 'yt', u),
+    topW: sampleField(keys, 'topW', u),
+  };
+}
+
+// Authored fraction f in [-1, 1] -> ring coordinate c in [0, 2], which walks
+// CONTINUOUSLY up the right side (0 = floor centre, 1 = crown) and back down
+// the left (2 = floor centre again). Paths are interpolated in c so a seam
+// crossing the centre line goes over the roof; interpolating the signed f
+// directly would dive through f = 0 — down the right flank to the floor and
+// back up the left — and lay a duplicate ribbon over the half it retraced.
+const toRing = (f) => (f < 0 ? 2 + f : f);
+
+/**
+ * Sample the hull SKIN at station z and ring coordinate c (see toRing). Points
+ * are taken by linear interpolation along the same N-point polyline the hull
+ * mesh is built from, so anything laid on them rides ON the skin instead of
+ * sinking inside it on convex sections (a spline-exact sample would sit under
+ * the chords).
+ */
+function skinPoint(keys, z, c, N, cache) {
+  const key = z.toFixed(4);
+  let half = cache.get(key);
+  if (!half) { half = halfProfile(paramsAtZ(keys, z), N); cache.set(key, half); }
+  const s = c > 1 ? -1 : 1;
+  const a = Math.min(1, Math.max(0, c > 1 ? 2 - c : c)) * (N - 1);
+  const i = Math.min(N - 2, Math.floor(a));
+  const t = a - i;
+  return new THREE.Vector3(
+    s * (half[i].x + (half[i + 1].x - half[i].x) * t),
+    half[i].y + (half[i + 1].y - half[i].y) * t,
+    z,
+  );
+}
+
+// One unit of ring coordinate is roughly this many metres of profile arc, so
+// (z, c) waypoints can be measured in one consistent space.
+const RING_M = 1.2;
+
+// Chamfer the interior corners of a (z, ring) path. A ribbon's width runs
+// perpendicular to its path ON the skin, so at a sharp corner — an A-pillar
+// meeting the roof rail, a door's front cut meeting the sill — that direction
+// swings through most of a right angle within one step and the band flares
+// into a flag. Cutting each corner over `cut` metres turns one hard turn into
+// two gentle ones, which is also how the real joints are radiused.
+function roundCorners(ring, cut = 0.09) {
+  if (ring.length < 3) return ring;
+  const dist = (a, b) => Math.hypot(b[0] - a[0], (b[1] - a[1]) * RING_M);
+  const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const out = [ring[0]];
+  for (let i = 1; i < ring.length - 1; i++) {
+    const dPrev = dist(ring[i - 1], ring[i]), dNext = dist(ring[i], ring[i + 1]);
+    if (dPrev < 1e-6 || dNext < 1e-6) { out.push(ring[i]); continue; }
+    const tIn = 1 - Math.min(cut, dPrev * 0.4) / dPrev;
+    const tOut = Math.min(cut, dNext * 0.4) / dNext;
+    out.push(lerp(ring[i - 1], ring[i], tIn), lerp(ring[i], ring[i + 1], tOut));
+  }
+  out.push(ring[ring.length - 1]);
+  return out;
+}
+
+/**
+ * Build panel seams: thin ribbons that follow the hull skin along an authored
+ * path in (z, f) space. This is what stamps a lofted blob into bodywork —
+ * shut lines around the hood/doors/deck read as separate pressed panels, and
+ * a body-coloured ribbon over the glass canopy reads as an A-pillar.
+ *
+ * Each seam: {
+ *   path:   [[z, f], ...]  waypoints on the skin. f in [-1, 1] walks the
+ *           cross-section: 0 = floor centre, 1 = crown centre, sign = side.
+ *   width:  ribbon width in metres
+ *   proud:  standoff along the surface normal (a real offset, not a depth
+ *           bias — the same trick that stopped the canopy z-fighting)
+ *   mirror: also emit the path with every f negated (the other flank)
+ * }
+ * @returns THREE.BufferGeometry (position/normal/uv), or null if empty.
+ */
+export function buildPanelSeams(keys, seams, opts = {}) {
+  const N = opts.profilePoints ?? 16;
+  const cache = new Map();
+  const positions = [], normals = [], uvs = [], indices = [];
+
+  const emit = (path, width, proud) => {
+    // Densify in (z, ring) space: keep steps comparable to the hull's own ring
+    // spacing (~0.05 m) so a seam tracks arch blisters instead of chording
+    // across them.
+    const ring = roundCorners(path.map(([z, f]) => [z, toRing(f)]));
+    const pts = [];
+    for (let s = 0; s < ring.length - 1; s++) {
+      const [z0, c0] = ring[s], [z1, c1] = ring[s + 1];
+      // ~0.05 m steps either way: a full half-profile (c 0->1) is ~1.2 m of arc.
+      const n = Math.max(2, Math.ceil(Math.abs(z1 - z0) / 0.05) + Math.ceil(Math.abs(c1 - c0) * 24));
+      for (let i = 0; i < n; i++) {
+        const t = i / n;
+        pts.push([z0 + (z1 - z0) * t, c0 + (c1 - c0) * t]);
+      }
+    }
+    pts.push(ring[ring.length - 1]);
+
+    const P = [], Nr = [];
+    for (const [z, c] of pts) {
+      const p = skinPoint(keys, z, c, N, cache);
+      // Surface normal from the two tangents (along the profile, along z).
+      const dz = 0.008, dc = 0.03;
+      const tf = skinPoint(keys, z, Math.min(2, c + dc), N, cache)
+        .sub(skinPoint(keys, z, Math.max(0, c - dc), N, cache));
+      const tz = skinPoint(keys, z + dz, c, N, cache).sub(skinPoint(keys, z - dz, c, N, cache));
+      const nrm = tf.cross(tz);
+      if (nrm.lengthSq() < 1e-12) nrm.set(0, 1, 0); else nrm.normalize();
+      // Orient outward: away from the body's interior axis at this station.
+      const q = paramsAtZ(keys, z);
+      if (nrm.dot(new THREE.Vector3(p.x, p.y - (q.yb + q.yt) * 0.5, 0)) < 0) nrm.negate();
+      P.push(p); Nr.push(nrm);
+    }
+
+    const base = positions.length / 3;
+    let len = 0;
+    for (let i = 0; i < P.length; i++) {
+      const a = P[Math.max(0, i - 1)], b = P[Math.min(P.length - 1, i + 1)];
+      // Averaged tangent (smooth across corners) and the single-segment
+      // tangent (used only to size the miter).
+      const tan = b.clone().sub(a);
+      if (tan.lengthSq() < 1e-12) tan.set(0, 0, 1); else tan.normalize();
+      const seg = (i > 0 ? P[i].clone().sub(a) : b.clone().sub(P[i]));
+      if (seg.lengthSq() < 1e-12) seg.copy(tan); else seg.normalize();
+      const bin = tan.clone().cross(Nr[i]);
+      if (bin.lengthSq() < 1e-12) bin.set(1, 0, 0); else bin.normalize();
+      // Miter: at a corner the averaged tangent turns the ribbon edge inward
+      // and pinches a notch out of it, which on a 50 mm pillar reads as a
+      // step. Widen by 1/cos(half-angle) so the outer edges stay straight.
+      const segBin = seg.clone().cross(Nr[i]);
+      const miter = segBin.lengthSq() > 1e-12
+        ? 1 / Math.max(0.62, Math.abs(bin.dot(segBin.normalize()))) : 1;
+      if (i > 0) len += P[i].distanceTo(P[i - 1]);
+      const c = P[i].clone().addScaledVector(Nr[i], proud);
+      for (const sgn of [-1, 1]) {
+        const v = c.clone().addScaledVector(bin, sgn * width * 0.5 * miter);
+        positions.push(v.x, v.y, v.z);
+        normals.push(Nr[i].x, Nr[i].y, Nr[i].z);
+        uvs.push(sgn > 0 ? 1 : 0, len);
+      }
+    }
+    for (let i = 0; i < P.length - 1; i++) {
+      const v00 = base + i * 2, v01 = v00 + 1, v10 = v00 + 2, v11 = v00 + 3;
+      // Wound so the face normal is the OUTWARD surface normal: the opposite
+      // order leaves every ribbon back-facing, i.e. culled from outside and
+      // visible only as the far-side seam showing through the glass.
+      indices.push(v00, v11, v10, v00, v01, v11);
+    }
+  };
+
+  for (const seam of seams) {
+    const w = seam.width ?? 0.010, pr = seam.proud ?? 0.004;
+    emit(seam.path, w, pr);
+    if (seam.mirror) emit(seam.path.map(([z, f]) => [z, -f]), w, pr);
+  }
+
+  if (!indices.length) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
 /**
  * Sample the greenhouse (upper cabin) outline at a set of z positions, used to
  * place inset glass panels that hug the body. Returns rings of the upper

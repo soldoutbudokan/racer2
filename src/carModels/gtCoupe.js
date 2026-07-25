@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { buildGreenhouseShell } from './loftBuilder.js';
-import { makeGlass } from './carMaterials.js';
+import { buildGreenhouseShell, buildPanelSeams } from './loftBuilder.js';
+import { makeGlass, makePaint, makeShutline } from './carMaterials.js';
 import {
   buildHeadlights, buildTaillights, buildMirrors, buildGrille, buildSplitter,
   buildDiffuser, buildWing, buildExhaust, buildBadgesAndPlate, buildUnderbody,
@@ -30,6 +30,43 @@ export const keys = [
 
 export const wheelStyle = 'gt';
 
+// Panel structure. Paths are (z, profile-fraction) waypoints on the skin; the
+// fractions are read off the actual cross-section (N = 16, as built in
+// index.js): 0.27 = rocker under-curve, 0.53 = beltline crease, 0.60 = glass sill,
+// 0.80 = roof/deck top corner, 1.00 = crown centre line.
+const SHUT_LINES = [
+  // Hood: cowl edge, leading edge, and the fender seam down each flank.
+  { path: [[0.34, 0.80], [0.34, 1.00], [0.34, -0.80]] },
+  { path: [[1.94, 0.80], [1.94, 1.00], [1.94, -0.80]] },
+  { path: [[0.36, 0.80], [1.94, 0.80]], mirror: true },
+  // Door: front cut behind the front arch, up to the belt, back along the
+  // glass sill, down the rear cut and forward along the sill — one closed
+  // loop per side, so the flank stops being a single unbroken pressing.
+  {
+    // Top edge hugs the glass sill (0.60) and the bottom sits in the rocker's
+    // under-curve, so the loop reads as a door under a window rather than a
+    // rectangle floating in the middle of the flank.
+    path: [[0.60, 0.27], [0.60, 0.59], [-0.88, 0.59], [-0.88, 0.27], [0.60, 0.27]],
+    mirror: true,
+  },
+  // Boot lid, clear of the wing posts (which straddle z -1.93..-1.83).
+  { path: [[-1.22, 0.80], [-1.22, 1.00], [-1.22, -0.80]] },
+  { path: [[-1.78, 0.80], [-1.78, 1.00], [-1.78, -0.80]] },
+  { path: [[-1.22, 0.80], [-1.78, 0.80]], mirror: true },
+];
+
+// Body-coloured window surround — A-pillar, roof-side rail and C-pillar in one
+// ribbon per flank, standing proud of the glass canopy (which is itself 0.012
+// proud of the paint). Without it the greenhouse is one unbroken tinted band
+// from cowl to tail with no pillar to read the cabin by. Transverse header
+// rails over the crown were tried too and dropped: from above they cut the
+// roof into stripes, and they are invisible from every driving camera.
+const SURROUND = [
+  { path: [[0.28, 0.60], [0.10, 0.66], [-0.10, 0.74], [-0.28, 0.80],
+    [-0.80, 0.80], [-1.00, 0.74], [-1.14, 0.62]], mirror: true,
+  width: 0.050, proud: 0.022 },
+];
+
 export function decorate(body, ctx) {
   // tinted glass canopy over the cabin
   const glass = new THREE.Mesh(
@@ -37,6 +74,20 @@ export function decorate(body, ctx) {
     makeGlass(),
   );
   body.add(glass);
+
+  const shut = buildPanelSeams(keys, SHUT_LINES, { profilePoints: 16 });
+  if (shut) {
+    const m = new THREE.Mesh(shut, makeShutline());
+    m.receiveShadow = true;      // no castShadow: 10 mm ribbons only self-shadow
+    body.add(m);
+  }
+  const surround = buildPanelSeams(keys, SURROUND, { profilePoints: 16 });
+  if (surround) {
+    const m = new THREE.Mesh(surround, makePaint(ctx.color));
+    m.castShadow = true;
+    m.receiveShadow = true;
+    body.add(m);
+  }
 
   // All fascia parts are placed against the hull surface at their station:
   // nose cap face z 2.20 (spans y -0.14..0.18), tail cap face z -2.16
