@@ -50,7 +50,13 @@ export function makePaint(colorHex) {
     // spreads the sky reflection into a soft gradient that wraps the panel,
     // instead of a razor-sharp mirror band that clips the bright sky straight
     // to white across the hood and roof.
-    clearcoatRoughness: 0.085,
+    // 0.085 was tuned when the hood and roof were curved; the re-authored
+    // bodies have genuinely FLAT hood, roof and deck planes, and a near-mirror
+    // clear coat turns a flat panel aimed at the sky into a solid white slab
+    // under ACES. Spreading the reflection keeps the sky gradient without the
+    // clip — check the hood from the front-3/4 and the deck from trackside
+    // after touching either this or envMapIntensity below.
+    clearcoatRoughness: 0.135,
     clearcoatNormalMap: orangePeelNormal(),
     clearcoatNormalScale: new THREE.Vector2(0.05, 0.05),
     normalMap: flake,
@@ -60,7 +66,7 @@ export function makePaint(colorHex) {
     // than a flat tone — but pulled back from 1.55 so the up-facing panels keep
     // the car's colour under the bright golden-hour sky + ACES instead of
     // blowing out to a white cap that erases the paint entirely.
-    envMapIntensity: 1.12,
+    envMapIntensity: 0.82,
   });
   paintCache.set(colorHex, m);
   return m;

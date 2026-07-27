@@ -83,6 +83,108 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-26** (accepted → `main`, owner replied "merge to main"; was
+  branch `claude/scenery-and-car-detail`; owner-directed interactive
+  session, multi-agent) — **Environment + car detail overhaul.** Owner asked for "the mountains, cars, track,
+  barriers, trees, etc." to be significantly better detailed while keeping the
+  game reasonably efficient. `src/track.js` went from a 3.5 k-line monolith to
+  a ~2.3 k-line assembler over new modules in **`src/scenery/`**:
+  - **`terrain.js` (new)** — the circuit no longer sits on a flat 4 km plane.
+    A displaced sheet that is **dead flat inside the corridor** (`flatR` =
+    armco + 46 m, ramping to full relief by +130 m) and rolls outside it, on a
+    tensor-product grid with non-uniform axis spacing (fine over the track
+    bbox, geometrically growing to the fog wall — no clipmap T-junction
+    cracks). Exports `height(x, z)` / `slope(x, z)`; **every scenery placer
+    must seat on it** or it floats. Split into a near shell that receives
+    shadows and a far shell that does not — the sun's 180 m shadow box is
+    ~1500 m deep along an 11° ray, so its footprint printed a hard grey band
+    across the whole map on the coarse far cells.
+  - **`mountains.js`** — ridgelines, not a cone scatter. Three concentric ring
+    skirts, each ONE mesh, crest line from an authored massif table softly
+    unioned and cut by authored cols, swept by a hand-authored down-slope
+    profile. Only the inward face exists. 63 meshes → **1 draw call**, and
+    50–75 % fewer triangles.
+  - **`trees.js`** — 3-tier distance LOD: real branched geometry within 90 m,
+    tilted multi-card canopies to 250 m, crossed cards beyond. Conifers are a
+    bare spar with drooping tiers and a leader spire.
+  - **`barriers.js`** — real corrugated **W-beam** Armco (the old rail was a
+    flat 2-vertex strip with a faked normal — that is why it read as white
+    tape), profiled posts, reflectors, tyre walls with cover straps, modular
+    concrete blocks for the street circuit.
+  - **`roadwork.js`** — the road has **camber** for the first time (see the
+    vertical-budget note at the top of that file — the whole crown has to fit
+    in 3 cm between the terrain and the tyre contact patch). Plus authored
+    paving-lane joints, cold joints and resurfacing patches cut into the mesh
+    as real sections, and proper ribbed racing kerbs (~11 cm, cast ribs, not a
+    sine on a 5 cm lip).
+  - **`groundcover.js` (new)** — the layer that did not exist: tufts, shrubs,
+    flower drifts, hedgerows, post-and-wire fences, telegraph routes, farm
+    tracks between the road edge and the treeline.
+  - **`stands.js`** — grandstands as raked decks under a visible roof truss,
+    and a pit complex with garage bays, awning, pit wall and marked lane.
+  Cost: scene triangles 65–229 k → 190–427 k, but **draw calls DOWN** (gp
+  1011 → 654, parco 1179 → 806, sprint 1065 → 759). Track rebuild 1.2 s →
+  ~1.8 s (menu-time only).
+  Bugs found and fixed while integrating, all worth remembering:
+  (1) the new edge-line/verge strips were wound face-DOWN, so every white line
+  was backface-culled and simply did not draw — same class as the 2026-07-24
+  gravel-trap normals and the 2026-07-25 seam ribbons, so this run added
+  **`scripts/facing-check.mjs`**, which measures the down-facing share of every
+  single-sided mesh's flat area on all six circuits; it immediately found three
+  of parco's four gravel traps still inverted, now fixed by `ensureFaceUp()`
+  in track.js, which flips the index order if it measures the strip facing
+  down instead of hand-authoring a per-side rule;
+  (2) sponsor boards were yawed to the direction of travel, so an 8 m hoarding
+  ran ACROSS the track and aimed its logo down the road at nobody;
+  (3) the start gantry banner faced forward, i.e. every driver read
+  "XIRP DNARG RECAR" through the back of the cloth;
+  (4) desert buttes cast shadows: 60–150 m of rock under an 11° sun throws a
+  300–760 m shadow, which the car-following shadow box clipped into a grey
+  slab — they are backdrop, so `castShadow = false`.
+  New tools: `scripts/perf.mjs` (per-track draw calls / triangles / programs)
+  and `scripts/facing-check.mjs`. Verified: build clean, `physics-test` 23/23
+  incl. no console errors, `track-geometry` all OK, facing-check clean on all
+  six, audit + viewshots on all six circuits.
+
+  **Cars, same session.** `loftBuilder.js`, `parts.js` and `texgen.js` were
+  rebuilt and all three archetypes re-authored against them:
+  - **The panoramic glass roof is gone** (top Backlog item). `halfProfile` is
+    now a surfaced profile — key stations can declare a rocker **sill**, an
+    arch **flare** and a character **crease**, each of which is also a TANGENT
+    BREAK (the profile starts a new spline run there AND `buildLoftHull`
+    duplicates the vertex column, so `computeVertexNormals` cannot smooth over
+    the crease — with only the first half you get the shape and none of the
+    read). `buildGreenhouseShell` takes a **`panes`** array with a `topFrac`,
+    so the cars now have a windshield, a side window per flank and a backlight
+    with a PAINTED crown between the roof rails, plus `buildWindowSeals`.
+    Author seam paths against `profileFractions(keys)`, never against literal
+    fractions — the landmark indices move when a car declares surface features.
+  - **The drooping nose is gone** (the rest of that Backlog item): the forward
+    stations end in a real fascia with a defined leading edge.
+  - New parts: `buildInterior` (the cabin was empty glass over nothing),
+    `buildDoorFurniture`, `buildBodyVents`, `buildWipers`, `buildTowEye`,
+    `buildAerial`; every existing builder upgraded in place (recessed light
+    clusters, a duct-mouth grille with depth, wheel wells with an arch lip).
+  - `makePaint`: `clearcoatRoughness` 0.085 → **0.135** and `envMapIntensity`
+    1.12 → **0.82**. The old values were tuned when the hood and roof were
+    curved; against the re-authored FLAT hood/roof/deck planes a near-mirror
+    clear coat aimed at the sky clipped to a solid white slab under ACES.
+  - `buildMirrors` housing moved to `makeTrim`: a 16 cm convex box aimed
+    up-and-outboard is the worst possible shape for a clear coat under this
+    sky, and it clipped to a white sticker on the A-pillar. Both cars also had
+    the pod ON the beltline crease (`hip` now runs y 0.44-0.50), poking into
+    the glass line — a door mirror mounts on the door skin just BELOW the belt.
+  - Cost: ~18 k → ~24-25 k triangles per car.
+  Verified: smoke OK (no NaN, outward winding), physics-test 23/23, build
+  clean, inspect + viewshots on all angles.
+
+  Two harness notes for the next run: `scripts/smoke-car.mjs`'s `findHull` now
+  requires an INDEXED geometry (mergeByMaterial's baked meshes are bigger than
+  the hull but non-indexed, and the winding check crashed on them); and
+  `physics-test.mjs` will die with "Execution context was destroyed" if the
+  machine is loaded — that is the renderer being OOM-killed, not a product
+  regression. Re-run it on a quiet machine before believing it.
+
 - **2026-07-25** (accepted → `main`, owner replied "go"; was branch
   `claude/stoic-thompson-aw10sy`) —
   Panel structure on the GT and muscle cars: the *cutlines and pillar breaks*
@@ -294,38 +396,35 @@ confirmed against the `after-*` shots, highest impact first):
   full tyre bore bead-to-bead + enlarged the mid-well back plug so nothing
   shows through the opening from either side. (No sign of far-side spokes
   poking past the tyre face in the after shots.)
-- **GT body still soft in profile** (car, high): ~~no hood/door cutlines or
-  pillar breaks~~, nose droops to a rounded point. ~~pinched mesh fold in the
-  roof just above the windshield~~ — DONE 2026-07-22, accepted → `main`
-  2026-07-24 (see Changelog):
-  it was the glass canopy z-fighting through the roof paint, not a loft fold;
-  stood the glazing proud of the paint and softened its polygonOffset.
-  Cutlines + pillars DONE 2026-07-25 (accepted → `main`) via `buildPanelSeams` —
-  applied to the muscle car too. **The drooping nose is what remains of this
-  item** — note the nose fix must not disturb the grille/splitter/badge parts
-  placed against the hull at z≈2.2, and the hood's leading-edge shut line now
-  sits at z 1.94 (GT) / 2.00 (muscle), so re-check it after any nose reshape.
-- **Open-wheel car flanks still read as white planks** (car, medium): the
-  side-pod/chassis construction predates the overhaul standards.
-- **The GT/muscle roof is entirely glass** (car, low — new 2026-07-25): the
-  greenhouse shell sweeps belt-to-belt over the crown, so with the new pillars
-  in place the cabin now reads as a panoramic glass roof. Defensible for the
-  GT, wrong for the muscle car. A proper fix means teaching
-  `buildGreenhouseShell` a `topFrac` so the side glazing stops at the roof rail
-  and the crown stays painted — a bigger change than one run, hence not done
-  here.
+- ~~**GT body still soft in profile**~~ (car, high) — DONE. Cutlines and
+  pillar breaks 2026-07-25 via `buildPanelSeams`; the roof "fold" 2026-07-22
+  (it was the glass canopy z-fighting through the paint); the **drooping nose**
+  and the soft flank 2026-07-26, by giving `halfProfile` authored sill / flare
+  / crease features that are also tangent breaks. See the Changelog.
+- ~~**Open-wheel car flanks still read as white planks**~~ (car, medium) —
+  DONE 2026-07-26: lofted sidepods with a real undercut, multi-element wings,
+  bargeboards, and exposed suspension between the tub and the wheels.
+- ~~**The GT/muscle roof is entirely glass**~~ (car) — DONE 2026-07-26:
+  `buildGreenhouseShell` takes a `panes` array with `topFrac`, so the glazing
+  stops at the roof rail and the crown between the rails stays painted.
 - **Racing-line aid bleeds under the cars** (env/aid, medium): the green
   stripe z-bleeds beneath the rear bumper and glows at tire contact patches
   under the multiply contact shadow. Keep the aid + its colours (it is a
   control); just raise its lift/mask it under car footprints.
-- **Trackside billboards** (env, medium): the dying fix agent DID land edits
-  here (sponsor faces, weathered backs) but never verified them — spot-check
-  boards from both sides on the next run; one panel may still float above its
-  stub posts.
-- **Misc polish** (low): grass banding seams at high angles; 1-2px needle
-  spikes on two mountain summits; distant sponsor banners render as magenta
-  confetti dashes at the horizon. (Grandstand back-wall gap and noise-texture
-  tile seams got unverified fixes on 2026-07-02 — re-verify rather than redo.)
+- ~~**Trackside billboards**~~ (env, medium) — DONE 2026-07-26: the boards were
+  yawed to the direction of travel, so an 8 m hoarding ran ACROSS the track and
+  aimed its logo down the road at nobody. Now faces the racing surface.
+- **Misc polish** (low): grass mow banding is still visible as diagonal stripes
+  from high cameras; the `far`/`hills` mountain presets are deliberately modest
+  (de-mountaining, 2026-07-24) but now read a little too soft — worth another
+  look at the value contrast if the owner wants more horizon.
+- **Track rebuild is ~1.8 s** (perf, low — new 2026-07-26): was ~1.2 s before
+  the scenery overhaul. Menu-time only, no effect on frame rate (draw calls
+  went DOWN), but a slow phone will feel it on a circuit switch. `perf.mjs`
+  measures the frame side; nothing measures build time yet.
+- **Cars cost 27-33 k triangles each** (perf, low — new 2026-07-26), up from
+  ~18 k, and up to 5 are on screen. Fine on the current budget; revisit with an
+  LOD if the car count ever rises.
 - ~~**Distant trees look like cardboard**~~ / ~~**Mountains CGI-smooth**~~ /
   ~~**Wheels toy-like**~~ / ~~**Sky slabs**~~ / ~~**White tray under every
   car**~~ — all addressed by the 2026-07-02 overhaul (see Changelog).

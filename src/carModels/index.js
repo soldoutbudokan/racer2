@@ -24,8 +24,15 @@ const BODY_DROP = -0.37;
 const hullCache = new Map();
 function getHull(key, def) {
   if (!hullCache.has(key)) {
+    // ringsPerSegment 7, not 9: the surfaced profile pins 22 vertex COLUMNS
+    // (~57 mm apart along the section), so 9 rings per segment sampled z at
+    // ~38 mm — over half again as fine as the curve it is crossed with, and
+    // the extra rings only restate curvature Catmull already draws. 7 puts the
+    // two spacings within 15 % of each other and returns ~2.2 k triangles per
+    // road car, which is a fifth of the whole overrun.
+    // profilePoints is ignored once a car declares surface features.
     hullCache.set(key, def.keys ? buildLoftHull(def.keys, {
-      ringsPerSegment: 9, profilePoints: 16,
+      ringsPerSegment: 7, profilePoints: 16,
     }) : null);
   }
   return hullCache.get(key);
