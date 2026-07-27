@@ -70,11 +70,26 @@ export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d) {
   const wheels = [];
   for (let i = 0; i < 4; i++) wheels.push(buildWheel(def.wheelStyle));
 
-  body.add(buildContactShadow());
+  // The contact shadow hangs off the ROOT, not the dropped body group: it is
+  // ground furniture, so car.js re-seats it flat on the asphalt every frame
+  // (see buildContactShadow). Keeping it under `root` means main.js's existing
+  // add/remove of the root still carries it in and out of the scene.
+  //
+  // Size and centre it on the finished bodywork rather than one hard-coded
+  // rectangle: the three archetypes measure 1.98–2.56 m across the shell.
+  body.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(body);
+  const shadow = buildContactShadow({
+    w: (bb.max.x - bb.min.x) * 1.12,
+    len: (bb.max.z - bb.min.z) * 1.06,
+  });
+  shadow.geometry.translate((bb.max.x + bb.min.x) / 2, 0, (bb.max.z + bb.min.z) / 2);
+  root.add(shadow);
 
   return {
     root,
     wheels,
+    shadow,
     brakeLights: deco.brakeLights,
     _brakeLevel: 0,
   };

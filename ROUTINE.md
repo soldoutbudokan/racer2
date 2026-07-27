@@ -83,6 +83,59 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-27** (preview, pending review; branch
+  `claude/stoic-thompson-1zx3tr`) — **The cars had no contact shadow at all**,
+  and that was the real cause of the top open Backlog item ("racing-line aid
+  bleeds under the cars"). Chased it with a runtime probe rather than by eye:
+  `buildContactShadow` parents the multiply blob to the *sprung body* group at
+  local y −0.355, i.e. 5 mm over the body frame's authored ground plane. But
+  the body frame is pinned to the chassis, and the chassis moves: measured
+  world y of the blob is **+0.222 on the grid** (suspension hanging at full
+  rest length, `chassisY` 0.947) and **−0.056 while driving** (`chassisY`
+  0.669). So it floats 22 cm in the air before the start and is 5.6 cm *under*
+  the asphalt for the whole race, where the depth test hides it outright. Every
+  car has been sitting on the track with nothing grounding it since the ride
+  height last moved.
+  Fix, in three parts:
+  (1) the blob is now **ground furniture** — still a child of `visual.root` so
+  `main.js`'s existing add/remove carries it, but `car.js`'s `update()`
+  re-seats it every frame: undo the chassis rotation (keep the *heading* only,
+  so it stops pitching and rolling with the body), and drop it to the road
+  plane inferred from the four wheel hubs (`mean(hub.y) − WHEEL_RADIUS`) plus a
+  3 cm lift that clears the asphalt and its cambered crown. Verified at 0.030
+  world y against a measured ground of 0.000 on all four cars.
+  (2) `renderOrder −1 → 4`. The aid "glowing at the tyre contact patches" was
+  an ordering bug: road decals (`roadwork`, 2) and the perfect-line aid
+  (`racingLine`, 3) both draw with `depthWrite` off, so a multiply at −1 went
+  FIRST and the unlit green ribbon painted straight back over it at full
+  brightness. Drawn last, the shadow darkens the markings under the car too, so
+  the aid now dims as it passes beneath the bodywork and brightens as it comes
+  out — which is the whole of the Backlog item, with no change to
+  `racingLine.js` and no change to the aid's colours.
+  (3) the blob is sized and centred off the finished body bbox instead of one
+  hard-coded 2.3 × 4.8 rectangle (measured 2.51 GT / 2.56 muscle / 1.98
+  open-wheel), and `hideFromOverridePasses` keeps it out of GTAO's prepass.
+  Ruled out on evidence, worth remembering: the reported "z-bleed beneath the
+  rear bumper" is **not** a depth bug. An isolation run with the aid's
+  `polygonOffset -4/-4` disabled at runtime was pixel-identical, so the offset
+  is not pulling the ribbon through the bodywork — the green under the valance
+  is the real ribbon seen through the real gap, and it read as bleed only
+  because an unlit `MeshBasicMaterial` in an unshadowed gap is the brightest
+  thing in frame. It stops reading that way once the shadow exists, so the
+  offset is left alone.
+  New tool: **`scripts/lineshot.mjs`** — low, tight shots at the car's
+  footprint (rear / rear-ground / rear-3/4 / side / front / over), each taken
+  twice with the aid forced fully green and fully red; the other shooters are
+  all too far out to judge the road-to-car interface. Also fixed
+  `scripts/perf.mjs`, which had a hard-coded mac Chrome path and so could not
+  run in the routine's container at all; it now uses the same `CHROME_EXE`
+  discovery as the other shooters.
+  Verified: `physics-test` 23/23 incl. no console errors, smoke OK (no NaN,
+  outward winding), build clean, `track-geometry` all OK, `facing-check` clean
+  on all six, `perf` on `gp` 698 → 680 draw calls (no cost — the mesh already
+  existed, it was just invisible), before/after `lineshot` on all six angles ×
+  both colour states and all five `viewshot` angles.
+
 - **2026-07-26** (accepted → `main`, owner replied "merge to main"; was
   branch `claude/scenery-and-car-detail`; owner-directed interactive
   session, multi-agent) — **Environment + car detail overhaul.** Owner asked for "the mountains, cars, track,
@@ -407,10 +460,13 @@ confirmed against the `after-*` shots, highest impact first):
 - ~~**The GT/muscle roof is entirely glass**~~ (car) — DONE 2026-07-26:
   `buildGreenhouseShell` takes a `panes` array with `topFrac`, so the glazing
   stops at the roof rail and the crown between the rails stays painted.
-- **Racing-line aid bleeds under the cars** (env/aid, medium): the green
-  stripe z-bleeds beneath the rear bumper and glows at tire contact patches
-  under the multiply contact shadow. Keep the aid + its colours (it is a
-  control); just raise its lift/mask it under car footprints.
+- ~~**Racing-line aid bleeds under the cars**~~ (env/aid, medium) — DONE
+  2026-07-27, pending review (see Changelog). Root cause was not the aid: the
+  car's multiply contact shadow was parented to the sprung body and spent the
+  whole race buried under the asphalt, so nothing was darkening the road (or
+  the aid) beneath the car. Shadow re-seated on the ground and moved to
+  `renderOrder` 4; the aid itself is untouched. The "z-bleed" half was
+  disproved — see the Changelog note on `polygonOffset`.
 - ~~**Trackside billboards**~~ (env, medium) — DONE 2026-07-26: the boards were
   yawed to the direction of travel, so an 8 m hoarding ran ACROSS the track and
   aimed its logo down the road at nobody. Now faces the racing surface.
@@ -428,5 +484,29 @@ confirmed against the `after-*` shots, highest impact first):
 - ~~**Distant trees look like cardboard**~~ / ~~**Mountains CGI-smooth**~~ /
   ~~**Wheels toy-like**~~ / ~~**Sky slabs**~~ / ~~**White tray under every
   car**~~ — all addressed by the 2026-07-02 overhaul (see Changelog).
+
+New findings from the 2026-07-27 run (not acted on — one change per run):
+
+- **`BODY_DROP` is measured in the wrong pose** (car, medium): `index.js` drops
+  the body shell a constant 0.37 below the chassis, but that number was taken
+  on the grid with the suspension at full rest length. Loaded, the hub sits
+  only ~0.31 below the chassis, so the painted shell rides ~6 cm lower over its
+  wheels than intended for the whole race — the arches sit closer to the tyres
+  than the author saw. Re-measure at the settled ride height (`physics-test`
+  reports `settleY` 0.68) and re-author, checking the arch/tyre clearance
+  against `maxSuspensionTravel`.
+- **The contact shadow does not react to airtime** (car, low): it is seated
+  from `mean(hub.y) − WHEEL_RADIUS`, which follows the wheels off a kerb, so a
+  car launching over a sausage keeps a hard shadow directly beneath it. Fade
+  and spread it with the chassis-to-ground gap.
+- **`facing-check.mjs` is not deterministic** (harness, medium): mesh counts
+  swing ±30 per circuit between runs on an unchanged tree, and one run flagged
+  a 3648-triangle `#24272c` mesh on `downtown` as 100 % face-down that three
+  other runs did not see. It cannot be trusted as a gate until the scenery seed
+  is pinned — chase that intermittent `downtown` mesh once it is reproducible.
+- **The 2026-07-26 golden-hour cloudscape commit (`486cfa9`) is on `main` but
+  is not in this Changelog** — it landed straight on the default branch, so a
+  memory-less run has no record of `src/scenery/clouds.js` or why the sky is
+  authored per circuit. Worth a retrospective entry from the commit message.
 
 (When an item is rejected, note "tried X — rejected: Y" here so it isn't retried.)
