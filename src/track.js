@@ -7,6 +7,7 @@ import {
 } from './scenery/noise.js';
 import { makeTerrain } from './scenery/terrain.js';
 import { addDistantMountains } from './scenery/mountains.js';
+import { addCloudscape } from './scenery/clouds.js';
 import { scatterTrees } from './scenery/trees.js';
 import { addArmco, addTireStacks, addConcreteWall } from './scenery/barriers.js';
 import { addGrandstands, addPitComplex } from './scenery/stands.js';
@@ -211,7 +212,13 @@ export function createTrack(scene, world, materials, def) {
   if (theme.huts) addAlpineHuts(group, frames, D);
   if (theme.marshals) addMarshalPosts(group, frames, curvature, D);
   addGroundCover(group, frames, D, { ground: theme.ground || 'grass', terrain });
-  if (theme.clouds !== false) addClouds(group);
+  if (theme.clouds !== false) {
+    addCloudscape(group, {
+      id: def.id,
+      haze: theme.fog ? theme.fog[0] : 0xc8bba6,
+      center: terrain.centre,
+    });
+  }
 
   // Physics walls along the barrier line
   buildBarrierPhysics(world, frames, ARMCO_OFFSET, materials, bodies);
@@ -678,69 +685,6 @@ function makeRollerDoorTexture() {
   return tex;
 }
 
-// Puffy cumulus billboard — warm-lit tops, blue-gray shadowed underbellies.
-function makeCloudTexture() {
-  const w = 512, h = 256;
-  const c = document.createElement('canvas');
-  c.width = w; c.height = h;
-  const ctx = c.getContext('2d');
-  ctx.clearRect(0, 0, w, h);
-
-  // Layered approach: light shadow base, bright puffs on top. The base is kept
-  // pale so that when a cloud is backlit (camera looking toward the sun) it
-  // reads as a soft luminous puff rather than a dark grey slab.
-  for (let i = 0; i < 18; i++) {
-    const x = w * 0.5 + (Math.random() - 0.5) * w * 0.65;
-    const y = h * 0.72 + (Math.random() - 0.5) * h * 0.28;
-    const r = 30 + Math.random() * 55;
-    const grad = ctx.createRadialGradient(x, y, 2, x, y, r);
-    const v = 208 + Math.random() * 20;
-    grad.addColorStop(0, `rgba(${v - 12},${v - 8},${v + 10},0.24)`);
-    grad.addColorStop(0.6, `rgba(${v - 16},${v - 12},${v + 6},0.11)`);
-    grad.addColorStop(1, 'rgba(210,218,235,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  }
-
-  // Bright upper puffs
-  for (let i = 0; i < 60; i++) {
-    const x = w * 0.5 + (Math.random() - 0.5) * w * 0.78;
-    const y = h * 0.50 + (Math.random() - 0.5) * h * 0.46;
-    const r = 14 + Math.random() * 38;
-    const grad = ctx.createRadialGradient(x, y - r * 0.25, r * 0.05, x, y, r);
-    // warm sunlit tops (slight warm tint from golden hour)
-    const lum = 240 + Math.random() * 15;
-    const warmR = Math.min(255, lum + 8);
-    const warmG = Math.min(255, lum + 2);
-    grad.addColorStop(0,   `rgba(${warmR},${warmG},${lum - 5},0.68)`);
-    grad.addColorStop(0.55, `rgba(${lum},${lum},${lum + 3},0.42)`);
-    grad.addColorStop(1,   'rgba(255,255,255,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-  }
-
-  // Feather the whole sprite so the rectangular quad edge can never show: scale
-  // every pixel's alpha by a soft elliptical falloff (opaque core → fully
-  // transparent rim). Without this the densely-overlapping puffs fill most of
-  // the quad and a backlit cloud reads as a hard grey rectangle.
-  const img = ctx.getImageData(0, 0, w, h);
-  const d = img.data;
-  for (let y = 0; y < h; y++) {
-    const ny = (y / (h - 1)) * 2 - 1;
-    for (let x = 0; x < w; x++) {
-      const nx = (x / (w - 1)) * 2 - 1;
-      const dist = Math.hypot(nx, ny);          // elliptical, normalized to 1 at edge
-      let f = dist <= 0.45 ? 1 : Math.max(0, 1 - (dist - 0.45) / 0.55);
-      f = f * f * (3 - 2 * f);                  // smoothstep for a gentle rim
-      d[(y * w + x) * 4 + 3] *= f;
-    }
-  }
-  ctx.putImageData(img, 0, 0);
-
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
-}
 // ---------- Scenery ----------
 
 // Ground height at a world point, or 0 when the circuit has no terrain object
@@ -1049,51 +993,6 @@ function addBrakeMarkers(scene, frames, curvature, D) {
       post.position.set(pos.x, 0.55, pos.z);
       scene.add(post);
     }
-  }
-}
-
-// The GTAO pass renders a depth/normal prepass with scene.overrideMaterial,
-// which turns alpha-tested/translucent quads (clouds, debris fencing, foliage
-// cards) into opaque slabs in the AO buffer — the AO term then darkens the sky
-// behind them into hard grey rectangles. Emit zero triangles whenever an
-// override material is active: the beauty pass is untouched and the AO
-// prepass simply never sees the object.
-// Soft billboard clouds drifting above the haze. Static quads rather than
-// THREE.Sprite: sprites get no billboarding in the GTAO prepass and burned
-// huge grey AO rectangles into the sky. The clouds sit 1-3 km out while the
-// camera stays near the circuit, so a quad aimed at the origin is
-// indistinguishable from a true billboard.
-function addClouds(scene) {
-  const tex = makeCloudTexture();
-  const quad = new THREE.PlaneGeometry(1, 1);
-  // More clouds, higher altitude, varied aspect ratios for a richer sky.
-  for (let i = 0; i < 16; i++) {
-    const mat = new THREE.MeshBasicMaterial({
-      map: tex,
-      transparent: true,
-      opacity: 0.22 + Math.random() * 0.22,
-      fog: false,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const cloud = new THREE.Mesh(quad, mat);
-    const a = Math.random() * Math.PI * 2;
-    const r = 1000 + Math.random() * 1800;
-    // Cloud bases start well above the tallest ridgelines (~530 m): when the
-    // two overlapped, elevated cameras saw cloud + ridge silhouettes merge
-    // into one flat grey cutout on the horizon.
-    cloud.position.set(
-      Math.cos(a) * r,
-      580 + Math.random() * 360,
-      Math.sin(a) * r
-    );
-    // Wide, flat cumulus aspect ratio
-    const sw = 420 + Math.random() * 500;
-    const sh = sw * (0.28 + Math.random() * 0.14);
-    cloud.scale.set(sw, sh, 1);
-    cloud.lookAt(0, cloud.position.y * 0.5, 0);
-    hideFromOverridePasses(cloud);
-    scene.add(cloud);
   }
 }
 
