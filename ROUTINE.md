@@ -83,9 +83,9 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-26** (PREVIEW, pending review — branch
-  `claude/scenery-and-car-detail`; owner-directed interactive session,
-  multi-agent) — **Environment + car detail overhaul.** Owner asked for "the mountains, cars, track,
+- **2026-07-26** (accepted → `main`, owner replied "merge to main"; was
+  branch `claude/scenery-and-car-detail`; owner-directed interactive
+  session, multi-agent) — **Environment + car detail overhaul.** Owner asked for "the mountains, cars, track,
   barriers, trees, etc." to be significantly better detailed while keeping the
   game reasonably efficient. `src/track.js` went from a 3.5 k-line monolith to
   a ~2.3 k-line assembler over new modules in **`src/scenery/`**:
