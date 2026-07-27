@@ -66,13 +66,16 @@ function countMeshes(obj) {
 }
 
 // the hull is the mesh with the most vertices
+// The painted lofted shell, not just "the biggest mesh": index.js tags it
+// `userData.noMerge` and leaves it un-baked, while mergeByMaterial() fuses all
+// the bolt-on detail into merged, NON-INDEXED meshes that can be larger. The
+// winding check below needs the indexed hull specifically.
 function findHull(root) {
   let best = null, bestN = 0;
   root.traverse((o) => {
-    if (o.isMesh && o.geometry?.getAttribute('position')) {
-      const n = o.geometry.getAttribute('position').count;
-      if (n > bestN) { bestN = n; best = o; }
-    }
+    if (!o.isMesh || !o.geometry?.getAttribute('position') || !o.geometry.index) return;
+    const n = o.geometry.getAttribute('position').count;
+    if (n > bestN) { bestN = n; best = o; }
   });
   return best;
 }
@@ -101,8 +104,10 @@ for (const key of ARCHETYPE_KEYS) {
 {
   const v = buildVisualCar('gt', 0xc8161d);
   const hull = findHull(v.root);
-  const pos = hull.geometry.getAttribute('position');
-  const idx = hull.geometry.index;
+  if (!hull) { console.log('\n!! no indexed hull mesh found — cannot check winding'); ok = false; }
+  const pos = hull && hull.geometry.getAttribute('position');
+  const idx = hull && hull.geometry.index;
+  if (idx) {
   let vol = 0;
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   for (let i = 0; i < idx.count; i += 3) {
@@ -112,6 +117,8 @@ for (const key of ARCHETYPE_KEYS) {
     vol += a.dot(b.clone().cross(c)) / 6;
   }
   console.log(`\nHULL signed volume = ${vol.toFixed(3)} (${vol > 0 ? 'OUTWARD ok' : 'INSIDE-OUT — flip winding'})`);
+  if (vol <= 0) ok = false;
+  }
 }
 
 console.log(ok ? '\nSMOKE OK' : '\nSMOKE FAILED');
