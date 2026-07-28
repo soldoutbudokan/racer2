@@ -83,7 +83,8 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-28** (preview, pending review; branch `claude/epic-franklin-beii9b`)
+- **2026-07-28** (accepted → `main`, owner replied "go"; was branch
+  `claude/epic-franklin-beii9b`)
   — **The cars spent every race 5.7 cm too low on their own wheels.** Top open
   Backlog item ("`BODY_DROP` is measured in the wrong pose"), confirmed with a
   runtime probe rather than by eye. `carModels/index.js` drops the painted shell
@@ -530,7 +531,7 @@ confirmed against the `after-*` shots, highest impact first):
 New findings from the 2026-07-27 run (not acted on — one change per run):
 
 - ~~**`BODY_DROP` is measured in the wrong pose**~~ (car, medium) — DONE
-  2026-07-28, preview pending (see Changelog): the shell now hangs at the
+  2026-07-28, accepted → `main` (see Changelog): the shell now hangs at the
   derived settled hub height from `src/stance.js`, gated by a new
   `physics-test` check and measurable with `scripts/rideheight.mjs`.
 - **The contact shadow does not react to airtime** (car, low): it is seated
