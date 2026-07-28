@@ -83,6 +83,48 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-28** (preview, pending review; branch `claude/epic-franklin-beii9b`)
+  — **The cars spent every race 5.7 cm too low on their own wheels.** Top open
+  Backlog item ("`BODY_DROP` is measured in the wrong pose"), confirmed with a
+  runtime probe rather than by eye. `carModels/index.js` drops the painted shell
+  a constant −0.37 below the chassis, and the shell is authored in an
+  axle-centred frame (wheel centre y 0, ground −0.36) — so −0.37 has to be the
+  hub's height in chassis space. It is not. −0.37 is the hub at **full droop**
+  (anchor −0.05 minus the whole 0.32 spring), the pose a car holds only while it
+  is falling onto the grid. Settled, the spring is 53 mm compressed and the hub
+  sits at **−0.3166**. Measured on all four cars: the body-frame ground plane
+  ended up at world y **−0.057** with the tyre contact patch at **0.000**, i.e.
+  the rockers, splitter and undertray ran 5.7 cm *below the asphalt* for the
+  whole race, and the arch liners (crest radius 0.41, authored 5 cm clear of a
+  0.36 tyre) came down to 0.353 — **under** the tyre radius, which is why the
+  front tyre visibly cut through the fender in `wheelshot`.
+  Fix: new **`src/stance.js`**, one module owning the ride-height geometry that
+  the physics vehicle (`car.js`) and the visual body placement
+  (`carModels/index.js`) must agree on, with `HUB_LOCAL_Y` **derived** from the
+  spring instead of eyeballed. Worth knowing for any future spring change:
+  cannon-es scales its suspension force by the chassis mass
+  (`force = stiffness · compression · mass`), so the static compression is
+  **mass-independent** — g / (4 · stiffness), 9.82/184 = 53.4 mm here. `car.js`
+  now takes `WHEEL_RADIUS`, `SUSPENSION_REST`, `SUSPENSION_STIFFNESS` and the
+  anchor height from the same module, so the two halves cannot drift apart
+  again. Deliberately anchored to the **static** height, not the driving one:
+  the residual 4 mm at speed is real aero squat (`clA` 2.1) and the body
+  *should* sink into it.
+  New gate in `physics-test.mjs` — "painted shell sits at the settled ride
+  height, not the droop pose" — measures the settled hub from
+  `chassisConnectionPointLocal.y − suspensionLength` and compares it with where
+  the body group was actually dropped (±1 cm). That is the check that would
+  have caught this in 2026-07-02 when the ride height last moved.
+  New tool: **`scripts/rideheight.mjs`** — prints, per car, hub offset, body
+  drop, tyre contact plane, the authored ground plane and the lowest painted
+  geometry, in both the grid and the settled pose. Use it after ANY change to
+  the suspension or the body frame.
+  Verified: `physics-test` 24/24 incl. no console errors, smoke OK (no NaN,
+  outward winding, triangle budget unchanged), build clean, before/after
+  `viewshot` (all five angles), `wheelshot` (both sides) and `lineshot`
+  (six low angles × both aid colours) on the GT, plus low passes over the
+  open-wheel and muscle cars.
+
 - **2026-07-27** (accepted → `main`, owner replied "go"; was branch
   `claude/stoic-thompson-1zx3tr`) — **The cars had no contact shadow at all**,
   and that was the real cause of the top open Backlog item ("racing-line aid
@@ -487,14 +529,10 @@ confirmed against the `after-*` shots, highest impact first):
 
 New findings from the 2026-07-27 run (not acted on — one change per run):
 
-- **`BODY_DROP` is measured in the wrong pose** (car, medium): `index.js` drops
-  the body shell a constant 0.37 below the chassis, but that number was taken
-  on the grid with the suspension at full rest length. Loaded, the hub sits
-  only ~0.31 below the chassis, so the painted shell rides ~6 cm lower over its
-  wheels than intended for the whole race — the arches sit closer to the tyres
-  than the author saw. Re-measure at the settled ride height (`physics-test`
-  reports `settleY` 0.68) and re-author, checking the arch/tyre clearance
-  against `maxSuspensionTravel`.
+- ~~**`BODY_DROP` is measured in the wrong pose**~~ (car, medium) — DONE
+  2026-07-28, preview pending (see Changelog): the shell now hangs at the
+  derived settled hub height from `src/stance.js`, gated by a new
+  `physics-test` check and measurable with `scripts/rideheight.mjs`.
 - **The contact shadow does not react to airtime** (car, low): it is seated
   from `mean(hub.y) − WHEEL_RADIUS`, which follows the wheels off a kerb, so a
   car launching over a sausage keeps a hard shadow directly beneath it. Fade
@@ -508,5 +546,29 @@ New findings from the 2026-07-27 run (not acted on — one change per run):
   is not in this Changelog** — it landed straight on the default branch, so a
   memory-less run has no record of `src/scenery/clouds.js` or why the sky is
   authored per circuit. Worth a retrospective entry from the commit message.
+
+New findings from the 2026-07-28 run (not acted on — one change per run):
+
+- **Every car is dropped 21.7 cm onto the grid** (car/env, medium):
+  `gridSpawn` in `main.js` places the chassis at `frames[0].pos.y + 1.0`, but a
+  settled chassis stands only **0.677** above the road
+  (`stance.js` now exports this as `STATIC_CHASSIS_HEIGHT`). Measured with
+  `rideheight.mjs`: on the spawn frame the tyres are 0.217 above the asphalt and
+  the suspension is at full droop, so the field visibly falls onto the circuit
+  at the start of every race and bounces on its springs. Nothing gates the world
+  step behind a countdown, so it takes about a third of a second — enough to
+  see. Spawn at `STATIC_CHASSIS_HEIGHT` plus a couple of centimetres of margin.
+- **The lowest painted geometry is authored ~3 mm below the body-frame ground
+  plane** (car, low): with the ride height fixed, the GT's undertray sits at
+  world y −0.007 against a tyre contact patch at 0.000, and the road has a
+  cambered crown (~3 cm at the centreline, `roadwork.js`), so the undertray
+  still runs a little inside the asphalt between the wheels. It is hidden by an
+  opaque road and far too separated to z-fight, but the underbody is authored
+  as if the ground were flat. Worth trimming the tray by a centimetre if the
+  car is ever seen from below (kerb launches, replays).
+- **`stance.js` duplicates gravity** (harness, low): the static compression is
+  derived from a local `GRAVITY = 9.82` that must match `physics.js`, which
+  builds the `CANNON.World` inline. Neither imports the other. Hoist the number
+  if `physics.js` ever grows a constants export.
 
 (When an item is rejected, note "tried X — rejected: Y" here so it isn't retried.)

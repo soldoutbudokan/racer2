@@ -4,6 +4,7 @@ import { makePaint } from './carMaterials.js';
 import { buildWheel } from './wheels.js';
 import { buildContactShadow } from './parts.js';
 import { mergeByMaterial } from './merge.js';
+import { HUB_LOCAL_Y } from '../stance.js';
 
 import * as gtCoupe from './gtCoupe.js';
 import * as muscle from './muscle.js';
@@ -16,9 +17,16 @@ const ARCHETYPES = {
 };
 
 // Body is authored in an axle-centred frame (wheel centre = y 0, ground = -0.36)
-// then dropped so wheel centre lands at its physics-local height. Measured: the
-// wheels sit at local y -0.37 relative to the chassis root.
-const BODY_DROP = -0.37;
+// then dropped so the wheel centre lands at its physics-local height.
+//
+// That height is NOT a constant of the car: the shell is rigid on the sprung
+// chassis while the wheels raycast independently, so it is right at exactly one
+// suspension compression. Use the settled one — `stance.js` derives it from the
+// spring rather than leaving it as a measured magic number. (It used to be
+// -0.37, the full-droop offset, which is the pose a car holds only for the
+// third of a second it spends falling onto the grid; every other frame of every
+// race, the shell rode 5.7 cm too low.)
+const BODY_DROP = HUB_LOCAL_Y;
 
 // Hull geometry is identical for every car of an archetype → build once.
 const hullCache = new Map();
