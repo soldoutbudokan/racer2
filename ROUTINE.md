@@ -83,7 +83,7 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-27** (preview, pending review; branch
+- **2026-07-27** (accepted → `main`, owner replied "go"; was branch
   `claude/stoic-thompson-1zx3tr`) — **The cars had no contact shadow at all**,
   and that was the real cause of the top open Backlog item ("racing-line aid
   bleeds under the cars"). Chased it with a runtime probe rather than by eye:
@@ -461,7 +461,7 @@ confirmed against the `after-*` shots, highest impact first):
   `buildGreenhouseShell` takes a `panes` array with `topFrac`, so the glazing
   stops at the roof rail and the crown between the rails stays painted.
 - ~~**Racing-line aid bleeds under the cars**~~ (env/aid, medium) — DONE
-  2026-07-27, pending review (see Changelog). Root cause was not the aid: the
+  2026-07-27, accepted to `main` (see Changelog). Root cause was not the aid: the
   car's multiply contact shadow was parented to the sprung body and spent the
   whole race buried under the asphalt, so nothing was darkening the road (or
   the aid) beneath the car. Shadow re-seated on the ground and moved to
