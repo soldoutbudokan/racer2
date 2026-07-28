@@ -501,16 +501,46 @@ export function createCar(world, materials, options = {}) {
   // Visual wheel meshes paired to the physics info
   const wheelMeshes = visual.wheels;
 
+  // Scratch objects for re-seating the contact shadow (see below).
+  const _up = new THREE.Vector3(0, 1, 0);
+  const _yawQ = new THREE.Quaternion();
+  const _invQ = new THREE.Quaternion();
+  const _off = new THREE.Vector3();
+  // Clear the asphalt (0.01) and its cambered crown, but stay well under the
+  // 0.36 wheel radius so the blob can never ride up over a tyre.
+  const SHADOW_LIFT = 0.03;
+
   function update() {
+    let hubSum = 0;
     for (let i = 0; i < vehicle.wheelInfos.length; i++) {
       vehicle.updateWheelTransform(i);
       const t = vehicle.wheelInfos[i].worldTransform;
       const m = wheelMeshes[i];
       m.position.copy(t.position);
       m.quaternion.copy(t.quaternion);
+      hubSum += t.position.y;
     }
     visual.root.position.copy(chassisBody.position);
     visual.root.quaternion.copy(chassisBody.quaternion);
+
+    // Re-seat the fake contact shadow on the ROAD. It rides under `root`, so
+    // it inherits the chassis pose — which is exactly wrong for it: the sprung
+    // body pitches, rolls and moves ~28 cm in ride height between the grid
+    // (suspension at full rest length) and a loaded corner, which used to
+    // leave the blob hanging in mid-air on the grid and buried under the
+    // asphalt while driving. Undo the chassis rotation, keep the heading only,
+    // and drop it to the road plane inferred from the wheel hubs.
+    const shadow = visual.shadow;
+    if (shadow) {
+      const q = chassisBody.quaternion;
+      const yaw = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y));
+      _yawQ.setFromAxisAngle(_up, yaw);
+      _invQ.set(q.x, q.y, q.z, q.w).invert();
+      shadow.quaternion.copy(_invQ).multiply(_yawQ);
+      const groundY = hubSum / vehicle.wheelInfos.length - WHEEL_RADIUS + SHADOW_LIFT;
+      _off.set(0, groundY - chassisBody.position.y, 0).applyQuaternion(_invQ);
+      shadow.position.copy(_off);
+    }
     // Brake lights — pulse with brake input
     visual.brakeLights.material.emissiveIntensity = visual._brakeLevel;
     visual.brakeLights.material.opacity = 0.5 + visual._brakeLevel * 0.5;

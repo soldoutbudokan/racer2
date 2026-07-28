@@ -5,6 +5,7 @@ import {
   makeTaillight, makeGrille, makePaint, makeCaliper,
 } from './carMaterials.js';
 import { plateTexture, badgeTexture } from './texgen.js';
+import { hideFromOverridePasses } from '../scenery/noise.js';
 
 // All parts authored in the same chassis-local frame as the hull
 // (+Z forward, +Y up, +X right). Y values follow the proven placement from the
@@ -1362,14 +1363,28 @@ function contactShadowTexture() {
   _shadowTex.colorSpace = THREE.SRGBColorSpace;
   return _shadowTex;
 }
-export function buildContactShadow({ y = -0.355, w = 2.3, len = 4.8 } = {}) {
+//
+// The blob is NOT positioned here. It has to lie on the asphalt, and the car's
+// ride height swings ~28 cm between the grid pose (suspension hanging at full
+// rest length) and a loaded corner — a plane pinned to the sprung body floats
+// in mid-air on the grid and sinks BELOW the road while driving, where the
+// depth test hides it outright. car.js re-seats it on the ground every frame;
+// this builder only returns a flat, unpositioned, yaw-free plane.
+export function buildContactShadow({ w = 2.3, len = 4.8 } = {}) {
   const mat = new THREE.MeshBasicMaterial({
     map: contactShadowTexture(), transparent: true, depthWrite: false,
     blending: THREE.MultiplyBlending, toneMapped: false,
   });
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, len), mat);
-  m.rotation.x = -Math.PI / 2;
-  m.position.set(0, y, 0);
-  m.renderOrder = -1;
+  // Bake the lie-flat rotation into the geometry so the mesh quaternion is
+  // free for the car's heading alone.
+  const geo = new THREE.PlaneGeometry(w, len);
+  geo.rotateX(-Math.PI / 2);
+  const m = new THREE.Mesh(geo, mat);
+  // Last of the ground-level transparents: road decals (roadwork, 2) and the
+  // perfect-line aid (racingLine, 3) both draw with depthWrite off, so drawing
+  // the multiply AFTER them darkens the markings under the car too. At -1 it
+  // went first and the unlit green aid painted straight back over it.
+  m.renderOrder = 4;
+  hideFromOverridePasses(m);    // keep it out of GTAO's depth/normal prepass
   return m;
 }

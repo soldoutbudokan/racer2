@@ -2,9 +2,25 @@
 // composer.render() loop, per track.
 //   node perf.mjs [trackId ...]
 import { chromium } from 'playwright-core';
-const EXE = process.env.HOME +
-  '/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/' +
-  'Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
+import { execSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+
+// Same discovery as the other shooters: CHROME_EXE wins, then the sandbox's
+// Chromium, then the local mac install. (This used to be a hard-coded mac path,
+// so the script could not run in the routine's container at all.)
+function findChrome() {
+  if (process.env.CHROME_EXE && existsSync(process.env.CHROME_EXE)) return process.env.CHROME_EXE;
+  const out = execSync(
+    'find /opt/pw-browsers ~/.cache/puppeteer/chrome -maxdepth 3 -name chrome -type f 2>/dev/null | head -1',
+    { shell: '/bin/bash' }).toString().trim();
+  if (out && existsSync(out)) return out;
+  const mac = process.env.HOME +
+    '/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/' +
+    'Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
+  if (existsSync(mac)) return mac;
+  throw new Error('No Chrome binary found — set CHROME_EXE');
+}
+const EXE = findChrome();
 const ONLY = process.argv.slice(2);
 const browser = await chromium.launch({ executablePath: EXE, headless: true,
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
