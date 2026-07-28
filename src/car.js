@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { buildVisualCar } from './carModels/index.js';
+import {
+  WHEEL_RADIUS, SUSPENSION_REST, SUSPENSION_STIFFNESS, SUSPENSION_ANCHOR_Y,
+} from './stance.js';
 
 const CHASSIS_HALF = { x: 0.92, y: 0.32, z: 2.18 };
-const WHEEL_RADIUS = 0.36;
-const SUSPENSION_REST = 0.32;
 const WHEELBASE = 2.9;
 
 // ---------------------------------------------------------------------------
@@ -130,7 +131,7 @@ export function createCar(world, materials, options = {}) {
   const wheelOptions = {
     radius: WHEEL_RADIUS,
     directionLocal: new CANNON.Vec3(0, -1, 0),
-    suspensionStiffness: 46,
+    suspensionStiffness: SUSPENSION_STIFFNESS,
     suspensionRestLength: SUSPENSION_REST,
     frictionSlip: SPEC.mu.road,
     dampingRelaxation: 2.6,
@@ -149,9 +150,9 @@ export function createCar(world, materials, options = {}) {
     forwardAcceleration: 0.55,
   };
 
-  const wb = WHEELBASE / 2; // wheelbase half
-  const tw = 0.86;          // track half
-  const wy = -0.05;         // suspension anchor y in chassis space
+  const wb = WHEELBASE / 2;        // wheelbase half
+  const tw = 0.86;                 // track half
+  const wy = SUSPENSION_ANCHOR_Y;  // suspension anchor y in chassis space
   // Front-left, Front-right, Rear-left, Rear-right.
   // Pass a fresh Vec3 per wheel — cannon-es WheelInfo holds a reference to the
   // option's chassisConnectionPointLocal, so reusing one vector stacks all wheels.

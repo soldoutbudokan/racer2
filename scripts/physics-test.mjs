@@ -72,6 +72,14 @@ const dm = await page.evaluate(() => {
   tp(1500, -1800);
   const contacts = me.vehicle.wheelInfos.filter((w) => w.isInContact).length;
   const settleY = me.body.position.y;
+  // Stance: the painted shell is a rigid child of the sprung chassis, so it
+  // lines up with the wheels at exactly one suspension compression. Measure the
+  // settled hub height in chassis space and compare it with where the body
+  // group was actually dropped (see src/stance.js).
+  const wis = me.vehicle.wheelInfos;
+  const hubLocalY = wis.reduce(
+    (s, w) => s + (w.chassisConnectionPointLocal.y - w.suspensionLength), 0) / wis.length;
+  const bodyDrop = me.visual.root.children.find((c) => c.type === 'Group').position.y;
 
   // 2. acceleration: 8 s flat out
   const p0 = { x: me.body.position.x, z: me.body.position.z };
@@ -181,6 +189,7 @@ const dm = await page.evaluate(() => {
     cruiseSlip: +cruiseSlip.toFixed(3), cruiseRpm: +cruiseRpm.toFixed(0),
     frontLoad: +frontLoad.toFixed(0), rearLoad: +rearLoad.toFixed(0),
     contacts, settleY: +settleY.toFixed(2),
+    hubLocalY: +hubLocalY.toFixed(4), bodyDrop: +bodyDrop.toFixed(4),
     accel8s: +accel8s.toFixed(1), accelDist: +accelDist.toFixed(0), gearAt8s,
     vmax: +vmax.toFixed(1),
     vBrake: +vBrake.toFixed(1), brakeDist: +brakeDist.toFixed(1), brakeDecel: +brakeDecel.toFixed(2),
@@ -194,6 +203,9 @@ const dm = await page.evaluate(() => {
 });
 console.log('driving-model:', JSON.stringify(dm));
 ck('car settles on its wheels', dm.contacts === 4 && dm.settleY > 0.3 && dm.settleY < 1.6, `contacts=${dm.contacts} y=${dm.settleY}`);
+ck('painted shell sits at the settled ride height, not the droop pose',
+  Math.abs(dm.bodyDrop - dm.hubLocalY) < 0.01,
+  `body dropped ${dm.bodyDrop} vs settled hub ${dm.hubLocalY} (chassis space)`);
 ck('accelerates hard through the gears', dm.accel8s > 140 && dm.accelDist > 180, `${dm.accel8s} km/h in 8s over ${dm.accelDist} m (gear ${dm.gearAt8s})`);
 ck('drag-limited top speed 250–310 km/h', dm.vmax > 250 && dm.vmax < 310, `${dm.vmax} km/h`);
 ck('braking ≥ 0.9 g from speed', dm.brakeDecel > 8.8, `${dm.vBrake} km/h → 5 km/h in ${dm.brakeDist} m (${dm.brakeDecel} m/s²)`);
