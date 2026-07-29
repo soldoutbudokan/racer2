@@ -15,6 +15,7 @@ import { createChaseCamera } from './camera.js';
 import { createHud } from './hud.js';
 import { createAIDriver } from './ai.js';
 import { createRacingLine } from './racingLine.js';
+import { STATIC_CHASSIS_HEIGHT } from './stance.js';
 
 const RACE_LAPS = 3;
 const MAX_KMH = 320;
@@ -92,6 +93,9 @@ async function bootstrap() {
     // Deterministic loop pump — headless Chrome throttles rAF, so tests
     // drive frames through this instead of waiting on wall-clock time.
     window.__tick = (dt) => tick(ctx, dt, performance.now());
+    // Lets a probe put the field back on the grid exactly the way a race
+    // start does (scripts/spawn-settle.mjs, physics-test.mjs).
+    window.__gridSpawn = gridSpawn;
   }
 
   document.querySelectorAll('button.mode').forEach((btn) => {
@@ -334,6 +338,21 @@ function addAICar(ctx, color, gridIdx, skill, archetype = 'gt') {
   ctx.state.perCar.push(ctx.cars[ctx.cars.length - 1]);
 }
 
+// Height to place a chassis at when it is being put ON the road rather than
+// dropped onto it. `STATIC_CHASSIS_HEIGHT` is derived from the spring rate in
+// stance.js, so the suspension is already in equilibrium on the first world
+// step: the raycast finds the ground, the compression it measures is exactly
+// the one that balances the car's weight, and nothing moves.
+//
+// Both spawn paths used to use a flat +1.0 instead, which is 32 cm above the
+// settled chassis with the springs hanging at full droop — the whole field
+// visibly fell onto the circuit and bounced for the first third of a second of
+// every race, and a rescued car did the same mid-lap. See ROUTINE.md,
+// 2026-07-29.
+function chassisSpawnY(roadY) {
+  return roadY + STATIC_CHASSIS_HEIGHT;
+}
+
 function gridSpawn(track, idx) {
   // Match the visual grid: alternating sides, 7 m apart, behind the line.
   const back = -2.8 - idx * 7.0;
@@ -344,7 +363,7 @@ function gridSpawn(track, idx) {
       .copy(f.pos)
       .add(f.tan.clone().multiplyScalar(back))
       .add(f.left.clone().multiplyScalar(lat))
-      .add(new THREE.Vector3(0, 1.0, 0)),
+      .setY(chassisSpawnY(f.pos.y)),
     yaw: Math.atan2(f.tan.x, f.tan.z),
   };
 }
@@ -590,7 +609,7 @@ function rescueCar(track, car) {
   }
   const aheadI = (bestI + 4) % frames.length;
   const f = frames[aheadI];
-  const respawn = new THREE.Vector3(f.pos.x, f.pos.y + 1.0, f.pos.z);
+  const respawn = new THREE.Vector3(f.pos.x, chassisSpawnY(f.pos.y), f.pos.z);
   const yaw = Math.atan2(f.tan.x, f.tan.z);
   car.reset(respawn, yaw);
 }

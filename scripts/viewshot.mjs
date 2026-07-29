@@ -45,6 +45,17 @@ await page.evaluate((secs) => {
   const dt = 1 / 120;
   const steps = Math.floor(secs * 120);
   const aiCars = ctx.cars.map((c) => c.car);
+  // `0` means "shoot the starting grid". Re-seat the field first: by the time
+  // this runs the page has already had a second or so of rAF, so without a
+  // reset the grid shot shows wherever the cars happened to drift to, not the
+  // pose a race actually starts in.
+  if (steps === 0) {
+    ctx.cars.forEach((c, i) => {
+      const sp = window.__gridSpawn(ctx.track, i);
+      c.car.reset(sp.position, sp.yaw);
+    });
+    ctx.world.step(dt);   // one step so the suspension raycast has run
+  }
   for (let s = 0; s < steps; s++) {
     for (const c of ctx.cars) {
       const cmd = c.isPlayer
