@@ -83,7 +83,8 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-29** (preview, pending review; branch `claude/epic-franklin-kydyn7`)
+- **2026-07-29** (accepted → `main`, owner replied "go"; was branch
+  `claude/epic-franklin-kydyn7`)
   — **The whole field fell 36 cm onto the grid at the start of every race.**
   Top open Backlog item from the 2026-07-28 run, measured rather than eyeballed.
   Both spawn paths in `main.js` — `gridSpawn` and `rescueCar` — placed the
@@ -591,7 +592,7 @@ New findings from the 2026-07-27 run (not acted on — one change per run):
 New findings from the 2026-07-28 run (not acted on — one change per run):
 
 - ~~**Every car is dropped 21.7 cm onto the grid**~~ (car/env, medium) — DONE
-  2026-07-29, preview pending (see Changelog): both spawn paths now place the
+  2026-07-29, accepted to `main` (see Changelog): both spawn paths now place the
   chassis at `STATIC_CHASSIS_HEIGHT`, gated by a new `physics-test` check and
   measurable with `scripts/spawn-settle.mjs`. The tyre figure in the note below
   was measured 1.5 s into the fall; from the spawn frame itself it is 27 cm of
