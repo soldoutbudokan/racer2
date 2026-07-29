@@ -83,6 +83,46 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-29** (preview, pending review; branch `claude/epic-franklin-kydyn7`)
+  — **The whole field fell 36 cm onto the grid at the start of every race.**
+  Top open Backlog item from the 2026-07-28 run, measured rather than eyeballed.
+  Both spawn paths in `main.js` — `gridSpawn` and `rescueCar` — placed the
+  chassis at `frames[i].pos.y + 1.0`. A settled chassis stands
+  **0.6766** above the road (`STATIC_CHASSIS_HEIGHT`, derived from the spring in
+  `src/stance.js`), so +1.0 is 32 cm high with the suspension hanging at full
+  droop. New probe **`scripts/spawn-settle.mjs`** stepped the world by hand with
+  no driver input at all and caught the transient: chassis 1.000 → worst 0.637
+  (**−36.3 cm**, overshooting equilibrium), back up to 0.687, still ringing
+  ±1 cm at 0.9 s. Nothing gates the world step behind a countdown, so the field
+  visibly dropped and bounced on its springs for the first third of a second of
+  every race, and a rescued car did the same mid-lap.
+  Fix: one `chassisSpawnY(roadY)` helper used by both paths, returning
+  `roadY + STATIC_CHASSIS_HEIGHT`. Deliberately **no clearance margin** — the
+  suspension raycast measures its compression fresh every step, so placing the
+  car at the derived static height means step 1 already computes exactly the
+  compression that balances the weight. Measured after: worst movement **0.0 cm**
+  on all four cars, tyre contact patch dead on 0.000, in equilibrium from the
+  first step. A margin would only have reintroduced a smaller drop.
+  New gate in `physics-test.mjs` — "the field is placed on the grid, not dropped
+  onto it" — resets the field through the real `gridSpawn`, steps 0.75 s undriven
+  and requires < 1 cm of movement with 4/4 wheels in contact.
+  **Harness trap worth remembering** (it made that gate fail while the car was
+  provably sitting still): `car.update()` — the visual sync — calls cannon's
+  `updateWheelTransform`, whose *first line* is `wheel.isInContact = false`.
+  Only the suspension raycast on the next `world.step` sets it true again. Read
+  `isInContact` **before** any `update()` or every wheel reads as airborne no
+  matter what the car is doing. The older "car settles on its wheels" check is
+  correct only by luck of ordering.
+  `viewshot.mjs` now re-seats the field through `gridSpawn` when asked for `0`
+  seconds of driving — the page has already had a second of rAF by then, so a
+  grid shot was previously of wherever the cars had drifted to, not of the pose a
+  race starts in. `main.js` exposes `window.__gridSpawn` for this.
+  Verified: `physics-test` 24/24 incl. no console errors, smoke OK (no NaN,
+  outward winding, 21778 tris/car unchanged), build clean, `spawn-settle`
+  before/after, and before/after `viewshot` grid shots on all five angles (the
+  floating cars and their detached shadows are plainly visible in `before-grid-
+  low` and `before-grid-trackside`) plus a 6 s driving set for regressions.
+
 - **2026-07-28** (accepted → `main`, owner replied "go"; was branch
   `claude/epic-franklin-beii9b`)
   — **The cars spent every race 5.7 cm too low on their own wheels.** Top open
@@ -550,7 +590,13 @@ New findings from the 2026-07-27 run (not acted on — one change per run):
 
 New findings from the 2026-07-28 run (not acted on — one change per run):
 
-- **Every car is dropped 21.7 cm onto the grid** (car/env, medium):
+- ~~**Every car is dropped 21.7 cm onto the grid**~~ (car/env, medium) — DONE
+  2026-07-29, preview pending (see Changelog): both spawn paths now place the
+  chassis at `STATIC_CHASSIS_HEIGHT`, gated by a new `physics-test` check and
+  measurable with `scripts/spawn-settle.mjs`. The tyre figure in the note below
+  was measured 1.5 s into the fall; from the spawn frame itself it is 27 cm of
+  air and 36.3 cm of drop.
+  Original note:
   `gridSpawn` in `main.js` places the chassis at `frames[0].pos.y + 1.0`, but a
   settled chassis stands only **0.677** above the road
   (`stance.js` now exports this as `STATIC_CHASSIS_HEIGHT`). Measured with
@@ -571,5 +617,24 @@ New findings from the 2026-07-28 run (not acted on — one change per run):
   derived from a local `GRAVITY = 9.82` that must match `physics.js`, which
   builds the `CANNON.World` inline. Neither imports the other. Hoist the number
   if `physics.js` ever grows a constants export.
+
+New findings from the 2026-07-29 run (not acted on — one change per run):
+
+- **`track.js` still carries a dead `+1.0` spawn** (harness, low): `createTrack`
+  returns a `spawn` field built the old way (`frames[0].pos + tan·−6 + y 1.0`).
+  Nothing reads it — `main.js` uses its own `gridSpawn` — but it is the same
+  magic number this run just removed from the two live paths, so it is a trap
+  for whoever wires it up next. Delete it, or point it at
+  `STATIC_CHASSIS_HEIGHT`; `track.js` does not import `stance.js` today.
+- **Nothing gates the world step behind a countdown** (game, medium): the
+  physics starts the instant the mode loads, so the AI cars begin driving before
+  the player has seen the grid. With the field now sitting still at the start
+  this is the next thing that reads as unfinished at a race start — a 3-2-1
+  hold with the world stepped but throttle locked would also make the new
+  spawn pose actually visible to the player.
+- **`isInContact` is cleared by the visual sync** (harness, medium): see the
+  Changelog note. Any probe or gate that reads wheel contact must sample it
+  before calling `car.update()`. `w.raycastResult.body` survives `update()` and
+  is the safer thing to test if the ordering cannot be controlled.
 
 (When an item is rejected, note "tried X — rejected: Y" here so it isn't retried.)

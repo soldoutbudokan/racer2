@@ -223,6 +223,52 @@ ck('flywheel re-couples when gripping — no phantom RPM drift at cruise',
 ck('weight transfers onto the nose under braking', dm.frontLoad > dm.rearLoad * 1.3,
   `front ${dm.frontLoad} vs rear ${dm.rearLoad} (∑ over 0.5 s)`);
 
+// ---------- The field is placed ON the grid, not dropped onto it ----------
+// A car spawned above its settled ride height starts with the springs at full
+// droop and falls; the whole field used to drop 36 cm and bounce through the
+// first half-second of every race. Spawning at `STATIC_CHASSIS_HEIGHT`
+// (src/stance.js) puts the suspension in equilibrium on step 1, so nothing
+// should move at all. See ROUTINE.md, 2026-07-29.
+await startMode('quick-race');
+const spawn = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  ctx.mode = null;                       // hand-step; no driver input anywhere
+  const cars = ctx.cars.map((c) => c.car);
+  const spawnY = cars.map((car, i) => {
+    const sp = window.__gridSpawn(ctx.track, i);
+    car.reset(sp.position, sp.yaw);
+    return sp.position.y;
+  });
+  let worst = 0;
+  for (let s = 0; s < 90; s++) {         // 0.75 s, undriven
+    ctx.world.step(1 / 120);
+    cars.forEach((car, i) => {
+      const dy = Math.abs(car.body.position.y - spawnY[i]);
+      if (dy > worst) worst = dy;
+    });
+  }
+  const me = cars[0];
+  // Read the wheel contacts BEFORE the visual sync: car.update() calls
+  // cannon's updateWheelTransform, whose first act is
+  // `wheel.isInContact = false` — it is only ever set true again by the
+  // suspension raycast on the next world step. Sample it after update() and
+  // every wheel reads as airborne no matter what the car is doing.
+  const contacts = me.vehicle.wheelInfos.filter((w) => w.isInContact).length;
+  me.update();
+  const hubs = me.visual.wheels.map((w) => w.position.y);
+  return {
+    spawnY: +spawnY[0].toFixed(4),
+    worstMoveCm: +(worst * 100).toFixed(1),
+    contacts,
+    tyreY: +(hubs.reduce((a, v) => a + v, 0) / hubs.length - 0.36).toFixed(4),
+  };
+});
+console.log('grid-spawn:', JSON.stringify(spawn));
+ck('the field is placed on the grid, not dropped onto it',
+  spawn.worstMoveCm < 1.0 && spawn.contacts === 4,
+  `moved ${spawn.worstMoveCm} cm from a spawn at y ${spawn.spawnY}; ` +
+  `tyre contact ${spawn.tyreY}, ${spawn.contacts}/4 wheels down`);
+
 // ---------- AI sanity on the real circuit ----------
 await startMode('quick-race');
 const qr = await page.evaluate(() => {
