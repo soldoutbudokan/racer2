@@ -1215,7 +1215,11 @@ function addStartGantry(scene, startFrame, road) {
       lampMats.push(mat);
       for (const oy of [0.33, -0.33]) {
         const lamp = new THREE.Mesh(lensGeo, mat);
-        lamp.position.set((i - (COLS - 1) / 2) * COL_STEP, rigY + oy, faceZ);
+        // Column 0 is the DRIVER'S LEFT, so the sequence reads left-to-right
+        // from the grid. The camera looks down +Z at the rig's −Z face, which
+        // mirrors local x: laying columns out in +x order lights them
+        // right-to-left on screen, which is backwards.
+        lamp.position.set(((COLS - 1) / 2 - i) * COL_STEP, rigY + oy, faceZ);
         lamp.rotation.y = Math.PI;
         group.add(lamp);
       }
@@ -1228,7 +1232,7 @@ function addStartGantry(scene, startFrame, road) {
 
   const LIT = 1.35;
   return {
-    // n = how many of the five columns are lit, counted from the left.
+    // n = how many of the five columns are lit, from the driver's left.
     set(n) {
       for (let i = 0; i < lampMats.length; i++) {
         lampMats[i].emissiveIntensity = i < n ? LIT : 0;
