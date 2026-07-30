@@ -176,8 +176,8 @@ export function createTrack(scene, world, materials, def) {
   // Painted starting grid behind the line
   addStartingGrid(group, frames[0]);
 
-  // Start/finish gantry
-  addStartGantry(group, frames[0], ROAD_WIDTH);
+  // Start/finish gantry (carries the five-column start-light rig)
+  const startLights = addStartGantry(group, frames[0], ROAD_WIDTH);
 
   // ---- Outer barrier (visual) — style varies by circuit ----
   if (theme.barrier === 'wall') addConcreteWall(group, frames, ARMCO_OFFSET);
@@ -248,6 +248,9 @@ export function createTrack(scene, world, materials, def) {
     spawn,
     width: ROAD_WIDTH,
     kerbWidth: KERB_WIDTH,
+    // The gantry's start-light rig: `set(n)` lights the first n of five red
+    // columns (0 = all out = go). Driven by the race-start sequence in main.js.
+    startLights,
     armcoOffset: ARMCO_OFFSET,
     // Lateral offset (m, +left) of the baked racing groove per frame — the
     // "perfect line" driving aid follows the same path the visuals rubber in.
@@ -1170,9 +1173,71 @@ function addStartGantry(scene, startFrame, road) {
   banner.rotation.y = Math.PI;
   group.add(banner);
 
+  // Start-light rig, hung off the FRONT chord of the truss (z −0.42) so it
+  // hangs clear of the banner plane at z 0 rather than through it. Five
+  // columns of two red lamps, the F1 arrangement: the columns light one at a
+  // time and then all go out together, which is the start signal.
+  const lampMats = [];
+  {
+    const COLS = 5;
+    const COL_STEP = 1.15;
+    const rigY = 6.2;                 // below the banner (7.05–8.15), above the cars
+    const rigZ = -0.42;               // the −Z face is the one oncoming cars see
+    const rigH = 1.36;
+    const boxW = COLS * COL_STEP - 0.45;
+    const housing = new THREE.Mesh(
+      new THREE.BoxGeometry(boxW, rigH, 0.34), dark);
+    housing.position.set(0, rigY, rigZ);
+    housing.castShadow = true;
+    group.add(housing);
+
+    // Two droppers back up to the truss's lower front chord (y = H − 0.4).
+    for (const sx of [-1, 1]) {
+      const top = H - 0.4;
+      const bot = rigY + rigH / 2;
+      const drop = new THREE.Mesh(
+        new THREE.BoxGeometry(0.1, top - bot, 0.1), steel);
+      drop.position.set(sx * 1.6, (top + bot) / 2, rigZ);
+      group.add(drop);
+    }
+
+    // Lenses sit a hair proud of the housing's front face and are turned to
+    // face −Z (a CircleGeometry faces +Z un-rotated, same trap as the banner).
+    const lensGeo = new THREE.CircleGeometry(0.2, 20);
+    const faceZ = rigZ - 0.34 / 2 - 0.012;
+    for (let i = 0; i < COLS; i++) {
+      // One material per column, shared by that column's two lamps, so the
+      // sequence is a single emissiveIntensity write per column.
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x2b0a0b, emissive: 0xff1f14, emissiveIntensity: 0,
+        roughness: 0.32, metalness: 0.0,
+      });
+      lampMats.push(mat);
+      for (const oy of [0.33, -0.33]) {
+        const lamp = new THREE.Mesh(lensGeo, mat);
+        lamp.position.set((i - (COLS - 1) / 2) * COL_STEP, rigY + oy, faceZ);
+        lamp.rotation.y = Math.PI;
+        group.add(lamp);
+      }
+    }
+  }
+
   group.position.copy(center);
   group.rotation.y = yaw;
   scene.add(group);
+
+  const LIT = 1.35;
+  return {
+    // n = how many of the five columns are lit, counted from the left.
+    set(n) {
+      for (let i = 0; i < lampMats.length; i++) {
+        lampMats[i].emissiveIntensity = i < n ? LIT : 0;
+      }
+    },
+    litCount() {
+      return lampMats.filter((m) => m.emissiveIntensity > 0).length;
+    },
+  };
 }
 
 function addSponsorBoards(scene, frames, offset) {

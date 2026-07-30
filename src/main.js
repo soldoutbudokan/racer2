@@ -20,6 +20,24 @@ import { STATIC_CHASSIS_HEIGHT } from './stance.js';
 const RACE_LAPS = 3;
 const MAX_KMH = 320;
 
+// ---- Race start ----
+// Nothing used to gate the world step, so the AI drove away the instant a mode
+// loaded and the player never saw the grid at all. The field is now held on the
+// startline while the gantry's five red columns light one at a time, then all
+// go out together — the F1 signal — and everyone is released on the same frame.
+const START_COLUMNS = 5;
+const START_LEAD_IN = 0.5;   // s of all-dark before the first column lights
+const START_LIGHT_STEP = 0.6; // s between columns
+const START_HOLD = 0.7;      // s of all-red before lights out
+const START_SEQUENCE_S =
+  START_LEAD_IN + START_COLUMNS * START_LIGHT_STEP + START_HOLD;
+
+// What a held car is handed instead of its driver's command. Deliberately NOT
+// `brake: 1` — applyControls reads a brake input at a standstill as a request
+// for reverse gear, so braking on the grid would put the whole field in R.
+// The handbrake locks the rear axle without touching the direction logic.
+const GRID_HOLD = { throttle: 0, brake: 0, steer: 0, handbrake: true };
+
 // Time trial is a single flying lap; the other modes run a full race distance.
 function lapsFor(mode) {
   return mode === 'time-trial' ? 1 : RACE_LAPS;
@@ -96,6 +114,9 @@ async function bootstrap() {
     // Lets a probe put the field back on the grid exactly the way a race
     // start does (scripts/spawn-settle.mjs, physics-test.mjs).
     window.__gridSpawn = gridSpawn;
+    // Length of the start-light sequence, so a probe can pump exactly up to
+    // (and past) the green without hard-coding the timing.
+    window.__startSequenceS = START_SEQUENCE_S;
   }
 
   document.querySelectorAll('button.mode').forEach((btn) => {
@@ -218,6 +239,7 @@ function startMode(ctx, mode) {
   ctx.hud.setLapTime(0);
   ctx.hud.clearAnnouncements();
   hideFinish();
+  ctx.track.startLights.set(0);
 
   hideMenu();
   ctx.hud.show();
@@ -233,6 +255,7 @@ function stopMode(ctx) {
   ctx.hud.hidePace();
   ctx.hud.clearAnnouncements();
   hideFinish();
+  ctx.track.startLights.set(0);
   showMenu();
 }
 
@@ -285,6 +308,9 @@ function createGameState(mode) {
     finishOrder: [], // car entries in the order they crossed the final line
     finishShown: false,
     perCar: [], // populated as cars are added
+    startT: 0,       // seconds into the start sequence
+    started: false,  // true once the lights have gone out
+    lightsLit: -1,   // last value pushed to the gantry (-1 forces the first set)
   };
 }
 
@@ -397,6 +423,35 @@ function tick(ctx, dt, now) {
     ctx.camera.aspect = winW / winH;
   }
 
+  // ---- Race start sequence ----
+  // Runs before the driving loop so `started` is settled for this frame. While
+  // the lights are on, every car's lap clock is re-stamped each frame, so the
+  // race time starts at zero on the green rather than at mode load. Lap
+  // detection itself is left running — a held car cannot reach the line, and
+  // gating it would only add a way for the timing to get stuck.
+  if (!ctx.state.started) {
+    ctx.state.startT += dt;
+    const t = ctx.state.startT;
+    const lit = t < START_LEAD_IN
+      ? 0
+      : Math.min(START_COLUMNS,
+        Math.floor((t - START_LEAD_IN) / START_LIGHT_STEP) + 1);
+    if (t >= START_SEQUENCE_S) {
+      ctx.state.started = true;
+      ctx.state.lightsLit = 0;
+      ctx.track.startLights.set(0);
+      ctx.hud.flashBanner('GO', 1100);
+    } else if (lit !== ctx.state.lightsLit) {
+      ctx.state.lightsLit = lit;
+      ctx.track.startLights.set(lit);
+    }
+    const stamp = performance.now();
+    for (const c of ctx.cars) {
+      c.state.lapStart = stamp;
+      c.state.raceStart = stamp;
+    }
+  }
+
   // Drive each car
   const allCars = ctx.cars.map((c) => c.car);
   for (const c of ctx.cars) {
@@ -418,6 +473,10 @@ function tick(ctx, dt, now) {
         }
         ctx.state.finishOrder = [];
         ctx.state.finishShown = false;
+        // Back on the grid — run the lights again.
+        ctx.state.startT = 0;
+        ctx.state.started = false;
+        ctx.state.lightsLit = -1;
         ctx.hud.setLap(1, ctx.state.totalLaps);
         ctx.hud.setBest(null);
         ctx.hud.setLapTime(0);
@@ -430,6 +489,9 @@ function tick(ctx, dt, now) {
     } else {
       cmd = c.ai.update(c.car, allCars, dt);
     }
+    // Lights still on: input is read as usual (so the camera and aid toggles
+    // work on the grid) but nobody gets to drive.
+    if (!ctx.state.started) cmd = GRID_HOLD;
     c.car.applyControls(cmd, dt, wheelSurfaces(ctx.track, c.car));
   }
 
