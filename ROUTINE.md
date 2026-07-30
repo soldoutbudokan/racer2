@@ -83,7 +83,8 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-30** (preview, pending review; branch `claude/epic-franklin-wnn63z`)
+- **2026-07-30** (accepted → `main`, owner replied "go"; was branch
+  `claude/epic-franklin-wnn63z`)
   — **The race began before the player had seen the grid, and the gantry had no
   start lights.** Top open Backlog item from the 2026-07-29 run ("nothing gates
   the world step behind a countdown"). `tick()` started stepping the world the
@@ -677,8 +678,8 @@ New findings from the 2026-07-29 run (not acted on — one change per run):
   for whoever wires it up next. Delete it, or point it at
   `STATIC_CHASSIS_HEIGHT`; `track.js` does not import `stance.js` today.
 - ~~**Nothing gates the world step behind a countdown**~~ (game, medium) — DONE
-  2026-07-30 (preview, pending review): a real five-column start-light rig on
-  the gantry plus a 4.2 s hold. See the Changelog.
+  2026-07-30, accepted → `main` (see Changelog): a real five-column start-light
+  rig on the gantry plus a 4.2 s hold.
 - **`isInContact` is cleared by the visual sync** (harness, medium): see the
   Changelog note. Any probe or gate that reads wheel contact must sample it
   before calling `car.update()`. `w.raycastResult.body` survives `update()` and
