@@ -269,6 +269,64 @@ ck('the field is placed on the grid, not dropped onto it',
   `moved ${spawn.worstMoveCm} cm from a spawn at y ${spawn.spawnY}; ` +
   `tyre contact ${spawn.tyreY}, ${spawn.contacts}/4 wheels down`);
 
+// ---------- The field is held until the start lights go out ----------
+// Physics used to start the instant a mode loaded, so the AI drove away before
+// the player had seen the grid. Drive the REAL game loop through the __tick
+// pump (not a hand-rolled step loop) so this exercises the actual gate.
+await startMode('quick-race');
+const lights = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  const SEQ = window.__startSequenceS;
+  ctx.cars.forEach((c, i) => {
+    const sp = window.__gridSpawn(ctx.track, i);
+    c.car.reset(sp.position, sp.yaw);
+  });
+  ctx.state.startT = 0;
+  ctx.state.started = false;
+  ctx.state.lightsLit = -1;
+  ctx.mode = 'quick-race';
+  // The sequence is ~4 s and __tick renders every frame; ~340 SwiftShader
+  // composer passes take minutes. Nothing here is about pixels, so stub the
+  // render out — the gate still drives the real tick, the real physics and the
+  // real light state, just without the frame cost.
+  const realRender = ctx.composer.render;
+  ctx.composer.render = () => {};
+  const at = () => ctx.cars.map((c) => ({
+    x: c.car.body.position.x, z: c.car.body.position.z,
+  }));
+  const from = (p0) => at().map((p, i) => Math.hypot(p.x - p0[i].x, p.z - p0[i].z));
+  const pump = (secs) => {
+    const n = Math.round(secs * 60);
+    for (let i = 0; i < n; i++) window.__tick(1 / 60);
+  };
+  const p0 = at();
+  pump(SEQ - 0.2);                       // all five columns lit, not yet green
+  const held = {
+    lit: ctx.track.startLights.litCount(),
+    started: ctx.state.started,
+    moveM: +Math.max(...from(p0)).toFixed(3),
+  };
+  pump(0.4 + 1.2);                       // through the green and 1.2 s of racing
+  const ai = ctx.cars.map((c, i) => (c.isPlayer ? 0 : from(p0)[i]));
+  ctx.composer.render = realRender;
+  ctx.mode = null;
+  return {
+    ...held,
+    seq: +SEQ.toFixed(2),
+    startedAfter: ctx.state.started,
+    litAfter: ctx.track.startLights.litCount(),
+    aiMovedM: +Math.max(...ai).toFixed(2),
+  };
+});
+console.log('start-lights:', JSON.stringify(lights));
+ck('the field is held on the grid while the lights are on',
+  lights.moveM < 0.10 && lights.started === false,
+  `moved ${lights.moveM} m in the first ${lights.seq} s, started=${lights.started}`);
+ck('all five columns are lit before the green', lights.lit === 5, `${lights.lit}/5 lit`);
+ck('lights out releases the field', lights.startedAfter && lights.litAfter === 0
+  && lights.aiMovedM > 1.0,
+  `started=${lights.startedAfter}, ${lights.litAfter}/5 lit, AI ran ${lights.aiMovedM} m`);
+
 // ---------- AI sanity on the real circuit ----------
 await startMode('quick-race');
 const qr = await page.evaluate(() => {
