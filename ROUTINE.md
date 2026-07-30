@@ -83,6 +83,55 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-30** (preview, pending review; branch `claude/epic-franklin-wnn63z`)
+  — **The race began before the player had seen the grid, and the gantry had no
+  start lights.** Top open Backlog item from the 2026-07-29 run ("nothing gates
+  the world step behind a countdown"). `tick()` started stepping the world the
+  instant a mode loaded, so the AI simply drove away — and the settled spawn
+  pose the 2026-07-28 and 2026-07-29 runs built was never actually on screen
+  long enough to look at.
+  Built as real **environment geometry**, not a HUD number: `addStartGantry`
+  (`src/track.js`) now hangs a five-column F1 light rig off the truss, and
+  `createTrack` returns it as **`track.startLights { set(n), litCount() }`**.
+  Two lamps per column share ONE material, so a stage change is a single
+  `emissiveIntensity` write per column — no per-frame material churn.
+  Geometry notes worth keeping: the rig hangs at **z −0.42**, on the front
+  chord, because the checkered banner is a plane at z 0 and a rig on the centre
+  line would pass straight through it; and it sits at y 5.5–6.9, under the
+  banner's 7.05–8.15 band. Both droppers are on the same z for the same reason.
+  `main.js` runs the sequence in `tick()` *before* the driving loop so
+  `started` is settled for the frame: 0.5 s dark → five columns at 0.6 s
+  intervals → 0.7 s all-red → lights out, whole field released on the same
+  frame (**4.2 s**, `START_SEQUENCE_S`, exposed as `window.__startSequenceS`).
+  **Trap worth remembering:** the held command is `handbrake: true` and
+  deliberately **not** `brake: 1`. `applyControls` reads a brake input at a
+  standstill as a request for reverse (`drive.mode = 'R'`), so braking to hold
+  the grid would put the entire field in reverse gear. The handbrake locks the
+  rear axle without touching the direction logic — and it lights the brake
+  lights, which is what a car actually held on the grid looks like.
+  Lap and race clocks are re-stamped every held frame, so timing starts on the
+  green rather than at mode load; lap *detection* is left running (a held car
+  cannot reach the line, and gating it would only add a way for the timing to
+  get stuck — and it would have broken the existing time-trial gate, which
+  pumps 3 s and would then never see a lap).
+  **Second trap, found by the new shooter:** the camera looks down +Z at the
+  rig's −Z face, which mirrors local x — laying the columns out in +x order lit
+  them right-to-left from the grid. Column 0 is now the driver's left.
+  Three new `physics-test` gates: the field does not move while the lights are
+  on, all five columns are lit before the green, and lights-out releases it.
+  They drive the REAL `__tick` pump (not a hand-rolled step loop) with
+  `ctx.composer.render` stubbed for the duration — the gate is about physics and
+  light state, and ~340 SwiftShader composer passes took **minutes**. If a
+  future gate needs to pump the game loop, stub the render the same way.
+  New tool: **`scripts/startlights.mjs`** — the rig at all seven stages
+  (dark → 1..5 → green) from the pole-sitter's view and as a telephoto
+  close-up, on any circuit. Every other shooter frames the CAR, so none of them
+  can judge the gantry.
+  Verified: `physics-test` 28/28 incl. no console errors, smoke OK (no NaN,
+  outward winding, car triangle budget unchanged at 24228/21778), build clean,
+  before/after `viewshot` on all five angles at both 0 s (grid) and 6 s
+  (driving), `startlights` on `gp` and on `downtown`.
+
 - **2026-07-29** (accepted → `main`, owner replied "go"; was branch
   `claude/epic-franklin-kydyn7`)
   — **The whole field fell 36 cm onto the grid at the start of every race.**
@@ -627,15 +676,42 @@ New findings from the 2026-07-29 run (not acted on — one change per run):
   magic number this run just removed from the two live paths, so it is a trap
   for whoever wires it up next. Delete it, or point it at
   `STATIC_CHASSIS_HEIGHT`; `track.js` does not import `stance.js` today.
-- **Nothing gates the world step behind a countdown** (game, medium): the
-  physics starts the instant the mode loads, so the AI cars begin driving before
-  the player has seen the grid. With the field now sitting still at the start
-  this is the next thing that reads as unfinished at a race start — a 3-2-1
-  hold with the world stepped but throttle locked would also make the new
-  spawn pose actually visible to the player.
+- ~~**Nothing gates the world step behind a countdown**~~ (game, medium) — DONE
+  2026-07-30 (preview, pending review): a real five-column start-light rig on
+  the gantry plus a 4.2 s hold. See the Changelog.
 - **`isInContact` is cleared by the visual sync** (harness, medium): see the
   Changelog note. Any probe or gate that reads wheel contact must sample it
   before calling `car.update()`. `w.raycastResult.body` survives `update()` and
   is the safer thing to test if the ordering cannot be controlled.
+
+New findings from the 2026-07-30 run (not acted on — one change per run):
+
+- **The grid is a standing start with no formation lap and no jump-start rule**
+  (game, low — new 2026-07-30): the field is now held and released properly,
+  but a driver who is already on full throttle when the lights go out simply
+  gets a perfect launch, and the AI all react on the exact same frame. A small
+  reaction spread per AI (and a penalty, or at least a "JUMP START" banner, for
+  moving before the green) would make the start read as a race rather than a
+  synchronised release. Note the AI already runs `ai.update()` during the hold —
+  its command is discarded, so giving it a per-car reaction delay is cheap.
+- **The start lights have no bezel or lens depth** (env, low — new 2026-07-30):
+  the lamps are flat `CircleGeometry` discs sitting 12 mm proud of the housing
+  face. They read correctly at race distance and in the telephoto shot, but
+  they are painted dots, not lamps — a shallow recessed cowl per lamp would
+  catch a shadow and give them some form. Cheap: 10 short cylinders.
+- **`viewshot.mjs`'s driving shots start further back than they used to**
+  (harness, low — new 2026-07-30): the shooter clicks a mode, lets rAF run
+  1.5 s, then hand-drives N seconds. The cars are now held for the first part
+  of that rAF window, so a `6` shot frames an earlier part of the lap than the
+  same command did last week. Nothing is broken and before/after pairs taken in
+  the same run are still comparable, but do NOT compare a fresh `after` shot
+  against a `before` PNG captured before this change and read the different
+  corner as a regression.
+- **`physics-test.mjs` is slow enough to matter** (harness, medium — new
+  2026-07-30): the full suite takes ~8-10 minutes under SwiftShader on the
+  routine's container, and node block-buffers its stdout, so a run looks
+  completely dead until it finishes. Nothing to fix in the product; just do not
+  assume a silent run has hung. The expensive parts are the two `__tick` pumps
+  that render — see the render-stub note in the Changelog.
 
 (When an item is rejected, note "tried X — rejected: Y" here so it isn't retried.)
