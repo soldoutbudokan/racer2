@@ -83,6 +83,79 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-07-31** (preview, pending review; branch `claude/epic-franklin-hkaxen`)
+  — **Every AI car launched in REVERSE at the green**, and the whole field was
+  released on one frame. Went looking for the top open item from the 2026-07-30
+  run ("the grid is a standing start with no jump-start rule… the AI all react
+  on the exact same frame") and found a hard bug sitting underneath it — a
+  regression introduced by the start-lights change itself.
+  Root cause is a collision between two features that never met before. The
+  hold hands each car `GRID_HOLD` but still **polled `c.ai.update()` every
+  frame** and threw the answer away. `ai.update`'s stuck-recovery
+  (`src/ai.js`) arms whenever a car is throttle-pinned and stationary — which
+  is *exactly* what being held on the grid looks like from inside the driver —
+  so over the 4.2 s countdown it wound all the way up: `stuckT` > 1.2 →
+  `reverseT = 1.5` → `ctrl.brake = 1`, twice over. `applyControls` reads a
+  brake input at a standstill as a request for reverse gear
+  (`car.js:327`, the same trap the 2026-07-30 entry warns about for
+  `GRID_HOLD`), so at lights-out the entire AI field selected **R** and drove
+  **4.3 m backwards** over the next two seconds before finding first gear.
+  Measured before: all three AI at −0.42 m at green+0.4, −2.44 m at green+1.0,
+  −4.39 m at green+2.0, while the player was 16.3 m up the road. The player won
+  every standing start by default.
+  Fix, in `main.js`: **a held AI is not asked for a command at all.** That is
+  load-bearing, not an optimisation — a driver waiting on the lights is not
+  driving, and polling a driver you intend to ignore is what wound the recovery
+  up. Cheaper too.
+  On top of that, the realism item itself: each driver now has their **own
+  reaction to the green** (`aiReactionS`), so the field no longer launches on a
+  single frame. Reaction is `lerp(0.42 s, 0.18 s)` across skill 0.70→0.95, plus
+  a per-grid-slot offset so the getaway is not in tidy skill order — 0.245 /
+  0.296 / 0.433 s on the default grid, a 0.183 s spread. **Authored, not
+  random**, so a grid always plays out the same way and the gate can assert it.
+  Players are released on the green itself: their reaction is whatever their
+  hands do, and adding one on top would just read as input lag.
+  Two implementation notes worth keeping. `ctx.state.startT` now **keeps
+  running past the green** — it is the clock reactions are measured against,
+  not just the light sequence's own timer. And the per-car hold is evaluated
+  *after* the player input block, because `consumeReset` rewinds `startT` and
+  the whole field has to go back on the hold in the same frame.
+  Three new `physics-test` gates, all in one block that pumps the real `__tick`
+  with the render stubbed: **nobody launches in reverse** (displacement along
+  each car's own heading, plus a check that no car ever shows gear R — the
+  older "lights out releases the field" gate measures *unsigned* distance from
+  the grid slot, so it scored a 4.2 m reverse as a healthy getaway and passed
+  right through this bug), **the whole field gets away from the grid**, and
+  **the field does not launch on a single frame**. That last one measures the
+  spread across the **AI only** — the player is released on the green, so
+  including them would score an identically-programmed field as staggered.
+  New tool: **`scripts/launchshot.mjs`** — the start from three cameras
+  anchored to the START LINE (not to a car: the subject is the field's stagger,
+  so the frame has to hold still while the cars move through it) at four
+  moments, with per-car reaction / gear / heading-relative travel / speed
+  printed alongside. Every other shooter frames a car and hand-drives it with
+  `ctx.mode = null`, so **none of them exercise the start gate at all** — which
+  is why a reversing grid survived a full run's verification.
+  **Harness trap found building it:** a shooter cannot leave `ctx.mode` set the
+  way `physics-test` does. physics-test gets away with it because its whole run
+  is one synchronous `evaluate` that rAF cannot interleave with; a shooter has
+  to return to node between shots, and the page's own rAF loop kept stepping
+  the race while SwiftShader rendered and Playwright saved the PNG — the shots
+  came out 2 s late each. Leave `ctx.mode = null` and pump `__tick` by hand
+  (it does not consult `ctx.mode`). Camera note: `frame.left` is **positive
+  into the pit lane** at the start line, where the pit wall and its sponsor
+  boards block the grid outright, and past about −20 the grandstand deck does
+  the same from the other side — hence the low on-surface camera behind the
+  pack.
+  Verified: `physics-test` **31/31** incl. no console errors, smoke OK (no NaN,
+  outward winding, triangle budget unchanged at 24880/24228/21778), build
+  clean, before/after `launchshot` on all three angles × four moments (the
+  reversing grid is unmistakable in `before-green+1.0-low` and
+  `before-green+2.0-air`), and before/after `viewshot` on all five angles.
+  Note the `viewshot` pairs are **not** pixel-identical and should not be: the
+  AI's wound-up recovery state differed at the moment that shooter takes over,
+  so the cars are at a slightly different point of the lap. No visual change.
+
 - **2026-07-30** (accepted → `main`, owner replied "go"; was branch
   `claude/epic-franklin-wnn63z`)
   — **The race began before the player had seen the grid, and the gantry had no
@@ -687,14 +760,17 @@ New findings from the 2026-07-29 run (not acted on — one change per run):
 
 New findings from the 2026-07-30 run (not acted on — one change per run):
 
-- **The grid is a standing start with no formation lap and no jump-start rule**
-  (game, low — new 2026-07-30): the field is now held and released properly,
-  but a driver who is already on full throttle when the lights go out simply
-  gets a perfect launch, and the AI all react on the exact same frame. A small
-  reaction spread per AI (and a penalty, or at least a "JUMP START" banner, for
-  moving before the green) would make the start read as a race rather than a
-  synchronised release. Note the AI already runs `ai.update()` during the hold —
-  its command is discarded, so giving it a per-car reaction delay is cheap.
+- ~~**The AI all react on the exact same frame**~~ (game) — DONE 2026-07-31
+  (see Changelog): per-driver reaction to the green, plus the reverse-launch bug
+  that was hiding under this item. The note below about `ai.update()` running
+  during the hold turned out to be the *cause* of that bug, not a convenience.
+  **Still open, the other half of this item — no jump-start rule** (game, low):
+  a player already on full throttle when the lights go out gets a 0.000 s
+  launch, which no human achieves and which the AI (0.245–0.433 s) never can.
+  A "JUMP START" banner or a penalty for loading the throttle before the green
+  would close it. Note this needs more than a check: the field is *physically*
+  held by `GRID_HOLD`, so nobody can currently jump the start at all — the
+  player would have to be released and then penalised.
 - **The start lights have no bezel or lens depth** (env, low — new 2026-07-30):
   the lamps are flat `CircleGeometry` discs sitting 12 mm proud of the housing
   face. They read correctly at race distance and in the telephoto shot, but
@@ -714,5 +790,30 @@ New findings from the 2026-07-30 run (not acted on — one change per run):
   completely dead until it finishes. Nothing to fix in the product; just do not
   assume a silent run has hung. The expensive parts are the two `__tick` pumps
   that render — see the render-stub note in the Changelog.
+
+New findings from the 2026-07-31 run (not acted on — one change per run):
+
+- **The AI's stuck-recovery is armed by any legitimate standstill** (game,
+  medium — new 2026-07-31): this run stopped the grid hold from winding it up,
+  but the underlying rule in `src/ai.js` is still "throttle-pinned and under
+  1.5 m/s for 1.2 s → reverse for 1.5 s", which cannot tell a car wedged in the
+  armco from one held in traffic, bogged down off the line, or queueing behind
+  an incident. It also commits to the full 1.5 s of reverse with no exit when
+  the road ahead clears. Worth gating on something that actually means stuck —
+  no forward progress *and* a contact or a wall nearby — and cutting the
+  reverse short once the car is free.
+- **Nothing measures what the AI is commanded during a hold** (harness, low —
+  new 2026-07-31): the reverse-launch bug was invisible to every existing gate
+  because they all measure *positions*, and it was invisible to every existing
+  shooter because they all set `ctx.mode = null` and hand-drive. A cheap
+  command-level assertion (what does each driver actually return, frame by
+  frame, through a start?) would have caught it on the day it landed.
+- **`ai.update()`'s cost is paid for every held car anyway** (perf, negligible
+  — new 2026-07-31): now skipped during the hold, which is a small free saving
+  on the 4.2 s countdown. Noted only so nobody "restores" the poll for symmetry.
+- **The start-line cameras are hemmed in on both sides** (harness, low — new
+  2026-07-31): see the Changelog camera note. If a future run wants a real
+  trackside shot of the grid, it needs a gap in the pit wall or a camera above
+  the grandstand — there is no clean eye-level lateral view of the start line.
 
 (When an item is rejected, note "tried X — rejected: Y" here so it isn't retried.)
