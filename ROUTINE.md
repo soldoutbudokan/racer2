@@ -83,7 +83,8 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-07-31** (preview, pending review; branch `claude/epic-franklin-hkaxen`)
+- **2026-07-31** (accepted → `main`, owner replied "go"; was branch
+  `claude/epic-franklin-hkaxen`)
   — **Every AI car launched in REVERSE at the green**, and the whole field was
   released on one frame. Went looking for the top open item from the 2026-07-30
   run ("the grid is a standing start with no jump-start rule… the AI all react
