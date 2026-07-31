@@ -327,6 +327,99 @@ ck('lights out releases the field', lights.startedAfter && lights.litAfter === 0
   && lights.aiMovedM > 1.0,
   `started=${lights.startedAfter}, ${lights.litAfter}/5 lit, AI ran ${lights.aiMovedM} m`);
 
+// ---------- The launch itself ----------
+// Two things the previous section cannot see, because it measures unsigned
+// distance from the grid slot:
+//   1. DIRECTION. Polling `ai.update` through the 4.2 s hold used to wind up
+//      its stuck-recovery (throttle-pinned and stationary is exactly what a
+//      held car looks like from inside the driver), so the whole AI field came
+//      off the line in REVERSE and ran ~4.3 m backwards before finding first.
+//      A distance-from-grid check scores that as a healthy getaway.
+//   2. STAGGER. Everyone used to be released on the same frame. Each driver
+//      now has their own reaction to the green.
+// See ROUTINE.md, 2026-07-31.
+await startMode('quick-race');
+const launch = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  const SEQ = window.__startSequenceS;
+  ctx.cars.forEach((c, i) => {
+    const sp = window.__gridSpawn(ctx.track, i);
+    c.car.reset(sp.position, sp.yaw);
+  });
+  ctx.state.startT = 0;
+  ctx.state.started = false;
+  ctx.state.lightsLit = -1;
+  ctx.mode = 'quick-race';
+  // Headless has no hands on the keys, so the player would sit parked on pole
+  // and the field would pile into it. Give P1 a flat-out launch.
+  for (const c of ctx.cars) {
+    if (c.isPlayer) {
+      c.input.update = () => ({ throttle: 1, brake: 0, steer: 0, handbrake: false });
+    }
+  }
+  const realRender = ctx.composer.render;
+  ctx.composer.render = () => {};
+
+  // Displacement along each car's OWN heading, so "went backwards" is
+  // unambiguous wherever on the map the grid happens to sit.
+  const p0 = ctx.cars.map((c) => ({ x: c.car.body.position.x, z: c.car.body.position.z }));
+  const fwdOf = (c, i) => {
+    const q = c.car.body.quaternion;
+    const fx = 2 * (q.x * q.z + q.w * q.y);
+    const fz = 1 - 2 * (q.x * q.x + q.y * q.y);
+    const len = Math.hypot(fx, fz) || 1;
+    const p = c.car.body.position;
+    return ((p.x - p0[i].x) * fx + (p.z - p0[i].z) * fz) / len;
+  };
+
+  const HZ = 60;
+  const worstBack = ctx.cars.map(() => 0);   // most negative forward travel
+  const releaseS = ctx.cars.map(() => null); // when each car first got going
+  let sawReverse = false;
+  // The green, plus 2 s of running — long enough for the slowest reaction to
+  // have gone and for a reverse launch to be unmistakable, short enough that
+  // nobody has reached a corner and started braking for it.
+  const n = Math.round((SEQ + 2.0) * HZ);
+  for (let i = 0; i < n; i++) {
+    window.__tick(1 / HZ);
+    ctx.cars.forEach((c, k) => {
+      const f = fwdOf(c, k);
+      if (f < worstBack[k]) worstBack[k] = f;
+      if (releaseS[k] == null && f > 0.05) releaseS[k] = ctx.state.startT - SEQ;
+      if (c.car.telemetry.gearLabel === 'R') sawReverse = true;
+    });
+  }
+  ctx.composer.render = realRender;
+  ctx.mode = null;
+  const rel = releaseS.map((v) => (v == null ? null : +v.toFixed(3)));
+  const got = rel.filter((v) => v != null);
+  // Spread is measured across the AI only. The player is released on the green
+  // itself, so including them would score a field of identically-programmed AI
+  // as "staggered" purely because P1 is in it.
+  const aiRel = rel.filter((v, i) => v != null && !ctx.cars[i].isPlayer);
+  return {
+    who: ctx.cars.map((c, i) => (c.isPlayer ? 'P1' : `AI${i}`)),
+    reactions: ctx.cars.map((c) => +(c.reactionS ?? 0).toFixed(3)),
+    releaseS: rel,
+    allLaunched: got.length === ctx.cars.length,
+    spreadS: aiRel.length > 1
+      ? +(Math.max(...aiRel) - Math.min(...aiRel)).toFixed(3) : 0,
+    worstBackM: +Math.min(...worstBack).toFixed(3),
+    sawReverse,
+    fwdM: ctx.cars.map((c, i) => +fwdOf(c, i).toFixed(2)),
+  };
+});
+console.log('launch:', JSON.stringify(launch));
+ck('nobody launches in reverse',
+  !launch.sawReverse && launch.worstBackM > -0.05,
+  `worst backward travel ${launch.worstBackM} m, reverse gear seen: ${launch.sawReverse}`);
+ck('the whole field gets away from the grid',
+  launch.allLaunched && Math.min(...launch.fwdM) > 5,
+  `released at ${JSON.stringify(launch.releaseS)}, 2 s travel ${JSON.stringify(launch.fwdM)}`);
+ck('the field does not launch on a single frame',
+  launch.spreadS > 0.1,
+  `reactions ${JSON.stringify(launch.reactions)} → getaway spread ${launch.spreadS} s`);
+
 // ---------- AI sanity on the real circuit ----------
 await startMode('quick-race');
 const qr = await page.evaluate(() => {

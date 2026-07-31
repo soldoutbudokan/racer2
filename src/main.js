@@ -38,6 +38,25 @@ const START_SEQUENCE_S =
 // The handbrake locks the rear axle without touching the direction logic.
 const GRID_HOLD = { throttle: 0, brake: 0, steer: 0, handbrake: true };
 
+// ---- Reaction to the green ----
+// Lights out is not a synchronised release. Real drivers get away over roughly
+// a fifth to two-fifths of a second, and that spread is most of what makes the
+// run to the first corner read as a race rather than a formation move.
+//
+// Authored, not random: a given grid always plays out the same way, so a
+// regression in the launch is visible in a diff and physics-test can assert it.
+const REACTION_SLOW_S = 0.42; // at skill 0.70 — a sleepy getaway
+const REACTION_FAST_S = 0.18; // at skill 0.95 — sharp off the line
+// Per-slot offset, so the field does not launch in tidy skill order every race.
+const REACTION_SLOT_S = [-0.05, +0.09, -0.06, +0.03];
+
+function aiReactionS(gridIdx, skill) {
+  const t = THREE.MathUtils.clamp((skill - 0.70) / 0.25, 0, 1);
+  const centre = THREE.MathUtils.lerp(REACTION_SLOW_S, REACTION_FAST_S, t);
+  return Math.max(
+    0.10, centre + REACTION_SLOT_S[gridIdx % REACTION_SLOT_S.length]);
+}
+
 // Time trial is a single flying lap; the other modes run a full race distance.
 function lapsFor(mode) {
   return mode === 'time-trial' ? 1 : RACE_LAPS;
@@ -341,6 +360,9 @@ function addPlayerCar(ctx, bindings, color, gridIdx, archetype = 'gt') {
     car, color,
     isPlayer: true,
     input, chase,
+    // A player is released on the green itself — their reaction is whatever
+    // their own hands do, and adding one on top would just read as input lag.
+    reactionS: 0,
     state: carState(),
     label: gridIdx === 0 ? 'P1' : 'P2',
   });
@@ -358,6 +380,7 @@ function addAICar(ctx, color, gridIdx, skill, archetype = 'gt') {
     car, color,
     isPlayer: false,
     ai,
+    reactionS: aiReactionS(gridIdx, skill),
     state: carState(),
     label: 'AI',
   });
@@ -429,8 +452,10 @@ function tick(ctx, dt, now) {
   // race time starts at zero on the green rather than at mode load. Lap
   // detection itself is left running — a held car cannot reach the line, and
   // gating it would only add a way for the timing to get stuck.
+  // `startT` keeps running past the green: it is the clock each driver's
+  // reaction is measured against, not just the light sequence's own timer.
+  ctx.state.startT += dt;
   if (!ctx.state.started) {
-    ctx.state.startT += dt;
     const t = ctx.state.startT;
     const lit = t < START_LEAD_IN
       ? 0
@@ -455,7 +480,7 @@ function tick(ctx, dt, now) {
   // Drive each car
   const allCars = ctx.cars.map((c) => c.car);
   for (const c of ctx.cars) {
-    let cmd;
+    let cmd = null;
     if (c.isPlayer) {
       cmd = c.input.update(dt);
       if (c.input.consumeToggle()) c.chase.cycle();
@@ -486,12 +511,20 @@ function tick(ctx, dt, now) {
       if (c.input.consumeRescue()) {
         rescueCar(ctx.track, c.car);
       }
-    } else {
-      cmd = c.ai.update(c.car, allCars, dt);
     }
-    // Lights still on: input is read as usual (so the camera and aid toggles
-    // work on the grid) but nobody gets to drive.
-    if (!ctx.state.started) cmd = GRID_HOLD;
+    // Held until this driver's own reaction to the green has elapsed. Computed
+    // after the input block on purpose: a reset rewinds `startT`, and the whole
+    // field has to go back on the hold in the same frame.
+    //
+    // A held AI is NOT asked for a command at all, and that is load-bearing
+    // rather than an optimisation. `ai.update`'s stuck-recovery arms whenever a
+    // car is throttle-pinned and stationary — exactly what being held on the
+    // grid looks like from inside the driver. Polling it through a 4.2 s hold
+    // wound the recovery up and every AI came off the line in REVERSE, running
+    // ~4.3 m backwards before it found first gear. See ROUTINE.md, 2026-07-31.
+    // A driver waiting on the lights is not driving, so do not ask them to.
+    if (ctx.state.startT < START_SEQUENCE_S + c.reactionS) cmd = GRID_HOLD;
+    else if (!c.isPlayer) cmd = c.ai.update(c.car, allCars, dt);
     c.car.applyControls(cmd, dt, wheelSurfaces(ctx.track, c.car));
   }
 
