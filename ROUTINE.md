@@ -143,6 +143,12 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
   outward winding, triangle budget unchanged at 24880/24228/21778), build
   clean, before/after `stuckprobe` on all three scenarios, and before/after
   `viewshot` on all five angles. No visual change — this is driver logic only.
+  **Read the `viewshot` pairs with care:** car pose, wheels, contact shadow,
+  road, kerbs and racing line are identical frame for frame, but the *trees and
+  billboards move between the two sets* because the scenery seed is still
+  unpinned (same non-determinism the 2026-07-27 `facing-check` note describes).
+  That is not a regression and `src/ai.js` cannot place a tree — but a future
+  run comparing these shots should not read it as one.
 
 - **2026-07-31** (accepted → `main`, owner replied "go"; was branch
   `claude/epic-franklin-hkaxen`)
