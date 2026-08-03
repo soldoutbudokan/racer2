@@ -474,6 +474,138 @@ ck('quick-race spawns 4 cars', qr.nCars === 4, `${qr.nCars}`);
 ck('AI completes ≥ 60% of a lap in 45 s', qr.progressed.every((p) => p > 60), `progress=${qr.progressed.join(',')}%`);
 ck('AI stays inside the circuit', qr.maxDev < 16, `max centreline deviation ${qr.maxDev} m`);
 
+// ---------- AI stuck recovery ----------
+// Standing still is not the same thing as being stuck, and the difference is
+// only visible in what the driver COMMANDS — every gate above measures where a
+// car ended up, which is exactly why a driver selecting reverse for the wrong
+// reason survived so long. Three standstills that look identical from outside
+// the car and must not be treated identically. See scripts/stuckprobe.mjs for
+// the same scenarios with a full frame-by-frame trace.
+await startMode('quick-race');
+const stuck = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  const world = ctx.world;
+  const frames = ctx.track.frames;
+  const wall = ctx.track.armcoOffset;
+  const ROAD = ['road', 'road', 'road', 'road'];
+  const IDLE = { throttle: 0, brake: 0, steer: 0, handbrake: true };
+  const dt = 1 / 120, HZ = 120;
+  const HOME = 200;
+  const hf = frames[HOME];
+
+  const ai = ctx.cars.filter((c) => !c.isPlayer);
+  const me = ai[0];
+  const spare = ai[1];
+  const others = ai.map((c) => c.car);
+  const latOf = () => {
+    const p = me.car.body.position;
+    return (p.x - hf.pos.x) * hf.left.x + (p.z - hf.pos.z) * hf.left.z;
+  };
+
+  // Fresh driver each scenario — the recovery timers are per-driver state and
+  // would otherwise leak from one scenario into the next.
+  const reset = () => {
+    ctx.cars.forEach((c, k) => {
+      if (c !== me) c.car.reset({ x: 2000 + k * 40, y: 1, z: -2000 }, 0);
+    });
+    me.ai = window.__createAIDriver(ctx.track, { skill: 0.85 });
+  };
+  // Place `lat` m left of the centreline, pointing `aim` of the way around from
+  // the track direction toward the left-hand wall. Built from the frame's own
+  // basis, so there is no sign convention to get wrong.
+  const place = (lat, aim) => {
+    const dx = hf.tan.x * (1 - Math.abs(aim)) + hf.left.x * aim;
+    const dz = hf.tan.z * (1 - Math.abs(aim)) + hf.left.z * aim;
+    me.car.reset({
+      x: hf.pos.x + hf.left.x * lat, y: hf.pos.y + 0.70, z: hf.pos.z + hf.left.z * lat,
+    }, Math.atan2(dx, dz));
+    for (let i = 0; i < 30; i++) { me.car.applyControls(IDLE, dt, ROAD); world.step(dt); }
+    me.car.update();
+  };
+  // `pin` freezes the car where it stands — a bogged start, a queue, a hold.
+  const run = (secs, pin) => {
+    const p = { ...me.car.body.position }, q = { ...me.car.body.quaternion };
+    const log = {
+      firstReverseS: null, reverseS: 0, endLat: 0, minReverseT: 9,
+      armLat: 0, minLat: Infinity, endFwd: 0,
+    };
+    for (let s = 0; s < Math.round(secs * HZ); s++) {
+      const cmd = me.ai.update(me.car, others, dt);
+      const reversing = cmd.brake > 0.9 && cmd.throttle === 0;
+      if (reversing) {
+        log.reverseS += dt;
+        if (log.firstReverseS === null) {
+          log.firstReverseS = +(s / HZ).toFixed(3);
+          log.armLat = +latOf().toFixed(2);   // how close to the wall it was pinned
+        }
+        // Smallest reverseT still on the clock while actually reversing: a
+        // recovery that runs to term bottoms out near 0, one that is cut short
+        // releases with time to spare.
+        if (me.ai.recovery.reverseT < log.minReverseT) log.minReverseT = me.ai.recovery.reverseT;
+      }
+      me.car.applyControls(cmd, dt, ROAD);
+      world.step(dt);
+      me.car.update();
+      if (pin) {
+        me.car.body.position.set(p.x, p.y, p.z);
+        me.car.body.quaternion.set(q.x, q.y, q.z, q.w);
+        me.car.body.velocity.set(0, 0, 0);
+        me.car.body.angularVelocity.set(0, 0, 0);
+      }
+      if (log.firstReverseS !== null) log.minLat = Math.min(log.minLat, latOf());
+    }
+    log.endLat = +latOf().toFixed(2);
+    log.minLat = Number.isFinite(log.minLat) ? +log.minLat.toFixed(2) : null;
+    log.endFwd = +me.car.telemetry.speedKmh.toFixed(1);
+    log.endGear = me.car.telemetry.gearLabel;
+    log.reverseS = +log.reverseS.toFixed(2);
+    log.minReverseT = +log.minReverseT.toFixed(2);
+    return log;
+  };
+
+  const out = {};
+  // 1. Pinned on the racing line with clear road ahead — a bogged getaway, a
+  //    queue, a car being held. Backing out of this is wrong.
+  reset(); place(0, 0);
+  out.held = run(5.0, true);
+  // 2. Driven into the armco out in the runoff, nose-on. Backing out is right.
+  reset(); place(wall - 3.2, 0.90);
+  out.wedged = run(4.0, false);
+  // 3. As 2, but with a car parked in the space it would reverse into.
+  reset(); place(wall - 3.2, 0.90);
+  {
+    const q = me.car.body.quaternion, p = me.car.body.position;
+    const fx = 2 * (q.x * q.z + q.w * q.y);
+    const fz = 1 - 2 * (q.x * q.x + q.y * q.y);
+    const L = Math.hypot(fx, fz) || 1;
+    spare.car.reset(
+      { x: p.x - (fx / L) * 5.2, y: p.y, z: p.z - (fz / L) * 5.2 }, Math.atan2(fx, fz));
+  }
+  out.behind = run(3.0, false);
+  out.wall = wall;
+  return out;
+});
+console.log('stuck:', JSON.stringify(stuck));
+ck('a car held at a standstill on the racing line does not select reverse',
+  stuck.held.firstReverseS === null || stuck.held.firstReverseS > 3.5,
+  `first reverse command at ${stuck.held.firstReverseS ?? 'never'}`);
+ck('a car with no way out still recovers eventually',
+  stuck.held.firstReverseS !== null && stuck.held.firstReverseS < 4.5,
+  `blind fallback fired at ${stuck.held.firstReverseS ?? 'never'} s`);
+ck('a car wedged into the armco backs itself out and drives away',
+  stuck.wedged.firstReverseS !== null && stuck.wedged.firstReverseS < 2.5
+    && stuck.wedged.minLat < stuck.wedged.armLat - 1.5
+    && stuck.wedged.endGear !== 'R',
+  `reverse at ${stuck.wedged.firstReverseS} s, pinned at ${stuck.wedged.armLat} m from the`
+  + ` centreline → backed to ${stuck.wedged.minLat} m, driving off in gear`
+  + ` ${stuck.wedged.endGear} at ${stuck.wedged.endFwd} km/h`);
+ck('the recovery stops as soon as the car is free',
+  stuck.wedged.minReverseT > 0.15 && stuck.wedged.reverseS < 1.4,
+  `released with ${stuck.wedged.minReverseT} s still on the clock (${stuck.wedged.reverseS} s reversed)`);
+ck('the AI does not reverse into a car right behind it',
+  stuck.behind.firstReverseS === null,
+  `first reverse command at ${stuck.behind.firstReverseS ?? 'never'}`);
+
 // ---------- Barrier containment ----------
 // Launch the car at the armco from the centreline at ~275 km/h, at many spots
 // around the lap, alternating sides and angles of attack. This is RAW wall
