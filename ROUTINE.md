@@ -83,7 +83,8 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-08-03** (PENDING REVIEW — branch `claude/epic-franklin-lkmsog`)
+- **2026-08-03** (accepted → `main`, owner replied "go"; was branch
+  `claude/epic-franklin-lkmsog`)
   — **Any AI standing still selected reverse**, whatever the reason. Top open
   item from the 2026-07-31 run: that run stopped the *grid hold* from winding
   the stuck-recovery up, but left the underlying rule in `src/ai.js` alone —
