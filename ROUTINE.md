@@ -83,6 +83,67 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-08-03** (PENDING REVIEW — branch `claude/epic-franklin-lkmsog`)
+  — **Any AI standing still selected reverse**, whatever the reason. Top open
+  item from the 2026-07-31 run: that run stopped the *grid hold* from winding
+  the stuck-recovery up, but left the underlying rule in `src/ai.js` alone —
+  "throttle-pinned and under 1.5 m/s for 1.2 s → reverse for 1.5 s". That rule
+  cannot tell a car wedged in the armco from one bogged off the line, queueing
+  behind an incident, or crawling out of a slow hairpin, and it commits to the
+  full 1.5 s of reverse with no exit once the road clears.
+  Measured with the new `scripts/stuckprobe.mjs` (see below), three standstills
+  that look identical from outside the car, **before → after**:
+  - *held on the racing line with clear road ahead* (a bogged getaway, a queue,
+    a car being held): reverse at **1.208 s** → **no reverse at all** until the
+    blind safety valve at 4.008 s.
+  - *driven nose-first into the armco*: reverse at 1.7 s and it ran the **whole
+    1.5 s**, ending 5.2 m across the circuit still in R and travelling backwards
+    at 5 m/s (lat 9.8 → 4.57) → same 1.7 s trigger, but **cut short after
+    0.82 s** with 0.68 s still on the clock, back in first gear and driving away.
+  - *wedged with another car 5.2 m behind*: reverse at 1.7 s **into the parked
+    car** (its speed drops 2.61 → 1.48 m/s on contact in the before-trace) →
+    **never** reverses while that car is there.
+  The new rule keeps the fast 1.2 s trigger but wants **evidence** of something
+  to be stuck ON — the armco within 3 m, or the nose more than ~50° off the
+  track direction — plus a measured lack of forward **progress** (under 1.2 m
+  from an anchor) rather than just a low speedometer. Without evidence a
+  **blind 4.0 s fallback** still fires, so a car wedged on something the driver
+  cannot see recovers eventually instead of sitting at full throttle for the
+  rest of the race. That fallback is load-bearing: tightening the trigger
+  without it would trade an occasional wrong reverse for a permanently parked
+  car, which is worse.
+  Two behaviours on top of the trigger. The recovery is **cut short the moment
+  the car is free** (backed 1.6 m and no longer near the wall) — a driver who
+  has backed out of trouble goes forward again. And it **never reverses into a
+  car within 6 m behind**, which the old rule did blindly; that also gates the
+  arming, so it will not start a recovery it would immediately have to abort.
+  Worth knowing: normal racing never comes near the wall test — `physics-test`
+  measures max centreline deviation at **2.8 m** over 45 s of AI running, with
+  the armco at 13 m, so `nearWall` (|lat| > 10 m) is genuinely an incident
+  signal and lap times are untouched (AI lap progress 91/90/89 %, unchanged).
+  Recovery state is now **exposed on the driver as `ai.recovery`** rather than
+  living in closure variables, precisely so a gate can assert on what the
+  driver *decided*. That is the 2026-07-31 harness finding ("nothing measures
+  what the AI is commanded") answered: every existing gate measures positions,
+  which is why a driver reversing for the wrong reason was invisible.
+  New tool: **`scripts/stuckprobe.mjs`** — the three scenarios above with a
+  frame-by-frame command trace (throttle / brake / gear / lateral offset /
+  speed / `reverseT`). Two traps it cost to build. The recovery timers are
+  **per-driver state**, so a probe running scenarios back-to-back must build a
+  **fresh driver** (`window.__createAIDriver`) between them or scenario 2 starts
+  mid-reverse from scenario 1. And a car placed *at* the armco spawns inside the
+  barrier body; Cannon's penetration resolution fires it across the circuit at
+  20 m/s. Place it ~3 m short and let it drive into the wall.
+  Five new `physics-test` gates covering all three scenarios plus the blind
+  fallback and the cut-short. Note the wedged gate asserts the **minimum**
+  lateral offset reached, not the final one: once recovered, the AI turns round
+  and drives back out toward the wall it was stuck against, so an end-state
+  check scores a successful recovery as a failure (it did, first time round).
+  Verified: `physics-test` **36/36** incl. no console errors, smoke OK (no NaN,
+  outward winding, triangle budget unchanged at 24880/24228/21778), build
+  clean, before/after `stuckprobe` on all three scenarios, and before/after
+  `viewshot` on all five angles. No visual change — this is driver logic only.
+
 - **2026-07-31** (accepted → `main`, owner replied "go"; was branch
   `claude/epic-franklin-hkaxen`)
   — **Every AI car launched in REVERSE at the green**, and the whole field was
@@ -794,21 +855,19 @@ New findings from the 2026-07-30 run (not acted on — one change per run):
 
 New findings from the 2026-07-31 run (not acted on — one change per run):
 
-- **The AI's stuck-recovery is armed by any legitimate standstill** (game,
-  medium — new 2026-07-31): this run stopped the grid hold from winding it up,
-  but the underlying rule in `src/ai.js` is still "throttle-pinned and under
-  1.5 m/s for 1.2 s → reverse for 1.5 s", which cannot tell a car wedged in the
-  armco from one held in traffic, bogged down off the line, or queueing behind
-  an incident. It also commits to the full 1.5 s of reverse with no exit when
-  the road ahead clears. Worth gating on something that actually means stuck —
-  no forward progress *and* a contact or a wall nearby — and cutting the
-  reverse short once the car is free.
-- **Nothing measures what the AI is commanded during a hold** (harness, low —
-  new 2026-07-31): the reverse-launch bug was invisible to every existing gate
-  because they all measure *positions*, and it was invisible to every existing
-  shooter because they all set `ctx.mode = null` and hand-drive. A cheap
-  command-level assertion (what does each driver actually return, frame by
-  frame, through a start?) would have caught it on the day it landed.
+- ~~**The AI's stuck-recovery is armed by any legitimate standstill**~~ (game,
+  medium) — DONE 2026-08-03, pending review (see Changelog): the fast trigger
+  now wants evidence (armco within 3 m or a nose >50° off the road) plus a
+  measured lack of forward progress, a blind 4 s fallback keeps a genuinely
+  wedged car recoverable, the recovery is cut short once the car is free, and
+  it never reverses into a car within 6 m behind.
+- ~~**Nothing measures what the AI is commanded during a hold**~~ (harness,
+  low) — DONE 2026-08-03, pending review: `scripts/stuckprobe.mjs` traces the
+  command stream frame by frame, `ai.recovery` exposes the driver's decision
+  state, and five `physics-test` gates assert on commands rather than
+  positions. Only the *standstill* half is covered — a command-level trace
+  **through a start** (the original wording) is still worth adding, and
+  `scripts/launchshot.mjs` is the natural place for it.
 - **`ai.update()`'s cost is paid for every held car anyway** (perf, negligible
   — new 2026-07-31): now skipped during the hold, which is a small free saving
   on the 4.2 s countdown. Noted only so nobody "restores" the poll for symmetry.
@@ -816,5 +875,42 @@ New findings from the 2026-07-31 run (not acted on — one change per run):
   2026-07-31): see the Changelog camera note. If a future run wants a real
   trackside shot of the grid, it needs a gap in the pit wall or a camera above
   the grandstand — there is no clean eye-level lateral view of the start line.
+
+New findings from the 2026-08-03 run (not acted on — one change per run):
+
+- **A recovered car rejoins by driving back out at the wall** (game, medium —
+  new 2026-08-03): once the stuck-recovery releases, the car is pointing
+  outward and pure-pursuit takes a moment to swing it back, so it tracks
+  *further into the runoff* before it turns in. In the `stuckprobe` after-trace
+  it backed clear to 8.06 m from the centreline and was at 9.85 m a second
+  later, heading back toward the barrier it had just escaped. It does not
+  re-arm (it is making progress, so the anchor keeps resetting) and it does get
+  going, but a driver rejoining aims at the racing line, not at the armco.
+  Worth pointing the first second after a recovery at the centreline rather
+  than at the normal speed-scaled lookahead point.
+- **A car boxed in from behind never recovers at all** (game, low — new
+  2026-08-03): `carBehind` gates *both* triggers, including the blind 4 s
+  fallback, so a car wedged in the armco with a stationary car inside 6 m
+  behind sits at full throttle indefinitely — `physics-test` scenario 3 shows
+  exactly that for its whole 3 s. In a real race the car behind moves and the
+  situation clears itself, but a permanent double-wedge has no exit. A "wait
+  for a gap, then go" timer would close it without re-opening the reverse-into-
+  traffic hole.
+- **`nearestFrameIndex` flips to a distant part of the circuit off-track**
+  (game/harness, low — new 2026-08-03): the new evidence test measures lateral
+  offset and heading against the *nearest centreline frame*, and where a
+  circuit doubles back on itself the nearest frame can belong to another
+  straight — the lateral trace jumps by ~20 m in one step. Seen repeatedly
+  while building `stuckprobe`, and it is why that probe measures against a
+  fixed frame instead. It only bites well outside the barriers, where the
+  containment failsafe already acts, but `nearWall` / `misaligned` are not
+  trustworthy out there. Tracking the last known frame index and searching
+  locally around it would fix this everywhere it is used.
+- **`physics-test.mjs` runtime has grown again** (harness, medium — new
+  2026-08-03): the 2026-07-30 note said ~8-10 min; the stuck-recovery block
+  adds three more scenarios of stepped physics on top. Still the two rendering
+  `__tick` pumps that dominate. Do not run a shooter at the same time as the
+  suite on this container — two SwiftShader Chromiums contend badly enough that
+  `viewshot` timed out at its 30 s navigation budget during this run.
 
 (When an item is rejected, note "tried X — rejected: Y" here so it isn't retried.)

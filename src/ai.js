@@ -65,10 +65,48 @@ export function createAIDriver(track, options = {}) {
   const tmpV = new THREE.Vector3();
   const tmpFwd = new THREE.Vector3();
 
-  // Stuck-recovery state: racing incidents happen (walls, traffic); when the
-  // car is throttle-pinned but not moving, back out and try again.
-  let stuckT = 0;
-  let reverseT = 0;
+  // ---- Stuck recovery -------------------------------------------------
+  // Racing incidents happen: a car noses into the armco, or spins and beaches
+  // itself in the runoff. A driver who never backs out is a parked obstacle
+  // for the rest of the race, so the recovery has to exist.
+  //
+  // But "throttle pinned and not moving" on its own describes a lot of things
+  // that are NOT stuck — bogging down off the line, queueing behind an
+  // incident, crawling out of a slow hairpin — and selecting reverse in any of
+  // them looks far worse than simply waiting. So the fast trigger also wants
+  // *evidence* of something to be stuck ON (the armco within reach, or a nose
+  // pointing well off the road) and a measured lack of forward *progress*
+  // rather than just a low speedometer.
+  //
+  // A slower blind trigger still fires with no evidence at all, so a car
+  // wedged on something this driver cannot see recovers eventually instead of
+  // sitting at full throttle for the rest of the race.
+  const STUCK_SPEED = 1.5;       // m/s — below this the car is "not moving"
+  const STUCK_PROGRESS_M = 1.2;  // m from the anchor that counts as going somewhere
+  const STUCK_EVIDENT_S = 1.2;   // s pinned *with* evidence before backing out
+  const STUCK_BLIND_S = 4.0;     // s pinned *without* evidence before backing out
+  const WALL_REACH_M = 3.0;      // armco this close is something to be stuck on
+  const MISALIGN_DOT = 0.64;     // ≈50° off the track direction — spun, not driving
+  const REVERSE_S = 1.5;         // cap on one recovery
+  const FREE_BACK_M = 1.6;       // backed out this far and clear → drive again
+  const BEHIND_M = 6.0;          // never reverse into a car this close behind
+
+  // Lateral distance from the centreline at which the barriers stand.
+  const wallOffset = track.armcoOffset ?? (track.width ?? 14) / 2 + 6;
+
+  // Live recovery state. Exposed on the driver so a test can assert on what
+  // the driver *decided*, not just where the car ended up — the class of bug
+  // this replaces was invisible to every position-based gate.
+  const recovery = {
+    stuckT: 0,        // s spent pinned and making no progress
+    reverseT: 0,      // s of backing-out left (0 = driving normally)
+    nearWall: false,  // the armco is within reach
+    misaligned: false,// nose is pointing well off the track direction
+    carBehind: false, // someone is close enough behind to be reversed into
+    anchored: false,  // the progress anchor has been stamped at least once
+    anchorX: 0, anchorZ: 0,   // where "no forward progress" is measured from
+    stuckX: 0, stuckZ: 0,     // where this recovery started backing out from
+  };
 
   /**
    * @param car      this driver's car
@@ -138,6 +176,7 @@ export function createAIDriver(track, options = {}) {
     }
 
     // --- Traffic awareness: don't pile into the car ahead ---
+    let carBehind = false;
     if (others) {
       for (const other of others) {
         if (!other || other === car) continue;
@@ -145,6 +184,11 @@ export function createAIDriver(track, options = {}) {
         const dz = other.body.position.z - pos.z;
         const ahead = dx * tmpFwd.x + dz * tmpFwd.z;          // along our heading
         const lateral = -dx * tmpFwd.z + dz * tmpFwd.x;       // signed side offset
+        // Anyone sitting in the space this car would back into. Checked before
+        // the forward filter below, which discards everything behind us.
+        if (ahead < 0 && ahead > -BEHIND_M && Math.abs(lateral) < 3.0) {
+          carBehind = true;
+        }
         // look roughly one second up the road
         const range = Math.max(12, speed * 0.95);
         if (ahead < 1 || ahead > range || Math.abs(lateral) > 2.4) continue;
@@ -170,26 +214,62 @@ export function createAIDriver(track, options = {}) {
       }
     }
 
-    // --- Stuck recovery: full throttle but parked → back out, nose toward
-    // the racing line, then resume. ---
-    if (reverseT > 0) {
-      reverseT -= dt;
-      ctrl.throttle = 0;
-      ctrl.brake = 1;                 // reverse (automatic box: brake at standstill)
-      ctrl.steer = -ctrl.steer;       // rear-steer geometry points the nose back
+    // --- Stuck recovery (see the constants above for the reasoning) ---
+    // Evidence that there is something to be stuck on, sampled every frame so
+    // the recovery can also be cut short the moment it stops being true.
+    const nf = frames[nearest];
+    const lat = (pos.x - nf.pos.x) * nf.left.x + (pos.z - nf.pos.z) * nf.left.z;
+    const nearWall = wallOffset - Math.abs(lat) < WALL_REACH_M;
+    const misaligned = tmpFwd.x * nf.tan.x + tmpFwd.z * nf.tan.z < MISALIGN_DOT;
+    recovery.nearWall = nearWall;
+    recovery.misaligned = misaligned;
+    recovery.carBehind = carBehind;
+    if (!recovery.anchored) {
+      recovery.anchorX = pos.x;
+      recovery.anchorZ = pos.z;
+      recovery.anchored = true;
+    }
+
+    if (recovery.reverseT > 0) {
+      recovery.reverseT -= dt;
+      const backed = Math.hypot(pos.x - recovery.stuckX, pos.z - recovery.stuckZ);
+      // A driver who has backed out of trouble goes forward again — they don't
+      // sit out a fixed 1.5 s of reverse with the road in front of them clear.
+      // Abort outright if someone has arrived in the space behind.
+      if ((backed > FREE_BACK_M && !nearWall) || carBehind) {
+        recovery.reverseT = 0;
+        recovery.stuckT = 0;
+        recovery.anchorX = pos.x;
+        recovery.anchorZ = pos.z;
+      } else {
+        ctrl.throttle = 0;
+        ctrl.brake = 1;               // reverse (automatic box: brake at standstill)
+        ctrl.steer = -ctrl.steer;     // rear-steer geometry points the nose back
+      }
     } else {
-      if (speed < 1.5 && ctrl.throttle > 0.5) stuckT += dt;
-      else stuckT = Math.max(0, stuckT - dt * 2);
-      if (stuckT > 1.2) {
-        stuckT = 0;
-        reverseT = 1.5;
+      const pinned = speed < STUCK_SPEED && ctrl.throttle > 0.5;
+      const progress = Math.hypot(
+        pos.x - recovery.anchorX, pos.z - recovery.anchorZ);
+      if (pinned && progress < STUCK_PROGRESS_M) {
+        recovery.stuckT += dt;
+      } else {
+        recovery.stuckT = Math.max(0, recovery.stuckT - dt * 2);
+        recovery.anchorX = pos.x;
+        recovery.anchorZ = pos.z;
+      }
+      const limit = (nearWall || misaligned) ? STUCK_EVIDENT_S : STUCK_BLIND_S;
+      if (recovery.stuckT > limit && !carBehind) {
+        recovery.stuckT = 0;
+        recovery.reverseT = REVERSE_S;
+        recovery.stuckX = pos.x;
+        recovery.stuckZ = pos.z;
       }
     }
 
     return ctrl;
   }
 
-  return { update };
+  return { update, recovery };
 }
 
 function nearestFrameIndex(frames, pos) {
