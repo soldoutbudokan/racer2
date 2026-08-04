@@ -83,6 +83,103 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
+- **2026-08-04b** (accepted → `main`, owner-requested during review of the
+  above; same branch `claude/epic-franklin-93ylem`)
+  — **The race clock flickered in the hundredths on the grid.** Owner's report:
+  "flickering at .007 and then resetting to zero and going back and forth until
+  the race starts". Not a rounding or formatting problem — the HUD was
+  displaying, quite literally, **how long the current frame took**.
+  The hold re-stamps every car's `lapStart` each frame so the race time starts
+  at zero on the green rather than at mode load. That stamp called
+  `performance.now()` at the **top** of the tick; `updateLapTiming` then called
+  `performance.now()` **again** at the bottom of the same tick and displayed
+  `now − lapStart`. The gap between the two readings is the frame's own
+  physics and render work, so the clock showed 2–8 ms on a fast machine,
+  jittering frame to frame as the cost varied. Measured here under SwiftShader
+  (slower frames, bigger number): **14 distinct readings over 40 frames,
+  0.011–0.085 s**. It never actually "reset" — every frame was a fresh stamp.
+  Fix, in `src/main.js`: `tick(ctx, dt, now)` already receives the frame's
+  timestamp, so **thread it through** instead of re-reading the clock —
+  `updateLapTiming` and `updateLapTimingSilently` now take `now` as a
+  parameter. Three `performance.now()` calls inside the frame become one.
+  Lap times are differences against stamps taken elsewhere in the same frame,
+  and mixing two readings folds the frame's execution time into the answer;
+  that was true of the lap timer generally, not just the countdown — the
+  countdown is simply where the stamp and the read are one frame apart and the
+  error is the whole displayed value.
+  New `physics-test` gate: **the race clock reads zero while the field is
+  held** — 240 samples over the countdown, all exactly 0 ms, 1 distinct value.
+  It captures the argument to `hud.setLapTime` rather than scraping the
+  formatted text **on purpose**: `formatMs` floors to whole milliseconds, so a
+  cheap frame rounds the bug away and a text-based check would score it fixed.
+  Verified to **fail** against the previous `src/main.js` (240 samples, **49
+  distinct** values, worst **12.2 ms**) even with the render stubbed.
+  Verified: `physics-test` **39/39** incl. no console errors, smoke OK, build
+  clean, and a grid screenshot showing a steady `00:00.000` through the hold.
+
+- **2026-08-04** (accepted → `main`, owner asked for it plus the clock fix
+  below; was branch `claude/epic-franklin-93ylem`)
+  — **A car that backed out of the armco drove straight back into it, forever.**
+  Top open item from the 2026-08-03 run, which described it as a cosmetic
+  rejoin ("it tracks further into the runoff before it turns in"). Extending
+  the `stuckprobe` window from 4 s to 8 s showed it is not an excursion, it is
+  a **loop**: reverse at 1.75 s → released at 2.63 s out at 8.06 m from the
+  centreline → drove forward, arced back out, and **hit the armco again at
+  4.38 s** (speed 6.1 → 1.69 m/s on contact) → second recovery at 5.63 s → and
+  round again. The 4 s trace the last run worked from ended one second before
+  the second impact, which is why it read as a cosmetic problem.
+  Root cause is in the pure-pursuit steering, not the recovery. Pure pursuit
+  asks for κ = 2·**sin**(α)/Ld, and sin folds back past 90° — so a car pointing
+  *away* from where it needs to go asks for **less** lock the more wrong it is.
+  Released from the recovery 81° crossed up, the driver commanded **0.72** of
+  lock instead of all of it: a 6.5 m turn radius where full lock gives 4.1 m,
+  and that extra radius is exactly the 2.5 m of runoff between the release
+  point and the barrier. The driver was not confused about which way to turn —
+  it steered the right way the whole time and still drove into the wall.
+  Fix, in `src/ai.js`: past 90° the target is behind the front axle and there
+  is only one answer — **full lock**, in the direction the sign already picks.
+  Below 90° the pure-pursuit maths is untouched.
+  Measured **before → after**, same wedge, 8 s:
+  - separate recoveries: **2 → 1** (the loop is gone),
+  - furthest back out after release: 10.75 m → **10.03 m**; it wedged at
+    10.42 m, so before it got back *past* its own wedge point and after it
+    stays inside it (armco at 13 m),
+  - end state: **9.32 m from the centreline at 19.1 km/h**, still out in the
+    runoff → **0.81 m from the centreline at 94.3 km/h in 2nd gear**,
+  - the nose comes all the way round: `aim` (nose · track direction) 0.11 →
+    **1.00** by 5.0 s, where before it stalled at 0.78 and re-wedged.
+  **Normal racing is untouched** — the >90° branch cannot fire while the
+  lookahead point is up the road in front of the car. `physics-test` reports AI
+  lap progress **91/90/89 %** and max centreline deviation **2.8 m**, figures
+  identical to the previous run.
+  Two new `physics-test` gates on a 4th `stuck` scenario (the same wedge,
+  watched for 8 s instead of 4): **a recovered car does not drive back into the
+  barrier** (exactly one recovery arms in the window — a car bouncing off the
+  same barrier arms twice) and **a recovered car rejoins the racing line**
+  (ends within 6 m of the centreline, above 40 km/h, not in R). Both were run
+  against the pre-change `src/ai.js` and **fail** there, and pass after.
+  A trap worth keeping. The first cut of the rejoin gate reused the probe's
+  `latOf`, which measures against **one fixed frame** — that is what makes the
+  runoff traces readable, but by 8 s the car has driven ~120 m past that frame
+  and the projection stops meaning anything: it scored a successful rejoin
+  (0.81 m from the line) as **4.15 m** off it and failed. The gate now measures
+  distance to the **nearest** centreline frame, chosen because a nearest-frame
+  flip (the 2026-08-03 finding) can only *inflate* that number, never shrink
+  it, so a `< 6 m` assertion cannot be passed spuriously by one.
+  `scripts/stuckprobe.mjs`: the wedged run is now **8 s, not 4** — backing out
+  of the armco is only half a recovery — and the trace carries two new columns,
+  **`str`** (the steering command) and **`aim`** (nose vs track direction).
+  Those two are what make the sine fold-back visible; the old trace had
+  neither, which is why the last run could see the symptom and not the cause.
+  Verified: `physics-test` **38/38** incl. no console errors, smoke OK (no NaN,
+  outward winding, triangle budget unchanged at 24880/24228/21778), build
+  clean, before/after `stuckprobe`, and before/after `viewshot` on all five
+  angles. No visual change — driver logic only. Same caveat as the last run on
+  reading those pairs: car pose, wheels, contact shadow, road, kerbs and racing
+  line are identical frame for frame, but the **trees and billboards move
+  between the two sets** because the scenery seed is still unpinned. That is
+  not a regression and `src/ai.js` cannot place a tree.
+
 - **2026-08-03** (accepted → `main`, owner replied "go"; was branch
   `claude/epic-franklin-lkmsog`)
   — **Any AI standing still selected reverse**, whatever the reason. Top open
@@ -863,13 +960,13 @@ New findings from the 2026-07-30 run (not acted on — one change per run):
 New findings from the 2026-07-31 run (not acted on — one change per run):
 
 - ~~**The AI's stuck-recovery is armed by any legitimate standstill**~~ (game,
-  medium) — DONE 2026-08-03, pending review (see Changelog): the fast trigger
+  medium) — DONE 2026-08-03, accepted → `main` (see Changelog): the fast trigger
   now wants evidence (armco within 3 m or a nose >50° off the road) plus a
   measured lack of forward progress, a blind 4 s fallback keeps a genuinely
   wedged car recoverable, the recovery is cut short once the car is free, and
   it never reverses into a car within 6 m behind.
 - ~~**Nothing measures what the AI is commanded during a hold**~~ (harness,
-  low) — DONE 2026-08-03, pending review: `scripts/stuckprobe.mjs` traces the
+  low) — DONE 2026-08-03, accepted → `main`: `scripts/stuckprobe.mjs` traces the
   command stream frame by frame, `ai.recovery` exposes the driver's decision
   state, and five `physics-test` gates assert on commands rather than
   positions. Only the *standstill* half is covered — a command-level trace
@@ -885,16 +982,19 @@ New findings from the 2026-07-31 run (not acted on — one change per run):
 
 New findings from the 2026-08-03 run (not acted on — one change per run):
 
-- **A recovered car rejoins by driving back out at the wall** (game, medium —
-  new 2026-08-03): once the stuck-recovery releases, the car is pointing
+- ~~**A recovered car rejoins by driving back out at the wall**~~ (game,
+  medium) — DONE 2026-08-04, accepted → `main` (see Changelog). It was worse than
+  this note: with an 8 s window the car hits the armco *again* at 4.38 s and
+  loops. The cause was not the lookahead distance but pure pursuit's `sin(α)`
+  folding back past 90°, which had a crossed-up driver asking for two thirds
+  of a turn. Note for the record that this item's own diagnosis ("it does not
+  re-arm") was an artefact of the 4 s trace — it re-arms at 5.63 s.
+  Original note:
+  once the stuck-recovery releases, the car is pointing
   outward and pure-pursuit takes a moment to swing it back, so it tracks
   *further into the runoff* before it turns in. In the `stuckprobe` after-trace
   it backed clear to 8.06 m from the centreline and was at 9.85 m a second
-  later, heading back toward the barrier it had just escaped. It does not
-  re-arm (it is making progress, so the anchor keeps resetting) and it does get
-  going, but a driver rejoining aims at the racing line, not at the armco.
-  Worth pointing the first second after a recovery at the centreline rather
-  than at the normal speed-scaled lookahead point.
+  later, heading back toward the barrier it had just escaped.
 - **A car boxed in from behind never recovers at all** (game, low — new
   2026-08-03): `carBehind` gates *both* triggers, including the blind 4 s
   fallback, so a car wedged in the armco with a stationary car inside 6 m
@@ -921,3 +1021,39 @@ New findings from the 2026-08-03 run (not acted on — one change per run):
   `viewshot` timed out at its 30 s navigation budget during this run.
 
 (When an item is rejected, note "tried X — rejected: Y" here so it isn't retried.)
+
+New findings from the 2026-08-04 run (not acted on — one change per run):
+
+- **The rejoin still costs ~2 m of outward drift** (game, low — new
+  2026-08-04): the car is released at 8.05 m and swings out to 10.03 m before
+  the nose comes round. Some of that is unavoidable — you cannot turn without
+  a radius — but the driver is on **0.69 throttle while still 60° crossed up**
+  and reaches 7.3 m/s before it is pointing down the road, which widens the
+  arc. A "get it pointed before you use the power" throttle trim would tighten
+  it further. **Trap if you try it:** the stuck trigger tests
+  `pinned = speed < STUCK_SPEED && ctrl.throttle > 0.5`, and the only reason a
+  wedged car still arms today is that the existing steer-load easing bottoms
+  out at 0.69. Any deeper trim has to be applied *after* the throttle figure
+  `pinned` reads, or a car nose-first in the armco stops arming a recovery at
+  all — which is a far worse bug than the one being fixed.
+- **Full lock past 90° is not what a driver does in a high-speed spin** (game,
+  low — new 2026-08-04): the new branch is right for a low-speed recovery, but
+  a car spinning at 200 km/h has its target behind the front axle too, and it
+  will now ask for full lock where a driver would be counter-steering. Nothing
+  in the suite covers a spin at speed — the barrier-containment gate launches
+  the car at the wall but never asks what the driver does on the way. Worth a
+  scenario before anyone leans on this branch harder.
+- **`physics-test.mjs` is now 38 gates and ~10-12 min** (harness, medium —
+  running total): the rejoin scenario adds 8 s of stepped physics, which is
+  cheap next to the two rendering `__tick` pumps that still dominate. The
+  2026-08-03 warning stands — do not run a shooter at the same time as the
+  suite on this container, and note that `viewshot.mjs`'s third argument is a
+  file **prefix**, not a directory: it will not create the parent, and fails
+  with a bare exit code 2 if it does not exist.
+- **Two `performance.now()` readings per frame was a general pattern, not one
+  bug** (harness/game, low — new 2026-08-04): the clock fix threaded the
+  frame's timestamp into the lap timer, but `tick` still re-reads the wall
+  clock in `window.__tick` (fine — once per tick) and mode setup takes its own
+  reading (also fine). Worth a glance if any other subsystem grows a
+  "difference between two stamps" measurement: take the frame's `now`, never a
+  fresh one, or the answer silently includes however long the frame took.

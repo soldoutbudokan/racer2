@@ -299,13 +299,29 @@ const lights = await page.evaluate(() => {
     const n = Math.round(secs * 60);
     for (let i = 0; i < n; i++) window.__tick(1 / 60);
   };
+  // The race clock must read a hard zero while the field is held. It is
+  // displayed as `now - lapStart`, and those used to be two SEPARATE
+  // performance.now() readings taken at opposite ends of the same frame — the
+  // stamp at the top of the tick, the read at the bottom — so the HUD counted
+  // this frame's own physics and render as elapsed race time and the
+  // hundredths place flickered on the grid. Captured at the source rather than
+  // off the formatted text: formatMs floors to whole milliseconds, so a cheap
+  // frame can round the bug away and score it as fixed.
+  const clockMs = [];
+  const realSetLapTime = ctx.hud.setLapTime;
+  ctx.hud.setLapTime = (ms) => { clockMs.push(ms); return realSetLapTime(ms); };
+
   const p0 = at();
   pump(SEQ - 0.2);                       // all five columns lit, not yet green
   const held = {
     lit: ctx.track.startLights.litCount(),
     started: ctx.state.started,
     moveM: +Math.max(...from(p0)).toFixed(3),
+    clockSamples: clockMs.length,
+    clockMaxMs: clockMs.length ? +Math.max(...clockMs).toFixed(4) : null,
+    clockDistinct: new Set(clockMs).size,
   };
+  ctx.hud.setLapTime = realSetLapTime;
   pump(0.4 + 1.2);                       // through the green and 1.2 s of racing
   const ai = ctx.cars.map((c, i) => (c.isPlayer ? 0 : from(p0)[i]));
   ctx.composer.render = realRender;
@@ -323,6 +339,10 @@ ck('the field is held on the grid while the lights are on',
   lights.moveM < 0.10 && lights.started === false,
   `moved ${lights.moveM} m in the first ${lights.seq} s, started=${lights.started}`);
 ck('all five columns are lit before the green', lights.lit === 5, `${lights.lit}/5 lit`);
+ck('the race clock reads zero while the field is held',
+  lights.clockSamples > 100 && lights.clockMaxMs === 0 && lights.clockDistinct === 1,
+  `${lights.clockSamples} samples over the countdown, ${lights.clockDistinct} distinct`
+  + ` value(s), worst ${lights.clockMaxMs} ms`);
 ck('lights out releases the field', lights.startedAfter && lights.litAfter === 0
   && lights.aiMovedM > 1.0,
   `started=${lights.startedAfter}, ${lights.litAfter}/5 lit, AI ran ${lights.aiMovedM} m`);
@@ -501,6 +521,22 @@ const stuck = await page.evaluate(() => {
     const p = me.car.body.position;
     return (p.x - hf.pos.x) * hf.left.x + (p.z - hf.pos.z) * hf.left.z;
   };
+  // Distance to the nearest centreline frame. `latOf` is measured against ONE
+  // fixed frame, which is what makes the runoff traces readable — but it stops
+  // meaning anything once the car has driven a hundred metres past that frame,
+  // so the "did it get back on the road" check needs this instead. A nearest-
+  // frame flip can only inflate this, never shrink it, so a `< 6 m` assertion
+  // cannot be passed spuriously by one.
+  const offOf = () => {
+    const p = me.car.body.position;
+    let bd = Infinity;
+    for (let i = 0; i < frames.length; i++) {
+      const dx = frames[i].pos.x - p.x, dz = frames[i].pos.z - p.z;
+      const d = dx * dx + dz * dz;
+      if (d < bd) bd = d;
+    }
+    return Math.sqrt(bd);
+  };
 
   // Fresh driver each scenario — the recovery timers are per-driver state and
   // would otherwise leak from one scenario into the next.
@@ -528,10 +564,18 @@ const stuck = await page.evaluate(() => {
     const log = {
       firstReverseS: null, reverseS: 0, endLat: 0, minReverseT: 9,
       armLat: 0, minLat: Infinity, endFwd: 0,
+      // Rejoin metrics: how far back out toward the barrier the car tracks once
+      // the recovery lets go, and how many separate recoveries it needed. A car
+      // that arcs back into the armco it just escaped arms a second time.
+      recoveries: 0, maxLatAfter: -Infinity, released: false,
     };
+    let wasReversing = false;
     for (let s = 0; s < Math.round(secs * HZ); s++) {
       const cmd = me.ai.update(me.car, others, dt);
       const reversing = cmd.brake > 0.9 && cmd.throttle === 0;
+      if (reversing && !wasReversing) log.recoveries++;
+      if (!reversing && wasReversing) log.released = true;
+      wasReversing = reversing;
       if (reversing) {
         log.reverseS += dt;
         if (log.firstReverseS === null) {
@@ -553,9 +597,12 @@ const stuck = await page.evaluate(() => {
         me.car.body.angularVelocity.set(0, 0, 0);
       }
       if (log.firstReverseS !== null) log.minLat = Math.min(log.minLat, latOf());
+      if (log.released) log.maxLatAfter = Math.max(log.maxLatAfter, latOf());
     }
     log.endLat = +latOf().toFixed(2);
+    log.endOff = +offOf().toFixed(2);
     log.minLat = Number.isFinite(log.minLat) ? +log.minLat.toFixed(2) : null;
+    log.maxLatAfter = Number.isFinite(log.maxLatAfter) ? +log.maxLatAfter.toFixed(2) : null;
     log.endFwd = +me.car.telemetry.speedKmh.toFixed(1);
     log.endGear = me.car.telemetry.gearLabel;
     log.reverseS = +log.reverseS.toFixed(2);
@@ -582,6 +629,13 @@ const stuck = await page.evaluate(() => {
       { x: p.x - (fx / L) * 5.2, y: p.y, z: p.z - (fz / L) * 5.2 }, Math.atan2(fx, fz));
   }
   out.behind = run(3.0, false);
+  // 4. As 2, but watched long enough to see the car REJOIN. Backing out of the
+  //    armco is only half a recovery: a driver then points the car at the road.
+  //    Pure pursuit's κ = 2·sin(α)/Ld folds back past 90°, so a car released
+  //    crossed up used to ask for two thirds of a turn, arc straight back into
+  //    the barrier it had just escaped, and start the whole cycle again.
+  reset(); place(wall - 3.2, 0.90);
+  out.rejoin = run(8.0, false);
   out.wall = wall;
   return out;
 });
@@ -605,6 +659,18 @@ ck('the recovery stops as soon as the car is free',
 ck('the AI does not reverse into a car right behind it',
   stuck.behind.firstReverseS === null,
   `first reverse command at ${stuck.behind.firstReverseS ?? 'never'}`);
+// A recovery that has to run twice is a car bouncing off the same barrier: it
+// backs out, arcs straight back in, wedges, and backs out again. One is a
+// recovery; two is a loop.
+ck('a recovered car does not drive back into the barrier',
+  stuck.rejoin.recoveries === 1,
+  `${stuck.rejoin.recoveries} recovery/ies in 8 s; tracked back out to`
+  + ` ${stuck.rejoin.maxLatAfter} m after release, wedged at`
+  + ` ${stuck.rejoin.armLat} m, armco at ${stuck.wall} m`);
+ck('a recovered car rejoins the racing line',
+  stuck.rejoin.endOff < 6 && stuck.rejoin.endFwd > 40 && stuck.rejoin.endGear !== 'R',
+  `ended ${stuck.rejoin.endOff} m from the centreline at ${stuck.rejoin.endFwd} km/h`
+  + ` in gear ${stuck.rejoin.endGear}`);
 
 // ---------- Barrier containment ----------
 // Launch the car at the armco from the centreline at ~275 km/h, at many spots
