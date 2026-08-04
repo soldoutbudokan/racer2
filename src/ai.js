@@ -153,13 +153,21 @@ export function createAIDriver(track, options = {}) {
     const signed = cross < 0 ? -ang : ang;
 
     // Pure pursuit: κ = 2·sin(α)/Ld → needed steer angle δ = κ·wheelbase.
-    const needK = 2 * Math.sin(signed) / Ld;
-    const needSteer = needK * 2.9;
     // Same traction-limited cap the car itself applies, so |ctrl.steer| maps
     // to what the front axle can actually do. (Mirrors SPEC in car.js.)
     const vv = Math.max(1, speed * speed);
     const cap = Math.min(0.62, 1.45 * 9.82 * 2.0 * 2.9 / vv + 0.02);
-    ctrl.steer = THREE.MathUtils.clamp(needSteer / cap, -1, 1);
+    if (ang > Math.PI / 2) {
+      // The target is behind the front axle. sin(α) folds back past 90°, so
+      // plain pure pursuit asks for *less* lock the more wrong the car is
+      // pointing — a car that has just backed out of the armco crossed up
+      // gets two thirds of a turn and arcs straight back into the barrier.
+      // A driver facing away from where they need to go uses all of it.
+      ctrl.steer = signed < 0 ? -1 : 1;
+    } else {
+      const needK = 2 * Math.sin(signed) / Ld;
+      ctrl.steer = THREE.MathUtils.clamp(needK * 2.9 / cap, -1, 1);
+    }
 
     // --- Longitudinal ---
     if (speed < target - 0.5) {

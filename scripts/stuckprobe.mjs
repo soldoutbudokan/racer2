@@ -126,14 +126,22 @@ const res = await page.evaluate(() => {
         me.car.body.angularVelocity.set(0, 0, 0);
       }
       if (s % 30 === 0) {
+        const q = me.car.body.quaternion;
+        const fx = 2 * (q.x * q.z + q.w * q.y);
+        const fz = 1 - 2 * (q.x * q.x + q.y * q.y);
+        const L = Math.hypot(fx, fz) || 1;
         log.samples.push({
           t: +(s / HZ).toFixed(2),
           thr: +cmd.throttle.toFixed(2),
           brk: +cmd.brake.toFixed(2),
+          str: +cmd.steer.toFixed(2),
           gear: me.car.telemetry.gearLabel,
           lat: +latOf(me.car).toFixed(2),
           spd: +Math.hypot(me.car.body.velocity.x, me.car.body.velocity.z).toFixed(2),
           rev: +(me.ai.recovery ? me.ai.recovery.reverseT : -1).toFixed(2),
+          // nose direction vs the track direction at HOME: 1 = pointing down
+          // the road, 0 = square across it, negative = pointing back up it.
+          aim: +((fx / L) * hf.tan.x + (fz / L) * hf.tan.z).toFixed(2),
         });
       }
     }
@@ -153,7 +161,10 @@ const res = await page.evaluate(() => {
   place(me.car, HOME, wall - 3.2, 0.90);       // out in the runoff, aimed at the wall
   settle();
   out.wedgedLatStart = +latOf(me.car).toFixed(2);
-  out.wedged = run(4.0, { surf: ROAD });
+  // 8 s, not 4: backing out of the armco is only half a recovery. The rest of
+  // the window is the rejoin — the car has to point itself at the road rather
+  // than arc straight back into the barrier it just escaped.
+  out.wedged = run(8.0, { surf: ROAD });
   out.wedgedLatEnd = +latOf(me.car).toFixed(2);
 
   // --- 3. wedged, with a car parked in the space behind ------------------
@@ -182,8 +193,10 @@ const fmt = (k, r) => {
     + `   max brake ${r.maxBrake.toFixed(2)}   ever in gear R: ${r.everGearR}`);
   for (const s of r.samples) {
     console.log(`   t=${String(s.t).padStart(5)}  thr=${String(s.thr).padStart(4)}`
-      + `  brk=${String(s.brk).padStart(4)}  gear=${String(s.gear).padStart(2)}`
-      + `  lat=${String(s.lat).padStart(7)}  spd=${String(s.spd).padStart(6)}  reverseT=${s.rev}`);
+      + `  brk=${String(s.brk).padStart(4)}  str=${String(s.str).padStart(5)}`
+      + `  gear=${String(s.gear).padStart(2)}  lat=${String(s.lat).padStart(7)}`
+      + `  spd=${String(s.spd).padStart(6)}  aim=${String(s.aim).padStart(5)}`
+      + `  reverseT=${s.rev}`);
   }
 };
 
