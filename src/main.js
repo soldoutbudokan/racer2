@@ -470,10 +470,14 @@ function tick(ctx, dt, now) {
       ctx.state.lightsLit = lit;
       ctx.track.startLights.set(lit);
     }
-    const stamp = performance.now();
+    // The frame's OWN timestamp, not a fresh reading. `updateLapTiming` below
+    // displays `now - lapStart`, and a second `performance.now()` here would
+    // stamp the clock at the top of the frame and read it back at the bottom —
+    // so the HUD showed however many milliseconds this frame's physics and
+    // render happened to take (a jittering 0.002–0.008 s) instead of 0.000.
     for (const c of ctx.cars) {
-      c.state.lapStart = stamp;
-      c.state.raceStart = stamp;
+      c.state.lapStart = now;
+      c.state.raceStart = now;
     }
   }
 
@@ -559,7 +563,7 @@ function tick(ctx, dt, now) {
   if (primary && primary.isPlayer) {
     const t = primary.car.telemetry;
     ctx.hud.setSpeed(t.speedKmh, t.gearLabel, t.rpmFrac);
-    updateLapTiming(primary, ctx.track, ctx.hud, ctx.state);
+    updateLapTiming(primary, ctx.track, ctx.hud, ctx.state, now);
     ctx.hud.setWrongWay(!primary.state.finished && isWrongWay(ctx.track, primary.car));
 
     // Perfect-line aid: recolour the line against the player's current speed
@@ -577,7 +581,7 @@ function tick(ctx, dt, now) {
   // Update non-primary cars' lap timing too (for race position).
   for (const c of ctx.cars) {
     if (c === primary) continue;
-    updateLapTimingSilently(c, ctx.track, ctx.state);
+    updateLapTimingSilently(c, ctx.track, ctx.state, now);
   }
 
   // Race positions
@@ -758,10 +762,12 @@ function advanceLap(carEntry, track, state, now) {
   return event;
 }
 
-function updateLapTiming(carEntry, track, hud, state) {
+// `now` is the frame's timestamp, passed in rather than re-read: lap times are
+// differences against stamps taken elsewhere in the same frame, and mixing two
+// readings folds this frame's own execution time into the answer.
+function updateLapTiming(carEntry, track, hud, state, now) {
   const st = carEntry.state;
   const prevBest = st.bestMs;
-  const now = performance.now();
   const event = advanceLap(carEntry, track, state, now);
   if (st.bestMs !== prevBest) hud.setBest(st.bestMs);
   if (event === 'finish') {
@@ -777,8 +783,8 @@ function updateLapTiming(carEntry, track, hud, state) {
   if (!st.finished) hud.setLapTime(now - st.lapStart);
 }
 
-function updateLapTimingSilently(carEntry, track, state) {
-  advanceLap(carEntry, track, state, performance.now());
+function updateLapTimingSilently(carEntry, track, state, now) {
+  advanceLap(carEntry, track, state, now);
 }
 
 function nearestFrameIndex(track, position) {

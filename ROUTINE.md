@@ -83,7 +83,42 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 
 ## Changelog (accepted to `main`)
 
-- **2026-08-04** (pending review; branch `claude/epic-franklin-93ylem`)
+- **2026-08-04b** (accepted → `main`, owner-requested during review of the
+  above; same branch `claude/epic-franklin-93ylem`)
+  — **The race clock flickered in the hundredths on the grid.** Owner's report:
+  "flickering at .007 and then resetting to zero and going back and forth until
+  the race starts". Not a rounding or formatting problem — the HUD was
+  displaying, quite literally, **how long the current frame took**.
+  The hold re-stamps every car's `lapStart` each frame so the race time starts
+  at zero on the green rather than at mode load. That stamp called
+  `performance.now()` at the **top** of the tick; `updateLapTiming` then called
+  `performance.now()` **again** at the bottom of the same tick and displayed
+  `now − lapStart`. The gap between the two readings is the frame's own
+  physics and render work, so the clock showed 2–8 ms on a fast machine,
+  jittering frame to frame as the cost varied. Measured here under SwiftShader
+  (slower frames, bigger number): **14 distinct readings over 40 frames,
+  0.011–0.085 s**. It never actually "reset" — every frame was a fresh stamp.
+  Fix, in `src/main.js`: `tick(ctx, dt, now)` already receives the frame's
+  timestamp, so **thread it through** instead of re-reading the clock —
+  `updateLapTiming` and `updateLapTimingSilently` now take `now` as a
+  parameter. Three `performance.now()` calls inside the frame become one.
+  Lap times are differences against stamps taken elsewhere in the same frame,
+  and mixing two readings folds the frame's execution time into the answer;
+  that was true of the lap timer generally, not just the countdown — the
+  countdown is simply where the stamp and the read are one frame apart and the
+  error is the whole displayed value.
+  New `physics-test` gate: **the race clock reads zero while the field is
+  held** — 240 samples over the countdown, all exactly 0 ms, 1 distinct value.
+  It captures the argument to `hud.setLapTime` rather than scraping the
+  formatted text **on purpose**: `formatMs` floors to whole milliseconds, so a
+  cheap frame rounds the bug away and a text-based check would score it fixed.
+  Verified to **fail** against the previous `src/main.js` (240 samples, **49
+  distinct** values, worst **12.2 ms**) even with the render stubbed.
+  Verified: `physics-test` **39/39** incl. no console errors, smoke OK, build
+  clean, and a grid screenshot showing a steady `00:00.000` through the hold.
+
+- **2026-08-04** (accepted → `main`, owner asked for it plus the clock fix
+  below; was branch `claude/epic-franklin-93ylem`)
   — **A car that backed out of the armco drove straight back into it, forever.**
   Top open item from the 2026-08-03 run, which described it as a cosmetic
   rejoin ("it tracks further into the runoff before it turns in"). Extending
@@ -948,7 +983,7 @@ New findings from the 2026-07-31 run (not acted on — one change per run):
 New findings from the 2026-08-03 run (not acted on — one change per run):
 
 - ~~**A recovered car rejoins by driving back out at the wall**~~ (game,
-  medium) — DONE 2026-08-04, pending review (see Changelog). It was worse than
+  medium) — DONE 2026-08-04, accepted → `main` (see Changelog). It was worse than
   this note: with an 8 s window the car hits the armco *again* at 4.38 s and
   loops. The cause was not the lookahead distance but pure pursuit's `sin(α)`
   folding back past 90°, which had a crossed-up driver asking for two thirds
@@ -1015,3 +1050,10 @@ New findings from the 2026-08-04 run (not acted on — one change per run):
   suite on this container, and note that `viewshot.mjs`'s third argument is a
   file **prefix**, not a directory: it will not create the parent, and fails
   with a bare exit code 2 if it does not exist.
+- **Two `performance.now()` readings per frame was a general pattern, not one
+  bug** (harness/game, low — new 2026-08-04): the clock fix threaded the
+  frame's timestamp into the lap timer, but `tick` still re-reads the wall
+  clock in `window.__tick` (fine — once per tick) and mode setup takes its own
+  reading (also fine). Worth a glance if any other subsystem grows a
+  "difference between two stamps" measurement: take the frame's `now`, never a
+  fresh one, or the answer silently includes however long the frame took.

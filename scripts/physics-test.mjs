@@ -299,13 +299,29 @@ const lights = await page.evaluate(() => {
     const n = Math.round(secs * 60);
     for (let i = 0; i < n; i++) window.__tick(1 / 60);
   };
+  // The race clock must read a hard zero while the field is held. It is
+  // displayed as `now - lapStart`, and those used to be two SEPARATE
+  // performance.now() readings taken at opposite ends of the same frame — the
+  // stamp at the top of the tick, the read at the bottom — so the HUD counted
+  // this frame's own physics and render as elapsed race time and the
+  // hundredths place flickered on the grid. Captured at the source rather than
+  // off the formatted text: formatMs floors to whole milliseconds, so a cheap
+  // frame can round the bug away and score it as fixed.
+  const clockMs = [];
+  const realSetLapTime = ctx.hud.setLapTime;
+  ctx.hud.setLapTime = (ms) => { clockMs.push(ms); return realSetLapTime(ms); };
+
   const p0 = at();
   pump(SEQ - 0.2);                       // all five columns lit, not yet green
   const held = {
     lit: ctx.track.startLights.litCount(),
     started: ctx.state.started,
     moveM: +Math.max(...from(p0)).toFixed(3),
+    clockSamples: clockMs.length,
+    clockMaxMs: clockMs.length ? +Math.max(...clockMs).toFixed(4) : null,
+    clockDistinct: new Set(clockMs).size,
   };
+  ctx.hud.setLapTime = realSetLapTime;
   pump(0.4 + 1.2);                       // through the green and 1.2 s of racing
   const ai = ctx.cars.map((c, i) => (c.isPlayer ? 0 : from(p0)[i]));
   ctx.composer.render = realRender;
@@ -323,6 +339,10 @@ ck('the field is held on the grid while the lights are on',
   lights.moveM < 0.10 && lights.started === false,
   `moved ${lights.moveM} m in the first ${lights.seq} s, started=${lights.started}`);
 ck('all five columns are lit before the green', lights.lit === 5, `${lights.lit}/5 lit`);
+ck('the race clock reads zero while the field is held',
+  lights.clockSamples > 100 && lights.clockMaxMs === 0 && lights.clockDistinct === 1,
+  `${lights.clockSamples} samples over the countdown, ${lights.clockDistinct} distinct`
+  + ` value(s), worst ${lights.clockMaxMs} ms`);
 ck('lights out releases the field', lights.startedAfter && lights.litAfter === 0
   && lights.aiMovedM > 1.0,
   `started=${lights.startedAfter}, ${lights.litAfter}/5 lit, AI ran ${lights.aiMovedM} m`);
