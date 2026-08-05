@@ -1189,6 +1189,7 @@ function addStartGantry(scene, startFrame, road) {
       new THREE.BoxGeometry(boxW, rigH, 0.34), dark);
     housing.position.set(0, rigY, rigZ);
     housing.castShadow = true;
+    housing.name = 'startLightPanel';
     group.add(housing);
 
     // Two droppers back up to the truss's lower front chord (y = H − 0.4).
@@ -1201,10 +1202,44 @@ function addStartGantry(scene, startFrame, road) {
       group.add(drop);
     }
 
-    // Lenses sit a hair proud of the housing's front face and are turned to
-    // face −Z (a CircleGeometry faces +Z un-rotated, same trap as the banner).
-    const lensGeo = new THREE.CircleGeometry(0.2, 20);
-    const faceZ = rigZ - 0.34 / 2 - 0.012;
+    // Each lamp is a fitting, not a painted dot. Two things make it one:
+    //
+    //  * a short cowl standing proud of the housing around every lens. A
+    //    gantry lamp carries a visor in life, and it is the only thing on this
+    //    panel with any relief — the flat discs it replaces had no form to
+    //    catch either the sun or GTAO, so an unlit lamp read as a dull red
+    //    sticker on a slab. Inside the cowl an unlit lens now sits in its own
+    //    shade and reads black, which is what an unlit lamp looks like.
+    //  * a domed lens instead of a flat circle, so an unlit lamp shades across
+    //    its face like glass. Emissive ignores the normal, so a LIT lamp is
+    //    the same even red it always was — the sequence's read at race
+    //    distance is deliberately unchanged.
+    //
+    // All ten cowls are ONE merged mesh: thirty extra draw calls for a panel
+    // this size would cost more than the detail is worth. Lenses cannot merge
+    // across columns (one material per column is what drives the sequence),
+    // but a column's two lamps already share a material, so they merge in
+    // pairs and the lamp count drops 10 → 5.
+    const LENS_R = 0.2;
+    const COWL_D = 0.10;                  // how far the visor stands proud
+    const faceZ = rigZ - 0.34 / 2;        // the housing's front face
+    const lensZ = faceZ - 0.004;          // lens rim, just clear of that face
+
+    // Rim at LENS_R with 3 cm of sag → a cap off a sphere of radius
+    // (r² + s²)/2s. Built rim-at-origin facing −Z so each lamp is a translate.
+    const SAG = 0.03;
+    const domeR = (LENS_R * LENS_R + SAG * SAG) / (2 * SAG);
+    const domeTheta = Math.asin(LENS_R / domeR);
+    const lensGeo = new THREE.SphereGeometry(
+      domeR, 18, 5, 0, Math.PI * 2, 0, domeTheta);
+    lensGeo.translate(0, -domeR * Math.cos(domeTheta), 0);
+    lensGeo.rotateX(-Math.PI / 2);        // +Y → −Z, the face oncoming cars see
+
+    const cowlMat = new THREE.MeshStandardMaterial({
+      color: 0x121417, roughness: 0.85, metalness: 0.15,
+      side: THREE.DoubleSide,             // one-wall visor: the inside shades too
+    });
+    const cowlGeos = [];
     for (let i = 0; i < COLS; i++) {
       // One material per column, shared by that column's two lamps, so the
       // sequence is a single emissiveIntensity write per column.
@@ -1213,17 +1248,40 @@ function addStartGantry(scene, startFrame, road) {
         roughness: 0.32, metalness: 0.0,
       });
       lampMats.push(mat);
+      // Column 0 is the DRIVER'S LEFT, so the sequence reads left-to-right
+      // from the grid. The camera looks down +Z at the rig's −Z face, which
+      // mirrors local x: laying columns out in +x order lights them
+      // right-to-left on screen, which is backwards.
+      const x = ((COLS - 1) / 2 - i) * COL_STEP;
+      const lenses = [];
       for (const oy of [0.33, -0.33]) {
-        const lamp = new THREE.Mesh(lensGeo, mat);
-        // Column 0 is the DRIVER'S LEFT, so the sequence reads left-to-right
-        // from the grid. The camera looks down +Z at the rig's −Z face, which
-        // mirrors local x: laying columns out in +x order lights them
-        // right-to-left on screen, which is backwards.
-        lamp.position.set(((COLS - 1) / 2 - i) * COL_STEP, rigY + oy, faceZ);
-        lamp.rotation.y = Math.PI;
-        group.add(lamp);
+        const y = rigY + oy;
+        const lens = lensGeo.clone();
+        lens.translate(x, y, lensZ);
+        lenses.push(lens);
+        // A CylinderGeometry runs along +Y; rotating +90° about X puts its
+        // TOP end at +Z, so the narrow end is the one against the housing and
+        // the flare opens toward the driver.
+        const cowl = new THREE.CylinderGeometry(
+          LENS_R + 0.02, LENS_R + 0.07, COWL_D, 20, 1, true);
+        cowl.rotateX(Math.PI / 2);
+        cowl.translate(x, y, faceZ - COWL_D / 2);
+        cowlGeos.push(cowl);
       }
+      const lampMesh = new THREE.Mesh(mergeGeometries(lenses), mat);
+      // Named so `physics-test` can measure how far each lens sits back inside
+      // its cowl. Both geometries are pre-translated into this group's frame
+      // with the meshes left at the origin, so their bounding boxes are
+      // directly comparable along z — which is the axis the depth lives on.
+      lampMesh.name = 'startLampLens';
+      group.add(lampMesh);
     }
+    // No castShadow: the housing already throws the panel's silhouette and
+    // these sit inside it from any sun this circuit sees.
+    const cowlMesh = new THREE.Mesh(mergeGeometries(cowlGeos), cowlMat);
+    cowlMesh.name = 'startLampCowls';
+    group.add(cowlMesh);
+    lensGeo.dispose();
   }
 
   group.position.copy(center);
