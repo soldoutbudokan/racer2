@@ -64,11 +64,19 @@ CHROME_EXE=$CHROME_EXE node scripts/physics-test.mjs
 node scripts/smoke-car.mjs
 # Production build must be clean:
 npm run build
+
+# Measure a before/after pair instead of squinting at it:
+node scripts/pngdiff.mjs before.png after.png [diff.png] [--box x0,y0,x1,y1]
 ```
 
 The visuals render through SwiftShader here, which is representative of the
 deployed build but not pixel-identical to a real GPU — judge gross issues
 (blow-outs, black voids, z-fighting, floating geometry), not subtle tone.
+
+**And do not compare two shooter PNGs whole-frame.** The scenery seed is
+unpinned, so two runs of identical code differ on ~44 % of the frame — the
+noise floor is the same size as any real change. Use `pngdiff --box` on the
+region you actually changed. See the 2026-08-05 Backlog entry.
 
 ## Workflow each run
 
@@ -82,6 +90,66 @@ deployed build but not pixel-identical to a real GPU — judge gross issues
 7. Append what you did to the Changelog, and add/clear Backlog items.
 
 ## Changelog (accepted to `main`)
+
+- **2026-08-05** (preview, pending review; branch `claude/epic-franklin-76ypbv`)
+  — **The start lights were ten painted dots on a slab.** Top open *environment*
+  item from the 2026-07-30 run, and the first non-driver-logic change in five
+  runs (the rotation was overdue — 07-31, 08-03, 08-04 and 08-04b were all AI
+  or HUD). The lamps were flat `CircleGeometry` discs sitting 12 mm proud of
+  the housing face: nothing on the panel had any relief, so neither the sun nor
+  GTAO had anything to shade, and an unlit lamp read as a dull maroon sticker
+  rather than a dark lamp. The player stares at this rig for the whole 4.2 s
+  countdown of every single race, which is what made it the pick.
+  Fix, in `addStartGantry` (`src/track.js`), two parts:
+  (1) a **cowl** around every lens — a short flared visor standing 0.10 m proud
+  of the housing, which is what a gantry lamp carries in life and what gives
+  the panel its relief. An unlit lens now sits in its own shade and reads
+  black, which is what an unlit lamp looks like;
+  (2) a **domed lens** (rim 0.20 m, 3 cm of sag, cut from a sphere of radius
+  (r² + s²)/2s) instead of a flat circle, so an unlit lamp shades across its
+  own face like glass.
+  **The lit read at race distance is deliberately unchanged** — emissive
+  ignores the surface normal, so a lit lamp is the same even red it always was.
+  Confirmed on the `pole` shots: three-lit still reads as three-lit, and the
+  two unlit columns are now *easier* to count because they went from dull
+  maroon to genuinely dark.
+  Cost, measured exactly rather than estimated (the gantry has no randomness,
+  so this is a clean before/after): lamp geometry **10 meshes / 200 tris →
+  6 meshes / 2020 tris**, i.e. **−4 draw calls** and +1820 triangles on scenes
+  that run 191–429 k. The saving comes from merging: all ten cowls are one
+  mesh, and a column's two lamps already shared a material so they merge in
+  pairs. One material per column is untouched, so `startLights.set(n)` is still
+  a single `emissiveIntensity` write per column.
+  Two new `physics-test` gates. Every existing start-light gate is about light
+  *state* — none of them can tell a lamp from a decal, which is how flat discs
+  survived a full run's verification. The new ones measure the geometry, in the
+  gantry group's frame where −z is the face oncoming cars see: **the start
+  lamps are lenses in cowls, not discs on a panel** (5 lens meshes, lens sag
+  **0.030 m**, lens recessed **0.066 m** behind the cowl mouth) and **the lamp
+  cowls stay on the light panel** (worst edge clearance **0.080 m** — this one
+  catches a future `COL_STEP` or radius change that would hang a cowl off the
+  edge). Three meshes are `name`d for this (`startLightPanel`, `startLampLens`,
+  `startLampCowls`); no new product API.
+  **Both controls run.** Against the pre-change `src/track.js` the gate fails
+  (`columns: 0`) — but that only proves the names are new, so a second control
+  kept the new code path and names and flattened the geometry back to the old
+  look (`SAG` 0.0004, `COWL_D` 0.001): the gate **still fails**, with the lens
+  measuring `recessM` **−0.0034**, i.e. proud of the cowl, exactly the "disc on
+  a panel" arrangement it is there to reject. The numbers are load-bearing, not
+  the name lookup. The second gate correctly still passes in that control — it
+  is an independent constraint.
+  New tool: **`scripts/pngdiff.mjs`** — measures a before/after screenshot pair
+  (changed-pixel %, bbox of what moved, an 8× amplified diff image, and
+  `--box x0,y0,x1,y1` for mean RGB/luma of a region in *both* images). Built
+  because this run needed to prove two things the eye cannot: see the two new
+  Backlog findings below, both of which are measurements this tool produced.
+  Verified: `physics-test` **41/41** incl. no console errors, smoke OK (no NaN,
+  outward winding, triangle budget unchanged at 24880/24228/21778), build
+  clean, `startlights` before/after on all seven stages × both cameras on `gp`
+  **and** on `downtown` (different lighting entirely — the city rig reads
+  correctly too), and `viewshot` before/after on all five angles at 6 s plus a
+  grid set at 0 s. On the rig shot the housing between the lamps measures
+  luma 61.00 → 61.04, so nothing on the panel moved but the lamps.
 
 - **2026-08-04b** (accepted → `main`, owner-requested during review of the
   above; same branch `claude/epic-franklin-93ylem`)
@@ -937,7 +1005,13 @@ New findings from the 2026-07-30 run (not acted on — one change per run):
   would close it. Note this needs more than a check: the field is *physically*
   held by `GRID_HOLD`, so nobody can currently jump the start at all — the
   player would have to be released and then penalised.
-- **The start lights have no bezel or lens depth** (env, low — new 2026-07-30):
+- ~~**The start lights have no bezel or lens depth**~~ (env, low — new
+  2026-07-30) — DONE 2026-08-05 (see Changelog): a flared cowl per lamp with
+  the lens domed and set 0.066 m back inside it, gated by two new
+  `physics-test` checks that measure the geometry rather than the light state.
+  The note's "cheap: 10 short cylinders" was right, and merging them made the
+  panel four draw calls *cheaper* than the flat discs it replaced.
+  Original note:
   the lamps are flat `CircleGeometry` discs sitting 12 mm proud of the housing
   face. They read correctly at race distance and in the telephoto shot, but
   they are painted dots, not lamps — a shallow recessed cowl per lamp would
@@ -1057,3 +1131,49 @@ New findings from the 2026-08-04 run (not acted on — one change per run):
   reading (also fine). Worth a glance if any other subsystem grows a
   "difference between two stamps" measurement: take the frame's `now`, never a
   fresh one, or the answer silently includes however long the frame took.
+
+New findings from the 2026-08-05 run (not acted on — one change per run):
+
+- **PIN THE SCENERY SEED** (harness, **high** — measured 2026-08-05). This has
+  been carried as a soft caveat since 2026-07-27 ("the trees move between the
+  two sets, read the pairs with care"). It is much worse than a caveat.
+  Measured with the new `pngdiff.mjs`: two `startlights` runs of **byte-identical
+  code** differ on **44.7 %** of the rig frame and **42.6 %** of the pole frame.
+  The genuine before/after pair for this run's change differs on 45.3 % and
+  43.4 % — i.e. **the noise floor is the same size as the signal**, and a
+  whole-frame comparison of any two shooter runs currently carries no
+  information at all. Every "verified: before/after viewshots on all five
+  angles" line in this Changelog is an eyeball comparison against a background
+  that re-randomised underneath it. Until the seed is pinned, judge a visual
+  change only inside a `--box` on the thing that changed (the housing between
+  the lamps measured luma 61.00 → 61.04 here, which is what let this run claim
+  nothing else on the panel moved). Pinning it is probably a one-line seeded
+  PRNG threaded through `src/scenery/*`, and it would make every future run's
+  verification mean something. This is the highest-leverage open item in the
+  file.
+- **A car's shadow on the asphalt measures 21 % and is still invisible**
+  (env/car, medium — new 2026-08-05). Chased because the `high` and `front34`
+  viewshots look like the cars are not casting at all while every armco post
+  and tree beside them throws a 6 m golden-hour shadow across the grass. They
+  *are* casting: an isolation run with the fake contact blob hidden and the
+  cars' `castShadow` toggled changes **2.57 %** of the frame, and the shadowed
+  asphalt measures luma **29.8 → 23.6**, a 21 % darkening in the right place
+  and the right shape (the amplified diff shows a clean car-shaped shadow
+  stretching off to the side). It simply does not read, because asphalt is dark
+  enough that removing a sun which strikes it at 11° costs almost nothing a
+  viewer can see, while the same shadow on bright grass is unmistakable. So the
+  net effect is that every car in the game carries a soft blob directly beneath
+  it — a noon shadow — under a golden-hour sun. **Do not chase this by eye
+  under SwiftShader** (the harness note at the top of this file is explicit
+  that tone is not representative here); it needs either a real-GPU check or a
+  deliberate decision about the sun/ambient balance on the road material. Worth
+  knowing before touching it: `road.receiveShadow` is set and works, the sun's
+  90 m shadow box follows the player, and all five car meshes that should cast,
+  do. Nothing is broken — the question is only whether the balance is right.
+- **`castShadow` is off on most of the car** (car, low — new 2026-08-05):
+  of a GT's 20 meshes only 5 cast (11810 of 15072 triangles). The hull and one
+  merged decoration batch cast; glass, lights, trim, the wing and the wheels do
+  not. That is a defensible budget choice, but it means the shadow silhouette
+  is missing the rear wing entirely — the most distinctive part of the
+  car's outline. Cheap to reconsider if the shadow finding above ever gets
+  acted on; pointless before then, since nothing reads on the road anyway.

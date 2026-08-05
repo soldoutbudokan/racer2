@@ -347,6 +347,62 @@ ck('lights out releases the field', lights.startedAfter && lights.litAfter === 0
   && lights.aiMovedM > 1.0,
   `started=${lights.startedAfter}, ${lights.litAfter}/5 lit, AI ran ${lights.aiMovedM} m`);
 
+// ---------- The lamps are fittings, not painted dots ----------
+// The gates above are all about light STATE; none of them can tell a lamp from
+// a decal, and for a while the rig's lamps were literally flat CircleGeometry
+// discs on the panel face. Measure the two things that make one a fitting: the
+// lens has depth across its own face, and it sits back inside a cowl. Both are
+// read off the geometry, in the gantry group's frame, where +z is into the
+// panel and −z is the face oncoming cars see. (See ROUTINE.md, 2026-08-05.)
+const lamps = await page.evaluate(() => {
+  const lens = [];
+  let cowls = null, panel = null;
+  window.__ctx.scene.traverse((o) => {
+    if (o.name === 'startLampLens') lens.push(o);
+    if (o.name === 'startLampCowls') cowls = o;
+    if (o.name === 'startLightPanel') panel = o;
+  });
+  if (!lens.length || !cowls || !panel) {
+    return { columns: lens.length, cowls: !!cowls, panel: !!panel };
+  }
+  const bb = (m) => { m.geometry.computeBoundingBox(); return m.geometry.boundingBox; };
+  const cb = bb(cowls);
+  const lb = lens.map(bb);
+  // The panel's box geometry is centred on its own origin; the mesh carries
+  // the placement. The lens and cowl geometries are pre-translated into the
+  // gantry group's frame with their meshes left at the origin, so compare in
+  // that frame.
+  const pb = bb(panel);
+  const halfW = (pb.max.x - pb.min.x) / 2;
+  const halfH = (pb.max.y - pb.min.y) / 2;
+  return {
+    columns: lens.length,
+    cowls: true,
+    panel: true,
+    // Sag across the lens face: a flat disc measures 0.
+    lensDepthM: +Math.min(...lb.map((b) => b.max.z - b.min.z)).toFixed(4),
+    // How far the proudest point of any lens sits behind the cowl mouth.
+    recessM: +(Math.min(...lb.map((b) => b.min.z)) - cb.min.z).toFixed(4),
+    // The whole assembly has to stay on the panel it is bolted to: positive
+    // means a cowl hangs off an edge.
+    overhangM: +Math.max(
+      Math.abs(cb.max.x) - halfW,
+      Math.abs(cb.min.x) - halfW,
+      Math.abs(cb.max.y - panel.position.y) - halfH,
+      Math.abs(cb.min.y - panel.position.y) - halfH,
+    ).toFixed(4),
+  };
+});
+console.log('start-lamps:', JSON.stringify(lamps));
+ck('the start lamps are lenses in cowls, not discs on a panel',
+  lamps.columns === 5 && lamps.cowls === true
+  && lamps.lensDepthM > 0.02 && lamps.recessM > 0.05,
+  `${lamps.columns} lens meshes, cowls=${lamps.cowls}, lens sag ${lamps.lensDepthM} m,`
+  + ` recessed ${lamps.recessM} m behind the cowl mouth`);
+ck('the lamp cowls stay on the light panel',
+  lamps.overhangM !== undefined && lamps.overhangM < 0,
+  `worst edge clearance ${(-lamps.overhangM).toFixed(4)} m`);
+
 // ---------- The launch itself ----------
 // Two things the previous section cannot see, because it measures unsigned
 // distance from the grid slot:
