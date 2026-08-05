@@ -91,7 +91,8 @@ region you actually changed. See the 2026-08-05 Backlog entry.
 
 ## Changelog (accepted to `main`)
 
-- **2026-08-05** (preview, pending review; branch `claude/epic-franklin-76ypbv`)
+- **2026-08-05** (accepted → `main`, owner replied "go"; was branch
+  `claude/epic-franklin-76ypbv`)
   — **The start lights were ten painted dots on a slab.** Top open *environment*
   item from the 2026-07-30 run, and the first non-driver-logic change in five
   runs (the rotation was overdue — 07-31, 08-03, 08-04 and 08-04b were all AI
