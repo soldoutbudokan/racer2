@@ -67,6 +67,16 @@ await page.evaluate((secs) => {
   }
   for (const c of ctx.cars) c.car.update();
   if (ctx.updateShadowTarget) ctx.updateShadowTarget(ctx.cars[0].car.body.position);
+
+  // The cinematic pass adds film grain whose phase is `uTime`, which the main
+  // loop drives from the wall clock. It is a deliberate per-frame effect, but
+  // it means two shooter runs of identical code differ over the WHOLE frame —
+  // which is not what a before/after diff is trying to measure. The loop is
+  // frozen from here on (ctx.mode is null, so tick() no longer runs), so
+  // pinning the phase once holds for every view below.
+  ctx.composer.passes.forEach((p) => {
+    if (p.uniforms && p.uniforms.uTime) p.uniforms.uTime.value = 0;
+  });
 }, driveSecs);
 
 // Views: [label, camOffsetBack, height, lateral, fov, lookAheadM]

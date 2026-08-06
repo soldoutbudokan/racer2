@@ -41,6 +41,7 @@ import {
   smoothstep, fractalNoise, hashFn, makeNoiseTexture, makeTileable,
   hideFromOverridePasses,
 } from './noise.js';
+import { rand } from './rng.js';
 
 // track.js lifts the road mesh by this much; kerbs and skid marks are built in
 // absolute world y, so they add it back to stay welded to the asphalt. If the
@@ -159,7 +160,7 @@ function lerpAt(arr, loc) {
 function authorSurfaceFeatures(total, width) {
   const hw = width / 2;
   const breaks = [];
-  const R = (a, b) => a + Math.random() * (b - a);
+  const R = (a, b) => a + rand() * (b - a);
 
   // --- Transverse construction joints -------------------------------------
   // Cold joints where a paving shift ended. A few run the full width, most
@@ -825,11 +826,11 @@ function makeAggregateMaps(size = 512) {
   }
   const chips = Math.round(size * size / 95);
   for (let c = 0; c < chips; c++) {
-    const cx = Math.random() * size, cy = Math.random() * size;
-    const r = 1.6 + Math.pow(Math.random(), 2.4) * 8;
-    const ang = Math.random() * Math.PI;
-    const ar = 0.5 + Math.random() * 0.7;
-    const hgt = 0.30 + Math.random() * 0.70;
+    const cx = rand() * size, cy = rand() * size;
+    const r = 1.6 + Math.pow(rand(), 2.4) * 8;
+    const ang = rand() * Math.PI;
+    const ar = 0.5 + rand() * 0.7;
+    const hgt = 0.30 + rand() * 0.70;
     const ca = Math.cos(ang), sa = Math.sin(ang);
     const R = Math.ceil(r * 1.35);
     for (let dy = -R; dy <= R; dy++) {
@@ -993,17 +994,17 @@ export function makeKerbMaterial() {
 
       // Paint chipped off the leading edge of the rib, concrete showing.
       for (let i = 0; i < 60; i++) {
-        const px = x0 + (TOP[0] + Math.random() * (TOP[1] - TOP[0])) * HALF;
-        const py = y0 + Math.pow(Math.random(), 1.8) * HALF;
-        ctx.fillStyle = `rgba(150,146,138,${0.15 + Math.random() * 0.4})`;
-        ctx.fillRect(px, py, 2 + Math.random() * 9, 1 + Math.random() * 4);
+        const px = x0 + (TOP[0] + rand() * (TOP[1] - TOP[0])) * HALF;
+        const py = y0 + Math.pow(rand(), 1.8) * HALF;
+        ctx.fillStyle = `rgba(150,146,138,${0.15 + rand() * 0.4})`;
+        ctx.fillRect(px, py, 2 + rand() * 9, 1 + rand() * 4);
       }
       // Black rubber scuffed across the top by cars riding the kerb.
       for (let i = 0; i < 26; i++) {
-        const py = y0 + Math.random() * HALF;
-        ctx.fillStyle = `rgba(22,20,22,${0.06 + Math.random() * 0.16})`;
-        ctx.fillRect(x0 + TOP[0] * HALF, py, (TOP[1] - TOP[0]) * HALF * (0.3 + Math.random() * 0.7),
-                     1 + Math.random() * 3);
+        const py = y0 + rand() * HALF;
+        ctx.fillStyle = `rgba(22,20,22,${0.06 + rand() * 0.16})`;
+        ctx.fillRect(x0 + TOP[0] * HALF, py, (TOP[1] - TOP[0]) * HALF * (0.3 + rand() * 0.7),
+                     1 + rand() * 3);
       }
       // Dirt piling up in the angle between kerb and verge.
       const grad = ctx.createLinearGradient(x0 + FOOT[0] * HALF, 0, x0 + HALF, 0);
@@ -1013,10 +1014,10 @@ export function makeKerbMaterial() {
       ctx.fillRect(x0 + FOOT[0] * HALF, y0, (1 - FOOT[0]) * HALF, HALF);
       // Concrete pitting everywhere.
       for (let i = 0; i < 220; i++) {
-        const px = x0 + Math.random() * HALF;
-        const py = y0 + Math.random() * HALF;
-        ctx.fillStyle = `rgba(0,0,0,${Math.random() * 0.09})`;
-        ctx.fillRect(px, py, 1 + Math.random() * 2, 1 + Math.random() * 2);
+        const px = x0 + rand() * HALF;
+        const py = y0 + rand() * HALF;
+        ctx.fillStyle = `rgba(0,0,0,${rand() * 0.09})`;
+        ctx.fillRect(px, py, 1 + rand() * 2, 1 + rand() * 2);
       }
     }
   }

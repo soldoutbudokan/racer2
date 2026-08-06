@@ -7,6 +7,35 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
+import { makeRandom } from './scenery/rng.js';
+
+/**
+ * The 64x64 RGBA noise GTAO's poisson-denoise pass samples, built exactly the
+ * way `GTAOPass.generateNoise` builds it — but from a seeded generator rather
+ * than `Math.random`, so the pattern is the same on every load. Kept in step
+ * with three's version: four simplex lookups per texel, offset by `size` on
+ * each axis to decorrelate the channels.
+ */
+function makeDenoiseNoise(size = 64) {
+  const simplex = new SimplexNoise({ random: makeRandom('gtao denoise') });
+  const data = new Uint8Array(size * size * 4);
+  for (let i = 0; i < size; i++) {
+    for (let j = 0; j < size; j++) {
+      const o = (i * size + j) * 4;
+      data[o] = (simplex.noise(i, j) * 0.5 + 0.5) * 255;
+      data[o + 1] = (simplex.noise(i + size, j) * 0.5 + 0.5) * 255;
+      data[o + 2] = (simplex.noise(i, j + size) * 0.5 + 0.5) * 255;
+      data[o + 3] = (simplex.noise(i + size, j + size) * 0.5 + 0.5) * 255;
+    }
+  }
+  const tex = new THREE.DataTexture(
+    data, size, size, THREE.RGBAFormat, THREE.UnsignedByteType);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
 
 /**
  * Build a high-fidelity scene: physically-based renderer, ACES tone mapping,
@@ -148,6 +177,18 @@ export function createScene(canvas) {
     scale: 1.0,
     samples: 16,
   });
+  // GTAO's poisson-denoise pass samples a 64x64 noise texture that the pass
+  // builds in its own constructor from `new SimplexNoise()` — and SimplexNoise
+  // defaults to `Math.random` for its permutation table. So the AO denoise
+  // pattern was re-rolled on every page load, putting a faint but full-frame
+  // speckle over the entire render: two screenshots of identical code differed
+  // on more than half the frame because of this alone. Rebuild the texture
+  // from a seeded stream so a given frame renders the same way twice. The
+  // pass takes it from `pdMaterial.uniforms.tNoise`, wired in its constructor,
+  // so both references have to be replaced.
+  gtao.pdNoiseTexture.dispose();
+  gtao.pdNoiseTexture = makeDenoiseNoise();
+  gtao.pdMaterial.uniforms.tNoise.value = gtao.pdNoiseTexture;
   composer.addPass(gtao);
 
   const bloom = new UnrealBloomPass(

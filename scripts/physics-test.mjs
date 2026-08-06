@@ -826,6 +826,69 @@ console.log('racing-line:', JSON.stringify(rl));
 ck('ideal-speed profile is sane', rl.minKmh > 40 && rl.minKmh < 140 && rl.maxKmh > 180 && rl.maxKmh <= 260,
   `corners down to ${rl.minKmh} km/h, straights up to ${rl.maxKmh} km/h`);
 
+// ---------- Scenery determinism ----------
+// The scenery used to scatter from Math.random(), so a circuit was rebuilt
+// differently every time it was loaded and two screenshots of identical code
+// differed over most of the frame — which made before/after visual review
+// worthless (ROUTINE.md, 2026-08-06). It now draws from seeded per-builder
+// streams (src/scenery/rng.js). This gate builds the same circuit twice
+// through the production path and compares every vertex of every mesh, so a
+// stray Math.random() anywhere in track.js or scenery/* fails the suite
+// instead of quietly re-randomising the world.
+//
+// Fingerprint: a 32-bit FNV-1a over each mesh's world transform, its material
+// colour, and its entire position attribute. Rounded to 0.1 mm first —
+// float noise is not the thing under test, a re-rolled scatter is.
+const determinism = await page.evaluate(() => {
+  function fingerprint(group) {
+    let h = 0x811c9dc5, meshes = 0, verts = 0;
+    const mix = (v) => { h ^= v | 0; h = Math.imul(h, 0x01000193); };
+    group.updateMatrixWorld(true);
+    const list = [];
+    group.traverse((o) => { if (o.isMesh) list.push(o); });
+    for (const m of list) {
+      meshes++;
+      for (const e of m.matrixWorld.elements) mix(Math.round(e * 1e4));
+      if (m.material && m.material.color) mix(m.material.color.getHex());
+      mix(m.count || 1);                       // instance count, if instanced
+      const pos = m.geometry && m.geometry.attributes.position;
+      if (!pos) continue;
+      verts += pos.count;
+      const a = pos.array;
+      for (let i = 0; i < a.length; i++) mix(Math.round(a[i] * 1e4));
+    }
+    return { hash: (h >>> 0).toString(16), meshes, verts };
+  }
+  const build = (id) => {
+    window.__rebuildTrackById(id);
+    return fingerprint(window.__ctx.track.group);
+  };
+  // Two circuits, each built twice, interleaved — so a pass cannot come from
+  // the builder simply caching the first result and handing it back.
+  const gp1 = build('gp');
+  const other = window.__trackIds.find((t) => t !== 'gp');
+  const dt1 = build(other);
+  const gp2 = build('gp');
+  const dt2 = build(other);
+  return { gp1, gp2, dt1, dt2, other };
+});
+console.log('determinism:', JSON.stringify(determinism));
+ck('rebuilding a circuit reproduces it vertex for vertex',
+  determinism.gp1.hash === determinism.gp2.hash
+  && determinism.dt1.hash === determinism.dt2.hash
+  && determinism.gp1.meshes > 50 && determinism.gp1.verts > 100000,
+  `gp ${determinism.gp1.hash}/${determinism.gp2.hash} (${determinism.gp1.meshes} meshes,`
+  + ` ${determinism.gp1.verts} verts), ${determinism.other} ${determinism.dt1.hash}/${determinism.dt2.hash}`);
+// Guards the gate above: if the fingerprint were degenerate (hashing nothing,
+// or the same constant for any input) the equality check would pass for the
+// wrong reason. Two different circuits must not collide.
+ck('the scenery fingerprint distinguishes two circuits',
+  determinism.gp1.hash !== determinism.dt1.hash,
+  `gp=${determinism.gp1.hash} ${determinism.other}=${determinism.dt1.hash}`);
+
+// Put the default circuit back — later checks assume `gp`.
+await page.evaluate(() => window.__rebuildTrackById('gp'));
+
 // Quick race keeps 3 laps; split-screen hides the aid.
 await startMode('quick-race');
 const qrLaps = await page.evaluate(() => window.__ctx.state.totalLaps);

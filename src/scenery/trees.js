@@ -62,6 +62,7 @@
  */
 import * as THREE from 'three';
 import { hashFn, hideFromOverridePasses } from './noise.js';
+import { rand } from './rng.js';
 
 // Distance from the centreline at which each tier takes over.
 const NEAR_D = 90;
@@ -70,8 +71,8 @@ const MID_D = 250;
 // overflow falls back to cards. It only binds on the densest circuits (parco).
 const NEAR_CAP = 300;
 
-const rnd = (a, b) => a + Math.random() * (b - a);
-const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+const rnd = (a, b) => a + rand() * (b - a);
+const pick = (arr) => arr[(rand() * arr.length) | 0];
 
 // Species are NOT equally likely. Uniform picking gave one stand in five a
 // dominant dead snag (a whole copse of dead wood) and made the rare shapes as
@@ -79,7 +80,7 @@ const pick = (arr) => arr[(Math.random() * arr.length) | 0];
 function weightedPick(weights) {
   let total = 0;
   for (const w of weights) total += w;
-  let r = Math.random() * total;
+  let r = rand() * total;
   for (let i = 0; i < weights.length; i++) {
     r -= weights[i];
     if (r <= 0) return i;
@@ -375,14 +376,14 @@ function paintCell(ctx, X, Y, S, o) {
   // 2. Leaf dabs, painted dark-to-light so the lit tops land last.
   const dabs = [];
   for (let i = 0; i < o.dabs; i++) {
-    const l = lobes[(Math.random() * lobes.length) | 0];
-    const a = Math.random() * Math.PI * 2;
-    const rad = Math.pow(Math.random(), 0.55) * l.r * 1.28;
+    const l = lobes[(rand() * lobes.length) | 0];
+    const a = rand() * Math.PI * 2;
+    const rad = Math.pow(rand(), 0.55) * l.r * 1.28;
     dabs.push({
       x: Math.min(0.965, Math.max(0.035, l.x + Math.cos(a) * rad)),
       y: Math.min(0.975, Math.max(0.025, l.y + Math.sin(a) * rad * (o.shape === 'flat' || o.shape === 'skirt' ? 0.55 : 0.92))),
-      r: (o.dabR[0] + Math.random() * (o.dabR[1] - o.dabR[0])),
-      a: Math.random() * Math.PI,
+      r: (o.dabR[0] + rand() * (o.dabR[1] - o.dabR[0])),
+      a: rand() * Math.PI,
       asp: o.needle ? 0.30 : rnd(0.55, 0.95),
     });
   }
@@ -404,9 +405,9 @@ function paintCell(ctx, X, Y, S, o) {
     ctx.save();
     ctx.globalCompositeOperation = 'destination-out';
     for (let i = 0; i < o.holes; i++) {
-      const l = lobes[(Math.random() * lobes.length) | 0];
-      const a = Math.random() * Math.PI * 2;
-      const rad = Math.random() * l.r * 0.9;
+      const l = lobes[(rand() * lobes.length) | 0];
+      const a = rand() * Math.PI * 2;
+      const rad = rand() * l.r * 0.9;
       ctx.beginPath();
       ctx.arc(X + (l.x + Math.cos(a) * rad) * S,
               Y + (l.y + Math.sin(a) * rad) * S,
@@ -519,7 +520,7 @@ function limb(buf, from, azim, elev, len, r0, colorAt) {
   for (let i = 1; i <= segs; i++) {
     p.addScaledVector(dir, len / segs);
     // Sag: each segment loses some rise, so limbs curve instead of spoking.
-    dir.y -= 0.16 + Math.random() * 0.13;
+    dir.y -= 0.16 + rand() * 0.13;
     dir.normalize();
     pts.push(p.clone());
     radii.push(r0 * (1 - 0.62 * (i / segs)));
@@ -774,11 +775,11 @@ function makeStands(count, extent, weights) {
   const stands = [];
   const n = Math.max(7, Math.round(count / 26));
   for (let i = 0; i < n; i++) {
-    const rot = Math.random() * Math.PI;
+    const rot = rand() * Math.PI;
     const rx = rnd(15, 58);
     const dom = weightedPick(weights);
     let sec = weightedPick(weights);
-    if (sec === dom) sec = (dom + 1 + ((Math.random() * (nSpecies - 1)) | 0)) % nSpecies;
+    if (sec === dom) sec = (dom + 1 + ((rand() * (nSpecies - 1)) | 0)) % nSpecies;
     stands.push({
       x: rnd(-extent, extent), z: rnd(-extent, extent),
       rx, rz: rx * rnd(0.42, 1.0), cos: Math.cos(rot), sin: Math.sin(rot),
@@ -904,11 +905,11 @@ export function scatterTrees(scene, frames, opts = {}) {
   const maxTries = count * 8;
   for (let i = 0; i < maxTries && sites.length < count; i++) {
     let x, z, st = null;
-    if (Math.random() < 0.84) {
-      st = stands[(Math.random() * stands.length) | 0];
+    if (rand() < 0.84) {
+      st = stands[(rand() * stands.length) | 0];
       // Gaussian-ish radius so the stand has a dense heart and a ragged edge.
-      const a = Math.random() * Math.PI * 2;
-      const rad = (Math.random() + Math.random() + Math.random()) / 3;
+      const a = rand() * Math.PI * 2;
+      const rad = (rand() + rand() + rand()) / 3;
       const lx = Math.cos(a) * rad * st.rx, lz = Math.sin(a) * rad * st.rz;
       x = st.x + lx * st.cos - lz * st.sin;
       z = st.z + lx * st.sin + lz * st.cos;
@@ -922,7 +923,7 @@ export function scatterTrees(scene, frames, opts = {}) {
     if (d < nearMin) continue;
     // Thin with distance so the wood hugs the ribbon and hands off to the
     // horizon rather than tiling the whole square evenly.
-    if (d > 120 && Math.random() < ((d - 120) / Math.max(1, extent - 120)) * 0.62) continue;
+    if (d > 120 && rand() < ((d - 120) / Math.max(1, extent - 120)) * 0.62) continue;
 
     let y = 0;
     if (terrain) {
@@ -933,7 +934,7 @@ export function scatterTrees(scene, frames, opts = {}) {
     // Two-thirds of a stand is its dominant species and most of the rest its
     // secondary, so a copse reads as one wood rather than an arboretum.
     const spIdx = st
-      ? (Math.random() < 0.66 ? st.dom : (Math.random() < 0.82 ? st.sec : weightedPick(weights)))
+      ? (rand() < 0.66 ? st.dom : (rand() < 0.82 ? st.sec : weightedPick(weights)))
       : weightedPick(weights);
     const tint = st ? st.tint : standTint();
     sites.push({ x, y, z, d, sp: spIdx, tint });
@@ -974,8 +975,8 @@ export function scatterTrees(scene, frames, opts = {}) {
       // tree at a different size.
       const g = rnd(0.74, 1.32);
       const lean = rnd(0.02, 0.075);
-      eul.set(Math.sin(Math.random() * 6.28) * lean, Math.random() * Math.PI * 2,
-              Math.cos(Math.random() * 6.28) * lean, 'YXZ');
+      eul.set(Math.sin(rand() * 6.28) * lean, rand() * Math.PI * 2,
+              Math.cos(rand() * 6.28) * lean, 'YXZ');
       quat.setFromEuler(eul);
       scl.set(g * rnd(0.84, 1.18), g * rnd(0.88, 1.20), g * rnd(0.84, 1.18));
       pos.set(s.x, s.y - 0.18, s.z);
@@ -1030,8 +1031,8 @@ export function scatterTrees(scene, frames, opts = {}) {
       // matrix is unaffected by a single-axis mirror on an axis-aligned card
       // pair, and both windings already exist, so nothing about the shading or
       // the culling changes.
-      const mir = Math.random() < 0.5 ? -1 : 1;
-      quat.setFromEuler(eul.set(0, Math.random() * Math.PI * 2, 0, 'YXZ'));
+      const mir = rand() < 0.5 ? -1 : 1;
+      quat.setFromEuler(eul.set(0, rand() * Math.PI * 2, 0, 'YXZ'));
       scl.set(mir * g * wf * rnd(0.86, 1.16), g * hf * rnd(0.88, 1.16), g * wf * rnd(0.86, 1.16));
       pos.set(s.x, s.y - 0.1, s.z);
       m4.compose(pos, quat, scl);
@@ -1066,8 +1067,8 @@ export function scatterTrees(scene, frames, opts = {}) {
       const sp = species[s.sp];
       const g = rnd(0.62, 1.20);
       const wf = sp.wf, hf = sp.hf;
-      const mir = Math.random() < 0.5 ? -1 : 1;
-      quat.setFromEuler(eul.set(0, Math.random() * Math.PI * 2, 0, 'YXZ'));
+      const mir = rand() < 0.5 ? -1 : 1;
+      quat.setFromEuler(eul.set(0, rand() * Math.PI * 2, 0, 'YXZ'));
       scl.set(mir * g * wf * rnd(0.85, 1.18), g * hf * rnd(0.85, 1.20), g * wf * rnd(0.85, 1.18));
       pos.set(s.x, s.y - 0.2, s.z);
       m4.compose(pos, quat, scl);
