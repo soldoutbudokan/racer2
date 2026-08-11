@@ -1301,3 +1301,30 @@ New findings from the 2026-08-06 run (not acted on — one change per run):
   displacement, which predates `rng.js` and does not go through it. Harmless —
   both are deterministic per circuit — but there is no reason for two. Fold
   `strSeed` into `rng.js` next time either is touched.
+
+New findings from the 2026-08-11 run (accept-and-merge only — no product change):
+
+- **The routine skipped four consecutive days waiting on one review**
+  (process, medium — new 2026-08-11): the 2026-08-06 preview sat un-merged
+  until 2026-08-11, and the skip rule is deliberately silent, so the runs of
+  08-07 through 08-10 each fetched, saw `OPEN: claude/epic-franklin-kx43xh`,
+  and stopped without a word. That is the rule working as written — but the
+  cost is four idle days that look identical to four healthy ones from the
+  owner's side. Worth considering a **one-time** nudge (not a daily one) if a
+  preview goes unreviewed for, say, three days: enough to distinguish "you have
+  something waiting" from "nothing to report", without turning the skip into a
+  daily nag. Do not make this a per-run notification.
+- **Nothing in the harness verifies a merge** (harness, low — new 2026-08-11):
+  this run re-ran the full suite on the branch tip before merging
+  (physics-test 43/43, smoke, build, paired viewshot) because pushing to `main`
+  is the one irreversible step, and none of that is scripted — it was assembled
+  by hand from the notes at the top of this file. A `scripts/preflight.mjs`
+  that runs build + smoke + physics-test + a paired-viewshot determinism check
+  and prints one verdict would make the accept step a single command.
+- **The paired-viewshot determinism check is now a two-line proof and should be
+  used** (harness, low — new 2026-08-11): `viewshot 6 <prefix>` twice, then
+  `md5sum` the pairs. Confirmed here independently of the run that built it —
+  all five angles identical (`chase 9fbe73c8…`, `front34 970cff9f…`,
+  `high 373cb9d3…`, `low 075d9e63…`, `trackside 7db2c822…`), `pngdiff` 0
+  changed pixels on every one. Note the second argument to `viewshot.mjs` is a
+  filename **prefix**, not a directory — `…/shots/a` writes `…/shots/a-chase.png`.
