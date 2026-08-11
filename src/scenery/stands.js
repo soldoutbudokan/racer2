@@ -27,6 +27,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { hashFn } from './noise.js';
+import { rand } from './rng.js';
 
 // ---------------------------------------------------------------------------
 // Small geometry helpers. Everything is built as loose BufferGeometry in a
@@ -165,8 +166,8 @@ function mergedMesh(list, material, opt = {}) {
   return mesh;
 }
 
-const rnd = (a, b) => a + Math.random() * (b - a);
-const pick = (arr) => arr[(Math.random() * arr.length) | 0];
+const rnd = (a, b) => a + rand() * (b - a);
+const pick = (arr) => arr[(rand() * arr.length) | 0];
 
 /**
  * v-range of row `r` (counted from the TOP of the canvas) in an n-row atlas.
@@ -215,24 +216,24 @@ function makeCrowdAtlas() {
       ctx.fillStyle = '#212429';
       ctx.fillRect(0, y0, W, bh);
       for (let i = 0; i < 26; i++) {
-        ctx.fillStyle = `rgba(10,11,14,${0.1 + Math.random() * 0.2})`;
-        ctx.fillRect(Math.random() * W, y0 + Math.random() * bh, 6 + Math.random() * 40, 3 + Math.random() * 8);
+        ctx.fillStyle = `rgba(10,11,14,${0.1 + rand() * 0.2})`;
+        ctx.fillRect(rand() * W, y0 + rand() * bh, 6 + rand() * 40, 3 + rand() * 8);
       }
       const N = 14;
       const pitch = W / N;
       for (let i = 0; i < N; i++) {
-        if (Math.random() > dens[b]) continue;
-        const x = i * pitch + pitch * 0.5 + (Math.random() - 0.5) * 6;
-        const sh = shirt[(Math.random() * shirt.length) | 0];
-        const sk = skin[(Math.random() * skin.length) | 0];
-        const lean = (Math.random() - 0.5) * 4;
-        const tall = Math.random() < 0.12 ? 8 : 0;   // a few standing up
+        if (rand() > dens[b]) continue;
+        const x = i * pitch + pitch * 0.5 + (rand() - 0.5) * 6;
+        const sh = shirt[(rand() * shirt.length) | 0];
+        const sk = skin[(rand() * skin.length) | 0];
+        const lean = (rand() - 0.5) * 4;
+        const tall = rand() < 0.12 ? 8 : 0;   // a few standing up
         // Draw three times so figures straddling the seam still wrap.
         for (const ox of [-W, 0, W]) {
           const px = x + ox;
           ctx.fillStyle = sh;
           ctx.beginPath();
-          const tw = 11 + Math.random() * 2;
+          const tw = 11 + rand() * 2;
           ctx.moveTo(px - tw, y0 + bh * 0.86);
           ctx.lineTo(px - tw * 0.82 + lean, y0 + bh * 0.34 - tall);
           ctx.lineTo(px + tw * 0.82 + lean, y0 + bh * 0.34 - tall);
@@ -244,7 +245,7 @@ function makeCrowdAtlas() {
           ctx.arc(px + lean, y0 + bh * 0.24 - tall, 5.4, 0, Math.PI * 2);
           ctx.fill();
           // hair / cap
-          ctx.fillStyle = Math.random() < 0.35 ? '#d8d4cc' : '#2b241d';
+          ctx.fillStyle = rand() < 0.35 ? '#d8d4cc' : '#2b241d';
           ctx.fillRect(px + lean - 5.4, y0 + bh * 0.24 - tall - 5.6, 10.8, 3.4);
         }
       }
@@ -295,9 +296,9 @@ function makeCladTexture() {
     }
     // Rain grime running down the sheets (vertical, so it tiles in y for free).
     for (let i = 0; i < 70; i++) {
-      const x = Math.random() * S;
-      ctx.fillStyle = `rgba(46,44,40,${0.03 + Math.random() * 0.07})`;
-      ctx.fillRect(x, 0, 1 + Math.random() * 3, S);
+      const x = rand() * S;
+      ctx.fillStyle = `rgba(46,44,40,${0.03 + rand() * 0.07})`;
+      ctx.fillRect(x, 0, 1 + rand() * 3, S);
     }
   }, true);
 }
@@ -362,8 +363,8 @@ function makeRollerDoor() {
     ctx.fillStyle = '#2a2c31';
     ctx.fillRect(0, h - 12, w, 8);
     for (let i = 0; i < 40; i++) {
-      ctx.fillStyle = `rgba(30,26,22,${0.03 + Math.random() * 0.07})`;
-      ctx.fillRect(Math.random() * w, h - 40 * Math.random(), 2 + Math.random() * 5, 40);
+      ctx.fillStyle = `rgba(30,26,22,${0.03 + rand() * 0.07})`;
+      ctx.fillRect(rand() * w, h - 40 * rand(), 2 + rand() * 5, 40);
     }
   });
 }
@@ -396,7 +397,7 @@ function makePitLaneTexture(bays) {
 
     // --- concrete slab joints -------------------------------------------
     for (let i = 0; i <= 52; i++) {
-      const x = (i / 52) * W + (Math.random() - 0.5) * 3;
+      const x = (i / 52) * W + (rand() - 0.5) * 3;
       ctx.fillStyle = 'rgba(46,46,44,0.55)';
       ctx.fillRect(x, 0, 2.5, H * V_LINE);
       ctx.fillStyle = 'rgba(255,255,255,0.07)';
@@ -408,15 +409,15 @@ function makePitLaneTexture(bays) {
     }
     // Blotchy pour variation, or the slabs read as one printed sheet.
     for (let i = 0; i < 340; i++) {
-      const x = Math.random() * W, y = Math.random() * H * V_LINE;
-      const r = 20 + Math.random() * 130;
-      ctx.fillStyle = `rgba(${120 + Math.random() * 40 | 0},${120 + Math.random() * 40 | 0},${115 + Math.random() * 40 | 0},0.09)`;
+      const x = rand() * W, y = rand() * H * V_LINE;
+      const r = 20 + rand() * 130;
+      ctx.fillStyle = `rgba(${120 + rand() * 40 | 0},${120 + rand() * 40 | 0},${115 + rand() * 40 | 0},0.09)`;
       ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.5, 0, 0, Math.PI * 2); ctx.fill();
     }
     // Asphalt aggregate speckle.
     for (let i = 0; i < 2600; i++) {
-      const x = Math.random() * W, y = H * V_LINE2 + Math.random() * H * (1 - V_LINE2);
-      ctx.fillStyle = `rgba(${140 + Math.random() * 70 | 0},${138 + Math.random() * 70 | 0},${132 + Math.random() * 70 | 0},0.12)`;
+      const x = rand() * W, y = H * V_LINE2 + rand() * H * (1 - V_LINE2);
+      ctx.fillStyle = `rgba(${140 + rand() * 70 | 0},${138 + rand() * 70 | 0},${132 + rand() * 70 | 0},0.12)`;
       ctx.fillRect(x, y, 2, 2);
     }
 
@@ -483,20 +484,20 @@ function makePitLaneTexture(bays) {
       ctx.restore();
       // Oil / fuel staining, heaviest right where the car sits.
       for (let k = 0; k < 16; k++) {
-        const x = cx + (Math.random() - 0.5) * halfW * 1.4;
-        const y = H * (0.08 + Math.random() * 0.30);
-        const r = 6 + Math.random() * 34;
-        ctx.fillStyle = `rgba(28,26,24,${0.05 + Math.random() * 0.16})`;
-        ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.62, Math.random(), 0, Math.PI * 2); ctx.fill();
+        const x = cx + (rand() - 0.5) * halfW * 1.4;
+        const y = H * (0.08 + rand() * 0.30);
+        const r = 6 + rand() * 34;
+        ctx.fillStyle = `rgba(28,26,24,${0.05 + rand() * 0.16})`;
+        ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.62, rand(), 0, Math.PI * 2); ctx.fill();
       }
       // Tyre scuffs curving out of the box into the fast lane.
       ctx.strokeStyle = 'rgba(26,24,23,0.30)';
       for (let k = 0; k < 5; k++) {
-        ctx.lineWidth = 5 + Math.random() * 7;
+        ctx.lineWidth = 5 + rand() * 7;
         ctx.beginPath();
-        const sx = cx + (Math.random() - 0.5) * halfW * 0.7;
+        const sx = cx + (rand() - 0.5) * halfW * 0.7;
         ctx.moveTo(sx, H * 0.30);
-        ctx.bezierCurveTo(sx + 60, H * 0.5, sx + 190, H * 0.62, sx + 340 + Math.random() * 200, H * 0.70);
+        ctx.bezierCurveTo(sx + 60, H * 0.5, sx + 190, H * 0.62, sx + 340 + rand() * 200, H * 0.70);
         ctx.stroke();
       }
     });
@@ -504,17 +505,17 @@ function makePitLaneTexture(bays) {
     // Long rubber down the fast lane where every car accelerates away.
     ctx.strokeStyle = 'rgba(22,21,20,0.22)';
     for (let k = 0; k < 26; k++) {
-      ctx.lineWidth = 6 + Math.random() * 10;
-      const y = H * (0.60 + Math.random() * 0.32);
+      ctx.lineWidth = 6 + rand() * 10;
+      const y = H * (0.60 + rand() * 0.32);
       ctx.beginPath();
-      ctx.moveTo(Math.random() * W, y);
-      ctx.lineTo(Math.random() * W, y + (Math.random() - 0.5) * 14);
+      ctx.moveTo(rand() * W, y);
+      ctx.lineTo(rand() * W, y + (rand() - 0.5) * 14);
       ctx.stroke();
     }
     // Grime creeping out from the wall edge.
     for (let i = 0; i < 200; i++) {
-      ctx.fillStyle = `rgba(40,38,34,${0.03 + Math.random() * 0.08})`;
-      ctx.fillRect(Math.random() * W, H * (0.90 + Math.random() * 0.1), 20 + Math.random() * 120, 4 + Math.random() * 10);
+      ctx.fillStyle = `rgba(40,38,34,${0.03 + rand() * 0.08})`;
+      ctx.fillRect(rand() * W, H * (0.90 + rand() * 0.1), 20 + rand() * 120, 4 + rand() * 10);
     }
   });
 }
@@ -607,7 +608,7 @@ export function addGrandstands(scene, frames, D) {
   placed.forEach((S, si) => {
     PAINT_SEED = 13.7 * (si + 1) + S.idx * 0.031;
     const local = { concrete: [], steel: [], clad: [], crowd: [], fascia: [] };
-    const pal = palettes[(si + ((Math.random() * palettes.length) | 0)) % palettes.length];
+    const pal = palettes[(si + ((rand() * palettes.length) | 0)) % palettes.length];
     const pat = SEAT_PATTERNS[si % SEAT_PATTERNS.length];
 
     const seats = [];         // {x, y, z, colour, wide}
@@ -738,7 +739,7 @@ function buildStadiumStand(out, seats, S, pal, pat) {
     const frac = (a + 1) / (aisleN + 1) + (hashFn(a * 3.1, L) - 0.5) * 0.09;
     aisles.push({ x: (frac - 0.5) * L, w: 1.35 });
   }
-  const vomIdx = aisleN > 2 ? 1 + ((Math.random() * (aisleN - 1)) | 0) : 0;
+  const vomIdx = aisleN > 2 ? 1 + ((rand() * (aisleN - 1)) | 0) : 0;
   for (let a = 0; a < aisles.length; a++) {
     const ax = aisles[a].x;
     for (let t = 0; t < tiers; t++) {
@@ -1218,7 +1219,7 @@ export function addPitComplex(scene, startFrame, D) {
   }
   // Plant / ducts, so the roofline is not a straight edge against the sky.
   for (let i = 0; i < 7; i++) {
-    const z = Z0 + 6 + Math.random() * (LEN - 12);
+    const z = Z0 + 6 + rand() * (LEN - 12);
     cyl(steel, S_GALV, 0.35, 0.35, rnd(0.8, 1.8), X(O_RECESS + rnd(4, bldgW - 1)),
       H_BLDG + 0.9, z, 8);
   }
@@ -1245,27 +1246,27 @@ export function addPitComplex(scene, startFrame, D) {
   for (let i = 0; i < BAYS; i++) {
     const z = Z0 + (i + 0.5) * pitch;
     // Tyre stacks against the pilaster, in uneven columns.
-    const stacks = 2 + ((Math.random() * 2) | 0);
+    const stacks = 2 + ((rand() * 2) | 0);
     for (let s = 0; s < stacks; s++) {
       const sz = z - pitch / 2 + rnd(0.8, 2.6) * (s % 2 ? 1 : -1);
       const so = O_FACE - rnd(0.7, 1.6);
-      const high = 3 + ((Math.random() * 3) | 0);
+      const high = 3 + ((rand() * 3) | 0);
       for (let k = 0; k < high; k++) {
         cyl(kit, 0x24262a, 0.36, 0.36, 0.25, X(so), 0.13 + k * 0.26, sz, 10,
           { jitter: 0.10 });
-        if (Math.random() < 0.5) {
+        if (rand() < 0.5) {
           cyl(kit, 0xb8bcc0, 0.19, 0.19, 0.10, X(so), 0.13 + k * 0.26, sz, 8, { jitter: 0.05 });
         }
       }
     }
     // A wheel trolley and a tool chest in the working lane.
-    if (Math.random() < 0.75) {
+    if (rand() < 0.75) {
       const tz = z + rnd(-3, 3), to = O_FACE - rnd(2.2, 4.0);
       box(kit, pick([0xb03a2a, 0x2b5fa8, 0x2f7a4e, 0xd6a12c]), 1.5, 0.95, 0.75,
         X(to), 0.55, tz, { ry: rnd(-0.3, 0.3), jitter: 0.05 });
       box(kit, 0x35383d, 1.6, 0.10, 0.85, X(to), 1.05, tz, { ry: rnd(-0.3, 0.3) });
     }
-    if (Math.random() < 0.5) {
+    if (rand() < 0.5) {
       cyl(kit, pick([0x9a3324, 0x2f6a4f, 0xc9c4b6]), 0.29, 0.29, 0.9,
         X(O_FACE - rnd(1.0, 2.0)), 0.45, z + rnd(-4, 4), 10);
     }
@@ -1277,7 +1278,7 @@ export function addPitComplex(scene, startFrame, D) {
     box(concrete, 0x76786f, 2.9, 0.10, 12, X(O_FACE - 1.5), 0.06, cz, { jitter: 0.05 });
     for (let i = 0; i < 14; i++) {
       cyl(kit, i % 3 === 0 ? 0x9a3324 : 0x3f6f8f, 0.30, 0.30, 0.9,
-        X(O_FACE - 0.9 - (i % 3) * 0.68), 0.5, cz - 5 + ((i / 3) | 0) * 1.9 + Math.random() * 0.3, 10);
+        X(O_FACE - 0.9 - (i % 3) * 0.68), 0.5, cz - 5 + ((i / 3) | 0) * 1.9 + rand() * 0.3, 10);
     }
     for (let i = 0; i <= 6; i++) {
       box(steel, S_GALV, 0.07, 1.3, 0.07, X(O_FACE - 2.9), 0.65, cz - 6 + i * 2);

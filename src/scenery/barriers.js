@@ -34,6 +34,7 @@
  */
 import * as THREE from 'three';
 import { fractalNoise, smoothstep, makeNoiseTexture, makeTileable } from './noise.js';
+import { rand } from './rng.js';
 
 // ---------------------------------------------------------------------------
 // Geometry accumulator — one interleaved buffer per material, so a whole run of
@@ -556,8 +557,8 @@ export function addArmco(scene, frames, offset, opts = {}) {
     const wanted = Math.min(corners.length, 2 + Math.floor(corners.length * 0.35));
     for (let c = 0; c < wanted; c++) {
       const cn = corners[c];
-      const before = 22 + Math.random() * 16;
-      const after = 5 + Math.random() * 7;
+      const before = 22 + rand() * 16;
+      const after = 5 + rand() * 7;
       paintZones.push({
         sign: cn.outSign,
         centre: wrapS(cn.sEntry + (after - before) * 0.5, path.total),
@@ -577,22 +578,22 @@ export function addArmco(scene, frames, offset, opts = {}) {
   const scuffs = [];
   if (S.scuff) {
     for (const cn of corners) {
-      if (Math.random() > 0.62) continue;
+      if (rand() > 0.62) continue;
       scuffs.push({
         sign: cn.outSign,
-        centre: wrapS(cn.sApex + (cn.sExit - cn.sApex) * (0.3 + Math.random() * 0.8),
+        centre: wrapS(cn.sApex + (cn.sExit - cn.sApex) * (0.3 + rand() * 0.8),
           path.total),
-        half: 1.1 + Math.random() * 2.0,
-        depth: 0.35 + Math.random() * 0.45,
+        half: 1.1 + rand() * 2.0,
+        depth: 0.35 + rand() * 0.45,
       });
     }
-    const strays = 1 + Math.floor(Math.random() * 3);
+    const strays = 1 + Math.floor(rand() * 3);
     for (let i = 0; i < strays; i++) {
       scuffs.push({
-        sign: Math.random() < 0.5 ? 1 : -1,
-        centre: Math.random() * path.total,
-        half: 0.8 + Math.random() * 1.4,
-        depth: 0.25 + Math.random() * 0.35,
+        sign: rand() < 0.5 ? 1 : -1,
+        centre: rand() * path.total,
+        half: 0.8 + rand() * 1.4,
+        depth: 0.25 + rand() * 0.35,
       });
     }
   }
@@ -753,24 +754,24 @@ export function addArmco(scene, frames, offset, opts = {}) {
     quat.setFromAxisAngle(up3, Math.atan2(ix, iz));
     // Posts are driven, not planted: a degree or two of lean and a few
     // millimetres of height either way kills the ruler-straight CG look.
-    const lean = (Math.random() - 0.5) * 0.030;
+    const lean = (rand() - 0.5) * 0.030;
     const leanQ = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(Math.cos(Math.random() * 6.28), 0, Math.sin(Math.random() * 6.28)), lean);
+      new THREE.Vector3(Math.cos(rand() * 6.28), 0, Math.sin(rand() * 6.28)), lean);
     quat.multiply(leanQ);
-    scl.set(1, 0.985 + Math.random() * 0.035, 1);
+    scl.set(1, 0.985 + rand() * 0.035, 1);
     m4.compose(pos3, quat, scl);
     posts.setMatrixAt(i, m4);
-    const v = 0.82 + Math.random() * 0.30;
+    const v = 0.82 + rand() * 0.30;
     tint.setRGB(S.postColour[0] * v, S.postColour[1] * v, S.postColour[2] * v);
     posts.setColorAt(i, tint);
 
     // Disturbed ground round the foot — a small heap of spoil that never got
     // raked flat. Cheap (8 tris) and it stops the post looking pushed through
     // a sheet of paper.
-    if (Math.random() < 0.55) {
-      const rr = 0.20 + Math.random() * 0.14;
-      const dark = 0.55 + Math.random() * 0.25;
-      domeInto(soil, bx, gy + 0.008, bz, rr, 0.035 + Math.random() * 0.03, 7,
+    if (rand() < 0.55) {
+      const rr = 0.20 + rand() * 0.14;
+      const dark = 0.55 + rand() * 0.25;
+      domeInto(soil, bx, gy + 0.008, bz, rr, 0.035 + rand() * 0.03, 7,
         [0.20 * dark, 0.16 * dark, 0.115 * dark],
         [0.34 * dark, 0.30 * dark, 0.22 * dark]);
     }
@@ -908,25 +909,25 @@ export function addTireStacks(scene, frames, curvature, offset) {
   for (let w = 0; w < chosen.length; w++) {
     const cn = chosen[w];
     const sign = cn.outSign;
-    const cols = 6 + Math.floor(Math.random() * 5);          // stacks along the wall
+    const cols = 6 + Math.floor(rand() * 5);          // stacks along the wall
     const pitchAlong = 0.76;
     const wallLen = (cols - 1) * pitchAlong;
     // Centre the wall a little past the apex — that is where cars actually
     // arrive — and vary which side of the apex, never dead centre.
-    const sMid = cn.sApex + (Math.random() - 0.35) * Math.max(6, cn.len * 0.5);
+    const sMid = cn.sApex + (rand() - 0.35) * Math.max(6, cn.len * 0.5);
     // Height profile: full height in the middle, tapering to two tyres at the
     // ends so the wall has a real silhouette instead of a rectangular block.
-    const peak = 3 + (Math.random() < 0.45 ? 1 : 0);
+    const peak = 3 + (rand() < 0.45 ? 1 : 0);
     const heights = [];
     for (let c = 0; c < cols; c++) {
       const t = 1 - Math.abs((c - (cols - 1) / 2) / ((cols - 1) / 2 || 1));
       let h = Math.round(2 + (peak - 2) * smoothstep(0.05, 0.75, t));
-      if (Math.random() < 0.18) h += (Math.random() < 0.5 ? -1 : 1);
+      if (rand() < 0.18) h += (rand() < 0.5 ? -1 : 1);
       heights.push(Math.max(2, Math.min(peak + 1, h)));
     }
     // Depth: mostly one row deep, doubled over the middle third where it counts.
     const deepFrom = Math.floor(cols * 0.30), deepTo = Math.ceil(cols * 0.70);
-    const twoDeep = Math.random() < 0.7;
+    const twoDeep = rand() < 0.7;
 
     const topPts = [];
     for (let c = 0; c < cols; c++) {
@@ -939,20 +940,20 @@ export function addTireStacks(scene, frames, curvature, offset) {
       for (let row = 0; row < rows; row++) {
         // Row 0 faces the road; a second row backs it toward the barrier.
         const depth = rows === 1 ? 0 : (row === 0 ? 0.36 : -0.36);
-        const jx = (Math.random() - 0.5) * 0.055;
-        const jz = (Math.random() - 0.5) * 0.055;
+        const jx = (rand() - 0.5) * 0.055;
+        const jz = (rand() - 0.5) * 0.055;
         const stackH = Math.max(2, heights[c] - row);
         for (let h = 0; h < stackH; h++) {
           tyres.push({
             x: bx + ix * depth + jx,
             y: 0.02 + h * PITCH,
             z: bz + iz * depth + jz,
-            yaw: Math.random() * Math.PI * 2,
-            tilt: (Math.random() - 0.5) * 0.05,
+            yaw: rand() * Math.PI * 2,
+            tilt: (rand() - 0.5) * 0.05,
             // Banded rows: whole tyres get painted, which is exactly how the
             // white stripes on a real tyre wall are made.
             paint: (h === 1 && ((c + w) % 3 === 0)) || (h === stackH - 1 && (c % 4 === 1)),
-            grime: 0.80 + Math.random() * 0.30,
+            grime: 0.80 + rand() * 0.30,
           });
         }
         if (row === 0) {
@@ -992,11 +993,11 @@ export function addTireStacks(scene, frames, curvature, offset) {
     q.multiply(q2);
     // Tyres in a wall are squashed by the ones above and never all the same
     // size — a stack of identical cylinders is the giveaway.
-    scl.set(0.96 + Math.random() * 0.09, 0.93 + Math.random() * 0.10, 0.96 + Math.random() * 0.09);
+    scl.set(0.96 + rand() * 0.09, 0.93 + rand() * 0.10, 0.96 + rand() * 0.09);
     m4.compose(pos, q, scl);
     inst.setMatrixAt(i, m4);
     if (t.paint) {
-      const w = 0.72 + Math.random() * 0.16;
+      const w = 0.72 + rand() * 0.16;
       col.setRGB(w, w * 0.99, w * 0.94);
     } else {
       const g = t.grime * 0.30;
@@ -1167,13 +1168,13 @@ export function addConcreteWall(scene, frames, offset) {
   // are common — but still clustered at the corners, not sprayed round the lap.
   const scuffs = [];
   for (const cn of corners) {
-    const n = 1 + Math.floor(Math.random() * 3);
+    const n = 1 + Math.floor(rand() * 3);
     for (let i = 0; i < n; i++) {
       scuffs.push({
         sign: cn.outSign,
-        s: cn.sEntry + Math.random() * Math.max(4, cn.sExit - cn.sEntry),
-        half: 0.7 + Math.random() * 1.8,
-        depth: 0.3 + Math.random() * 0.5,
+        s: cn.sEntry + rand() * Math.max(4, cn.sExit - cn.sEntry),
+        half: 0.7 + rand() * 1.8,
+        depth: 0.3 + rand() * 0.5,
       });
     }
   }
@@ -1195,8 +1196,8 @@ export function addConcreteWall(scene, frames, offset) {
   const paintZones = [];
   for (let c = 0; c < corners.length; c++) {
     const cn = corners[c];
-    const before = 16 + Math.random() * 14;
-    const after = cn.len + 4 + Math.random() * 8;
+    const before = 16 + rand() * 14;
+    const after = cn.len + 4 + rand() * 8;
     paintZones.push({
       sign: cn.outSign,
       centre: wrapS(cn.sEntry + (after - before) * 0.5, path.total),
@@ -1223,21 +1224,21 @@ export function addConcreteWall(scene, frames, offset) {
     // Blocks are craned into place one at a time: lengths vary, joints never
     // land at the same arc on both sides, and one block in ~15 is pulled back
     // to leave a marshal access gap.
-    let s = Math.random() * 3;
+    let s = rand() * 3;
     let bi = 0;
     let sinceGap = 0;
     const guard = Math.ceil(path.total / 3.0) + 8;
     let steps = 0;
     while (s < path.total && steps++ < guard) {
-      const len = 3.10 + Math.random() * 0.85;
+      const len = 3.10 + rand() * 0.85;
       const s1 = Math.min(s + len, path.total);
       if (s1 - s < 0.9) break;
       // Every 40-70 m one block is pulled back to leave a marshal access gap.
-      const access = sinceGap > 11 && Math.random() < 0.22;
+      const access = sinceGap > 11 && rand() < 0.22;
       sinceGap = access ? 0 : sinceGap + 1;
       const setBack = access ? -0.42 : 0;
-      const jitA = setBack + (Math.random() - 0.5) * 0.035;
-      const jitB = setBack + (Math.random() - 0.5) * 0.035;
+      const jitA = setBack + (rand() - 0.5) * 0.035;
+      const jitB = setBack + (rand() - 0.5) * 0.035;
 
       const tone = 0.86 + fractalNoise(s * 0.21 + (sign > 0 ? 0 : 33.7), 5.5, 3) * 0.28;
       const zone = zoneAt(sign, (s + s1) * 0.5);
@@ -1343,10 +1344,10 @@ export function addConcreteWall(scene, frames, offset) {
       const pd = -0.215;
       pos.set(st.px + st.ix * pd, st.gy + 1.046, st.pz + st.iz * pd);
       q.setFromAxisAngle(up, Math.atan2(st.ix, st.iz));
-      scl.set(1, 0.94 + Math.random() * 0.14, 1);
+      scl.set(1, 0.94 + rand() * 0.14, 1);
       m4.compose(pos, q, scl);
       inst.setMatrixAt(i, m4);
-      const v = 0.78 + Math.random() * 0.3;
+      const v = 0.78 + rand() * 0.3;
       c.setRGB(v, v, v * 1.02);
       inst.setColorAt(i, c);
     }

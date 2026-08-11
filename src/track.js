@@ -16,6 +16,7 @@ import {
   roadCrownY, buildRoadGeometry, buildEdgeLineGeometry, buildKerb3DGeometry,
   addSkidMarks, makeAsphaltMaterial, makeKerbMaterial, makeVergeMaterial,
 } from './scenery/roadwork.js';
+import { rand, seedCircuit, beginStream } from './scenery/rng.js';
 
 // Stable per-circuit seed so a track's hills are the same every reload.
 function strSeed(s) {
@@ -47,6 +48,13 @@ export function createTrack(scene, world, materials, def) {
   // particular circuit (street circuits are narrow with the wall at the kerb,
   // the easy oval is wide with acres of run-off, etc.).
   const D = { road: ROAD_WIDTH, kerb: KERB_WIDTH, runoff: RUNOFF_WIDTH, armco: ARMCO_OFFSET };
+
+  // Bind the scenery RNG to this circuit. Everything scattered below draws
+  // from a named, reproducible stream instead of Math.random(), so a circuit
+  // rebuilds identically on every load and a screenshot diff only shows what
+  // actually changed. See scenery/rng.js — each `beginStream` below isolates
+  // one builder, so editing the trees does not move the grandstands.
+  seedCircuit(def.id);
 
   // Every visual object hangs off this one group, and every physics body is
   // recorded in `bodies`, so dispose() can remove the whole circuit cleanly
@@ -92,6 +100,7 @@ export function createTrack(scene, world, materials, def) {
   const lineOffset = computeRacingLineOffset(frames, curvature);
 
   // ---- Asphalt ribbon with a baked racing groove (vertex colours) ----
+  beginStream('asphalt');
   const asphaltMat = makeAsphaltMaterial();
   const roadGeo = buildRoadGeometry(frames, ROAD_WIDTH, lineOffset, arcLens);
   const road = new THREE.Mesh(roadGeo, asphaltMat);
@@ -100,7 +109,10 @@ export function createTrack(scene, world, materials, def) {
   group.add(road);
 
   // Skid marks at the heavy corners, following the groove.
-  if (theme.skid !== false) addSkidMarks(group, frames, curvature, lineOffset, arcLens);
+  if (theme.skid !== false) {
+    beginStream('skid');
+    addSkidMarks(group, frames, curvature, lineOffset, arcLens);
+  }
 
   // White edge lines flush with the actual road edge
   const lineMat = new THREE.MeshStandardMaterial({
@@ -128,6 +140,7 @@ export function createTrack(scene, world, materials, def) {
 
   // ---- Profiled 3D kerbs with rumble ripples at every corner ----
   if (theme.kerbs !== false) {
+    beginStream('kerb');
     const kerbMat = makeKerbMaterial();
     // Threshold ≈ corners tighter than ~150 m radius, padded a few frames out.
     const kerbActive = computeKerbActive(curvature, 0.00045, 8);
@@ -180,37 +193,46 @@ export function createTrack(scene, world, materials, def) {
   const startLights = addStartGantry(group, frames[0], ROAD_WIDTH);
 
   // ---- Outer barrier (visual) — style varies by circuit ----
+  beginStream('barrier');
   if (theme.barrier === 'wall') addConcreteWall(group, frames, ARMCO_OFFSET);
   else addArmco(group, frames, ARMCO_OFFSET, { style: theme.barrier || 'armco', terrain });
 
   // Tire stacks at high-curvature corner exits
-  if (theme.tireStacks) addTireStacks(group, frames, curvature, ARMCO_OFFSET - 1.4);
+  if (theme.tireStacks) {
+    beginStream('tireStacks');
+    addTireStacks(group, frames, curvature, ARMCO_OFFSET - 1.4);
+  }
 
   // Sponsor boards behind the barrier
-  if (theme.sponsors) addSponsorBoards(group, frames, ARMCO_OFFSET + 1.6);
+  if (theme.sponsors) {
+    beginStream('sponsors');
+    addSponsorBoards(group, frames, ARMCO_OFFSET + 1.6);
+  }
 
   // Pit complex + debris fencing along the main straight
-  if (theme.pit) addPitComplex(group, frames[0], D);   // D: complex slides out on wide circuits
+  // D: complex slides out on wide circuits
+  if (theme.pit) { beginStream('pit'); addPitComplex(group, frames[0], D); }
   if (theme.catchFence) addCatchFence(group, frames, D);
 
   // Brake-distance marker boards before the heavy corners
   if (theme.brakeMarkers) addBrakeMarkers(group, frames, curvature, D);
 
   // ---- Scenery (theme-selected) ----
-  if (theme.trees) scatterTrees(group, frames, { ...theme.trees, terrain });
+  if (theme.trees) { beginStream('trees'); scatterTrees(group, frames, { ...theme.trees, terrain }); }
   if (theme.sidewalks) addSidewalks(group, frames, D);
-  if (theme.buildings) addCityBuildings(group, frames, D);
-  if (theme.skyline) addCitySkyline(group, frames);
-  if (theme.marina) addMarina(group, frames, D);
+  if (theme.buildings) { beginStream('buildings'); addCityBuildings(group, frames, D); }
+  if (theme.skyline) { beginStream('skyline'); addCitySkyline(group, frames); }
+  if (theme.marina) { beginStream('marina'); addMarina(group, frames, D); }
   if (theme.streetlights) addStreetlights(group, frames, D);
   if (theme.crosswalks) addCrosswalks(group, frames, curvature, ROAD_WIDTH);
-  if (theme.mountains) addDistantMountains(group, theme.mountains, terrain);
-  if (theme.grandstands) addGrandstands(group, frames, D);
-  if (theme.rocks) addRocks(group, frames, D);
-  if (theme.scrub) addScrub(group, frames, D);
-  if (theme.farmland) addFarmland(group, frames, D);
-  if (theme.huts) addAlpineHuts(group, frames, D);
+  if (theme.mountains) { beginStream('mountains'); addDistantMountains(group, theme.mountains, terrain); }
+  if (theme.grandstands) { beginStream('grandstands'); addGrandstands(group, frames, D); }
+  if (theme.rocks) { beginStream('rocks'); addRocks(group, frames, D); }
+  if (theme.scrub) { beginStream('scrub'); addScrub(group, frames, D); }
+  if (theme.farmland) { beginStream('farmland'); addFarmland(group, frames, D); }
+  if (theme.huts) { beginStream('huts'); addAlpineHuts(group, frames, D); }
   if (theme.marshals) addMarshalPosts(group, frames, curvature, D);
+  beginStream('groundCover');
   addGroundCover(group, frames, D, { ground: theme.ground || 'grass', terrain });
   if (theme.clouds !== false) {
     addCloudscape(group, {
@@ -243,6 +265,10 @@ export function createTrack(scene, world, materials, def) {
   return {
     id: def.id,
     name: def.name,
+    // Every visual the circuit owns, under one node. Exposed so a probe can
+    // walk the built scenery (physics-test fingerprints it to prove the
+    // scatter is reproducible); dispose() tears down this same group.
+    group,
     curve,
     frames,
     spawn,
@@ -535,9 +561,9 @@ function makeCrowdTexture() {
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#23262b'; ctx.fillRect(0, 0, w, h);
   for (let i = 0; i < 1400; i++) {
-    const x = Math.random() * w, y = Math.random() * h;
-    const hue = Math.floor(Math.random() * 360);
-    ctx.fillStyle = `hsl(${hue},${40 + Math.random() * 40}%,${45 + Math.random() * 30}%)`;
+    const x = rand() * w, y = rand() * h;
+    const hue = Math.floor(rand() * 360);
+    ctx.fillStyle = `hsl(${hue},${40 + rand() * 40}%,${45 + rand() * 30}%)`;
     ctx.fillRect(x, y, 2, 2);
   }
   const tex = new THREE.CanvasTexture(c);
@@ -638,9 +664,9 @@ function makeBoardBackTexture() {
   }
   // rain-grime streaks running down the sheets
   for (let i = 0; i < 90; i++) {
-    const x = Math.random() * w;
-    ctx.fillStyle = `rgba(40,44,48,${0.04 + Math.random() * 0.08})`;
-    ctx.fillRect(x, 0, 1 + Math.random() * 3, h);
+    const x = rand() * w;
+    ctx.fillStyle = `rgba(40,44,48,${0.04 + rand() * 0.08})`;
+    ctx.fillRect(x, 0, 1 + rand() * 3, h);
   }
   // two horizontal steel rails with a catch-light above and shadow below
   for (const y of [h * 0.26, h * 0.74]) {
@@ -766,11 +792,11 @@ function makeFacadeTexture(kind, base, litFrac = 0.10) {
     const mx = w / 6, my = h / 8;
     for (let r = 0; r < 8; r++) {
       for (let q = 0; q < 6; q++) {
-        const roll = Math.random();
+        const roll = rand();
         let col;
-        if (roll < litFrac) col = `rgb(255,${(208 + Math.random() * 35) | 0},${(150 + Math.random() * 55) | 0})`;
-        else if (roll < litFrac + 0.30) col = `rgb(${(88 + Math.random() * 34) | 0},${(108 + Math.random() * 36) | 0},${(132 + Math.random() * 44) | 0})`;
-        else col = `rgb(${(18 + Math.random() * 10) | 0},${(22 + Math.random() * 10) | 0},${(28 + Math.random() * 10) | 0})`;
+        if (roll < litFrac) col = `rgb(255,${(208 + rand() * 35) | 0},${(150 + rand() * 55) | 0})`;
+        else if (roll < litFrac + 0.30) col = `rgb(${(88 + rand() * 34) | 0},${(108 + rand() * 36) | 0},${(132 + rand() * 44) | 0})`;
+        else col = `rgb(${(18 + rand() * 10) | 0},${(22 + rand() * 10) | 0},${(28 + rand() * 10) | 0})`;
         ctx.fillStyle = col;
         if (kind === 'masonry') {
           ctx.fillRect(q * mx + mx * 0.20, r * my + my * 0.22, mx * 0.60, my * 0.52);
@@ -790,9 +816,9 @@ function makeFacadeTexture(kind, base, litFrac = 0.10) {
   }
   // weathering streaks
   for (let i = 0; i < 40; i++) {
-    const x = Math.random() * w;
-    ctx.fillStyle = `rgba(10,12,14,${0.02 + Math.random() * 0.05})`;
-    ctx.fillRect(x, 0, 1 + Math.random() * 2, h);
+    const x = rand() * w;
+    ctx.fillStyle = `rgba(10,12,14,${0.02 + rand() * 0.05})`;
+    ctx.fillRect(x, 0, 1 + rand() * 2, h);
   }
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -811,7 +837,7 @@ function makeStorefrontTexture() {
   const awnings = ['#8e3232', '#2f5d43', '#31517a', '#8a6a2c', '#54406e'];
   let x = 0;
   while (x < w - 8) {
-    const shopW = 34 + (Math.random() * 30) | 0;
+    const shopW = 34 + (rand() * 30) | 0;
     // glazing
     ctx.fillStyle = '#1d2830';
     ctx.fillRect(x + 3, 16, shopW - 6, h - 22);
@@ -821,7 +847,7 @@ function makeStorefrontTexture() {
     ctx.fillStyle = '#11181d';
     ctx.fillRect(x + shopW * 0.62, 20, 10, h - 26);
     // awning / fascia
-    ctx.fillStyle = awnings[(Math.random() * awnings.length) | 0];
+    ctx.fillStyle = awnings[(rand() * awnings.length) | 0];
     ctx.fillRect(x + 1, 6, shopW - 2, 9);
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fillRect(x + 4, 8, shopW * 0.4, 3);
@@ -1325,9 +1351,9 @@ function addSponsorBoards(scene, frames, offset) {
   const N = 22;
   const step = Math.floor(frames.length / N);
   for (let i = 0; i < frames.length; i += step) {
-    if (Math.random() < 0.35) continue;
+    if (rand() < 0.35) continue;
     const f = frames[i];
-    const sign = Math.random() < 0.5 ? +1 : -1;
+    const sign = rand() < 0.5 ? +1 : -1;
     const pos = f.pos.clone().add(f.left.clone().multiplyScalar(sign * offset));
     // A hoarding is 8 m of panel running ALONG the track with its face turned
     // to the racing surface. `yaw` (the direction of travel) put the box's
@@ -1335,7 +1361,7 @@ function addSponsorBoards(scene, frames, offset) {
     // fins and aimed their logos down the road at nobody. Face inward instead:
     // the panel's +Z is the inward normal, so X ends up along the track.
     const yaw = Math.atan2(-sign * f.left.x, -sign * f.left.z);
-    const mat = faceMats[Math.floor(Math.random() * faceMats.length)];
+    const mat = faceMats[Math.floor(rand() * faceMats.length)];
     const board = new THREE.Mesh(boardGeo, mat);
     board.position.set(pos.x, 1.45, pos.z);
     board.rotation.y = yaw;
@@ -1553,10 +1579,10 @@ function addCityBuildings(scene, frames, D) {
     const f = frames[i];
     for (const sign of [+1, -1]) {
       for (const tier of [0, 1]) {
-        if (Math.random() < 0.18) continue;      // leave some gaps in the fabric
-        const w = GRID * (2 + ((Math.random() * 3) | 0));   // 12/18/24 m
-        const d = GRID * (2 + ((Math.random() * 3) | 0));
-        const setback = D.armco + 3.6 + d / 2 + tier * (30 + Math.random() * 14);
+        if (rand() < 0.18) continue;      // leave some gaps in the fabric
+        const w = GRID * (2 + ((rand() * 3) | 0));   // 12/18/24 m
+        const d = GRID * (2 + ((rand() * 3) | 0));
+        const setback = D.armco + 3.6 + d / 2 + tier * (30 + rand() * 14);
         let px = f.pos.x + f.left.x * sign * setback;
         let pz = f.pos.z + f.left.z * sign * setback;
         px = Math.round(px / GRID) * GRID;
@@ -1568,14 +1594,14 @@ function addCityBuildings(scene, frames, D) {
         if (keys.some((k) => occupied.has(k))) continue;
         keys.forEach((k) => occupied.add(k));
 
-        const matIdx = (Math.random() * facadeMats.length) | 0;
+        const matIdx = (rand() * facadeMats.length) | 0;
         const height = tier === 0
-          ? 16 + Math.random() * 46
-          : 22 + Math.random() * 60;
-        const hasPodium = Math.random() < 0.7;
+          ? 16 + rand() * 46
+          : 22 + rand() * 60;
+        const hasPodium = rand() < 0.7;
         let towerBase = 0;
         if (hasPodium) {
-          const ph = Math.random() < 0.5 ? 4.5 : 9;
+          const ph = rand() < 0.5 ? 4.5 : 9;
           // podium fills the lot; storefront texture repeats every ~12 m
           box(podiumBucket, w, ph, d, px, ph / 2, pz,
             Math.max(1, Math.round(w / 12)), Math.max(1, Math.round(ph / 4.5)));
@@ -1590,15 +1616,15 @@ function addCityBuildings(scene, frames, D) {
         // parapet + rooftop plant
         const topY = towerBase + th;
         box(darkBucket, tw + 0.5, 0.6, td + 0.5, px, topY + 0.3, pz);
-        const acN = (Math.random() * 3) | 0;
+        const acN = (rand() * 3) | 0;
         for (let a = 0; a < acN; a++) {
           box(darkBucket, 1.6, 1.0, 1.2,
-            px + (Math.random() - 0.5) * (tw - 3),
+            px + (rand() - 0.5) * (tw - 3),
             topY + 1.1,
-            pz + (Math.random() - 0.5) * (td - 3));
+            pz + (rand() - 0.5) * (td - 3));
         }
-        if (Math.random() < 0.22) {
-          box(darkBucket, 0.22, 4 + Math.random() * 5, 0.22, px, topY + 2.5, pz);
+        if (rand() < 0.22) {
+          box(darkBucket, 0.22, 4 + rand() * 5, 0.22, px, topY + 2.5, pz);
         }
       }
     }
@@ -1634,23 +1660,23 @@ function addCitySkyline(scene, frames) {
   const geos = [];
   for (const [innerR, span, N, hMin, hVar, hazeAmt] of bands) {
     for (let i = 0; i < N; i++) {
-      const a = (i / N) * Math.PI * 2 + (Math.random() - 0.5) * 0.18;
+      const a = (i / N) * Math.PI * 2 + (rand() - 0.5) * 0.18;
       if (Math.cos(a) > 0.35) continue;          // open water to the east
-      const r = innerR + Math.random() * span;
+      const r = innerR + rand() * span;
       const cx = Math.cos(a) * r;
       const cz = Math.sin(a) * r;
-      const clusterN = 1 + ((Math.random() * 3) | 0);
+      const clusterN = 1 + ((rand() * 3) | 0);
       for (let cti = 0; cti < clusterN; cti++) {
-        const w = 26 + Math.random() * 48;
-        const dd = 26 + Math.random() * 48;
-        const h = hMin + Math.random() * hVar;
-        const px = cx + (Math.random() - 0.5) * 90;
-        const pz = cz + (Math.random() - 0.5) * 90;
+        const w = 26 + rand() * 48;
+        const dd = 26 + rand() * 48;
+        const h = hMin + rand() * hVar;
+        const px = cx + (rand() - 0.5) * 90;
+        const pz = cz + (rand() - 0.5) * 90;
         const geo = new THREE.BoxGeometry(w, h, dd);
         geo.translate(px, h / 2, pz);
         // flat slab colour lerped toward the haze; faces darker on the sides
-        tmp.setHSL(0.58 + (Math.random() - 0.5) * 0.04, 0.10 + Math.random() * 0.08,
-          0.15 + Math.random() * 0.07);
+        tmp.setHSL(0.58 + (rand() - 0.5) * 0.04, 0.10 + rand() * 0.08,
+          0.15 + rand() * 0.07);
         tmp.lerp(haze, hazeAmt);
         const count = geo.getAttribute('position').count;
         const colors = new Float32Array(count * 3);
@@ -1768,10 +1794,10 @@ function addMarina(scene, frames, D) {
   const q4 = new THREE.Quaternion();
   const s4 = new THREE.Vector3();
   for (let i = 0; i < palmN; i++) {
-    const pz = zMin + 10 + i * ((zMax - zMin - 20) / (palmN - 1)) + (Math.random() - 0.5) * 3;
-    const px = edge - 3.6 + (Math.random() - 0.5) * 1.2;
-    const sc = 0.85 + Math.random() * 0.4;
-    q4.setFromEuler(new THREE.Euler(0, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.08));
+    const pz = zMin + 10 + i * ((zMax - zMin - 20) / (palmN - 1)) + (rand() - 0.5) * 3;
+    const px = edge - 3.6 + (rand() - 0.5) * 1.2;
+    const sc = 0.85 + rand() * 0.4;
+    q4.setFromEuler(new THREE.Euler(0, rand() * Math.PI * 2, (rand() - 0.5) * 0.08));
     s4.set(sc, sc, sc);
     m4.compose(new THREE.Vector3(px, 0, pz), q4, s4);
     trunks.setMatrixAt(i, m4);
@@ -1788,10 +1814,10 @@ function addMarina(scene, frames, D) {
   const hullGeos = [], mastGeos = [];
   const boatN = 9;
   for (let i = 0; i < boatN; i++) {
-    const bx = edge + 10 + Math.random() * 45;
-    const bz = zMin + 20 + (i + Math.random() * 0.6) * ((zMax - zMin - 40) / boatN);
-    const yaw = (Math.random() - 0.5) * 0.5 + (Math.random() < 0.5 ? 0 : Math.PI);
-    const sc = 0.8 + Math.random() * 0.7;
+    const bx = edge + 10 + rand() * 45;
+    const bz = zMin + 20 + (i + rand() * 0.6) * ((zMax - zMin - 40) / boatN);
+    const yaw = (rand() - 0.5) * 0.5 + (rand() < 0.5 ? 0 : Math.PI);
+    const sc = 0.8 + rand() * 0.7;
     const hull = new THREE.BoxGeometry(2.2 * sc, 0.9 * sc, 6.5 * sc);
     {
       // taper the bow so it isn't a shoebox
@@ -1808,7 +1834,7 @@ function addMarina(scene, frames, D) {
     boat.applyMatrix4(rot);
     boat.translate(bx, 0.42 * sc, bz);
     hullGeos.push(boat);
-    if (Math.random() < 0.55) {
+    if (rand() < 0.55) {
       const mast = new THREE.CylinderGeometry(0.04, 0.05, 6 * sc, 6);
       mast.translate(0, 3.4 * sc, -0.4 * sc);
       mast.applyMatrix4(rot);
@@ -1972,22 +1998,22 @@ function addRocks(scene, frames, D) {
   const extent = 440;
   let placed = 0;
   for (let i = 0; i < N * 5 && placed < N; i++) {
-    const x = (Math.random() * 2 - 1) * extent;
-    const z = (Math.random() * 2 - 1) * extent;
+    const x = (rand() * 2 - 1) * extent;
+    const z = (rand() * 2 - 1) * extent;
     // Clearance must grow with the boulder: a 5-scale rock spans ~8 m, and the
     // old fixed armco+5 test let the big ones lean through the barrier line.
-    const sc = 1.0 + Math.random() * 4.5;
+    const sc = 1.0 + rand() * 4.5;
     const dist = distToTrack(frames, x, z);
     if (dist < D.armco + 4 + sc * 1.7) continue;
-    if (dist > 120 && Math.random() < ((dist - 120) / (extent - 120)) * 0.6) continue;
+    if (dist > 120 && rand() < ((dist - 120) / (extent - 120)) * 0.6) continue;
     const p = new THREE.Vector3(x, 0, z);
-    s.set(sc * (0.8 + Math.random() * 0.6), sc * (0.5 + Math.random() * 0.7), sc * (0.8 + Math.random() * 0.6));
-    e.set((Math.random() - 0.5) * 0.5, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.5);
+    s.set(sc * (0.8 + rand() * 0.6), sc * (0.5 + rand() * 0.7), sc * (0.8 + rand() * 0.6));
+    e.set((rand() - 0.5) * 0.5, rand() * Math.PI * 2, (rand() - 0.5) * 0.5);
     q.setFromEuler(e);
     p.y = groundY(D, x, z) - 0.3 * sc;
     m.compose(p, q, s);
     inst.setMatrixAt(placed, m);
-    col.setHSL(0.045 + Math.random() * 0.03, 0.45 + Math.random() * 0.18, 0.30 + Math.random() * 0.12);
+    col.setHSL(0.045 + rand() * 0.03, 0.45 + rand() * 0.18, 0.30 + rand() * 0.12);
     inst.setColorAt(placed, col);
     placed++;
   }
@@ -2005,12 +2031,12 @@ function addRocks(scene, frames, D) {
     // Buttes are big (base radius up to ~90 m) — sample positions until one
     // clears every road section. The old fixed ring around the origin planted
     // them straight on the circuit.
-    const h = 60 + Math.random() * 90;
-    const topR = 26 + Math.random() * 30;
+    const h = 60 + rand() * 90;
+    const topR = 26 + rand() * 30;
     let x = 0, z = 0, ok = false;
     for (let t = 0; t < 50 && !ok; t++) {
-      const a = Math.random() * Math.PI * 2;
-      const r = 250 + Math.random() * 280;
+      const a = rand() * Math.PI * 2;
+      const r = 250 + rand() * 280;
       x = Math.cos(a) * r;
       z = Math.sin(a) * r;
       if (distToTrack(frames, x, z) > topR * 1.7 + D.armco + 12) ok = true;
@@ -2073,17 +2099,17 @@ function addScrub(scene, frames, D) {
   const extent = 420;
   let placed = 0;
   for (let i = 0; i < BUSH_N * 5 && placed < BUSH_N; i++) {
-    const x = (Math.random() * 2 - 1) * extent;
-    const z = (Math.random() * 2 - 1) * extent;
+    const x = (rand() * 2 - 1) * extent;
+    const z = (rand() * 2 - 1) * extent;
     const dist = distToTrack(frames, x, z);
     if (dist < D.armco + 4) continue;
-    if (dist > 150 && Math.random() < ((dist - 150) / (extent - 150)) * 0.6) continue;
-    const sc = 0.5 + Math.random() * 1.3;
-    s4.set(sc * (0.8 + Math.random() * 0.5), sc, sc * (0.8 + Math.random() * 0.5));
-    q4.setFromEuler(new THREE.Euler(0, Math.random() * Math.PI * 2, 0));
+    if (dist > 150 && rand() < ((dist - 150) / (extent - 150)) * 0.6) continue;
+    const sc = 0.5 + rand() * 1.3;
+    s4.set(sc * (0.8 + rand() * 0.5), sc, sc * (0.8 + rand() * 0.5));
+    q4.setFromEuler(new THREE.Euler(0, rand() * Math.PI * 2, 0));
     m4.compose(new THREE.Vector3(x, groundY(D, x, z) + sc * 0.30, z), q4, s4);
     bushes.setMatrixAt(placed, m4);
-    col.setHSL(0.13 + Math.random() * 0.09, 0.28 + Math.random() * 0.22, 0.26 + Math.random() * 0.14);
+    col.setHSL(0.13 + rand() * 0.09, 0.28 + rand() * 0.22, 0.26 + rand() * 0.14);
     bushes.setColorAt(placed, col);
     placed++;
   }
@@ -2116,16 +2142,16 @@ function addScrub(scene, frames, D) {
   cacti.castShadow = true;
   placed = 0;
   for (let i = 0; i < CACT_N * 6 && placed < CACT_N; i++) {
-    const x = (Math.random() * 2 - 1) * extent;
-    const z = (Math.random() * 2 - 1) * extent;
+    const x = (rand() * 2 - 1) * extent;
+    const z = (rand() * 2 - 1) * extent;
     const dist = distToTrack(frames, x, z);
     if (dist < D.armco + 8 || dist > 380) continue;
-    const sc = 0.7 + Math.random() * 0.9;
-    s4.set(sc, sc * (0.85 + Math.random() * 0.4), sc);
-    q4.setFromEuler(new THREE.Euler(0, Math.random() * Math.PI * 2, 0));
+    const sc = 0.7 + rand() * 0.9;
+    s4.set(sc, sc * (0.85 + rand() * 0.4), sc);
+    q4.setFromEuler(new THREE.Euler(0, rand() * Math.PI * 2, 0));
     m4.compose(new THREE.Vector3(x, groundY(D, x, z), z), q4, s4);
     cacti.setMatrixAt(placed, m4);
-    col.setHSL(0.28 + Math.random() * 0.05, 0.22 + Math.random() * 0.15, 0.30 + Math.random() * 0.10);
+    col.setHSL(0.28 + rand() * 0.05, 0.22 + rand() * 0.15, 0.30 + rand() * 0.10);
     cacti.setColorAt(placed, col);
     placed++;
   }
@@ -2164,17 +2190,17 @@ function addFarmland(scene, frames, D) {
 
   const fields = [];
   for (let tries = 0; tries < 140 && fields.length < 18; tries++) {
-    const w = 55 + Math.random() * 110;
-    const d = 45 + Math.random() * 100;
-    const px = Math.round(((Math.random() * 2 - 1) * 680) / 10) * 10;
-    const pz = Math.round(((Math.random() * 2 - 1) * 680) / 10) * 10;
+    const w = 55 + rand() * 110;
+    const d = 45 + rand() * 100;
+    const px = Math.round(((rand() * 2 - 1) * 680) / 10) * 10;
+    const pz = Math.round(((rand() * 2 - 1) * 680) / 10) * 10;
     if (!rectClearOfTrack(frames, px, pz, w / 2, d / 2, D.armco + 6)) continue;
     // keep fields from stacking on each other
     if (fields.some((fl) => Math.abs(fl.px - px) < (fl.w + w) / 2 - 8 &&
                             Math.abs(fl.pz - pz) < (fl.d + d) / 2 - 8)) continue;
     fields.push({ px, pz, w, d });
-    const mat = cropMats[(Math.random() * cropMats.length) | 0];
-    const rot = Math.random() < 0.5 ? 0 : Math.PI / 2;
+    const mat = cropMats[(rand() * cropMats.length) | 0];
+    const rot = rand() < 0.5 ? 0 : Math.PI / 2;
     const field = new THREE.Mesh(drapeQuad(D, px, pz, w, d, rot, 0.06), mat);
     field.position.set(px, 0, pz);
     field.receiveShadow = true;
@@ -2211,7 +2237,7 @@ function addFarmland(scene, frames, D) {
     cap.position.set(6.6, 7, -1);
     g.add(cap);
     g.position.set(bx, groundY(D, bx, bz), bz);
-    g.rotation.y = (Math.random() < 0.5 ? 0 : Math.PI / 2) + (Math.random() - 0.5) * 0.1;
+    g.rotation.y = (rand() < 0.5 ? 0 : Math.PI / 2) + (rand() - 0.5) * 0.1;
     scene.add(g);
     barns++;
   }
@@ -2228,11 +2254,11 @@ function addFarmland(scene, frames, D) {
   const s4 = new THREE.Vector3(1, 1, 1);
   let placed = 0;
   for (let i = 0; i < BALE_N * 4 && placed < BALE_N && fields.length; i++) {
-    const fl = fields[(Math.random() * fields.length) | 0];
-    const x = fl.px + (Math.random() - 0.5) * (fl.w - 10);
-    const z = fl.pz + (Math.random() - 0.5) * (fl.d - 10);
+    const fl = fields[(rand() * fields.length) | 0];
+    const x = fl.px + (rand() - 0.5) * (fl.w - 10);
+    const z = fl.pz + (rand() - 0.5) * (fl.d - 10);
     if (distToTrack(frames, x, z) < D.armco + 8) continue;
-    q4.setFromEuler(new THREE.Euler(0, Math.random() * Math.PI, 0));
+    q4.setFromEuler(new THREE.Euler(0, rand() * Math.PI, 0));
     m4.compose(new THREE.Vector3(x, groundY(D, x, z) + 0.75, z), q4, s4);
     bales.setMatrixAt(placed, m4);
     placed++;
@@ -2249,10 +2275,10 @@ function addAlpineHuts(scene, frames, D) {
   const stoneMat = new THREE.MeshStandardMaterial({ color: 0x8a8a86, roughness: 0.95 });
   let built = 0;
   for (let tries = 0; tries < 80 && built < 4; tries++) {
-    const i = (Math.random() * frames.length) | 0;
+    const i = (rand() * frames.length) | 0;
     const f = frames[i];
-    const sign = Math.random() < 0.5 ? +1 : -1;
-    const setback = 34 + Math.random() * 70;
+    const sign = rand() < 0.5 ? +1 : -1;
+    const setback = 34 + rand() * 70;
     const px = f.pos.x + f.left.x * sign * setback;
     const pz = f.pos.z + f.left.z * sign * setback;
     if (!rectClearOfTrack(frames, px, pz, 4.5, 4, D.armco + 5)) continue;
@@ -2276,7 +2302,7 @@ function addAlpineHuts(scene, frames, D) {
     g.add(chimney);
     g.position.set(px, groundY(D, px, pz), pz);
     // gable end roughly faces the road
-    g.rotation.y = Math.atan2(f.left.x, f.left.z) + (Math.random() - 0.5) * 0.4;
+    g.rotation.y = Math.atan2(f.left.x, f.left.z) + (rand() - 0.5) * 0.4;
     scene.add(g);
     built++;
   }

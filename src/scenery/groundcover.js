@@ -35,6 +35,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { fractalNoise, smoothstep, hideFromOverridePasses } from './noise.js';
+import { rand } from './rng.js';
 
 // ---------------------------------------------------------------------------
 // Authored layout data
@@ -139,28 +140,28 @@ function makeTuftTexture(pal) {
   for (let cell = 0; cell < 4; cell++) {
     const ox = (cell % 2) * half;
     const oy = ((cell / 2) | 0) * half;
-    const blades = 15 + Math.floor(Math.random() * 11);
+    const blades = 15 + Math.floor(rand() * 11);
     // One cell is deliberately sparse and one deliberately dense.
     const bias = [1.0, 0.65, 1.35, 0.9][cell];
     for (let b = 0; b < blades * bias; b++) {
-      const bx = ox + half * (0.5 + (Math.random() - 0.5) * 0.42);
+      const bx = ox + half * (0.5 + (rand() - 0.5) * 0.42);
       const by = oy + half * 0.975;
-      const lean = (Math.random() - 0.5) * 1.05;
-      const len = half * (0.32 + Math.random() * 0.56) * bias;
+      const lean = (rand() - 0.5) * 1.05;
+      const len = half * (0.32 + rand() * 0.56) * bias;
       const tipX = Math.min(ox + half - 5, Math.max(ox + 5, bx + lean * len));
       const tipY = Math.max(oy + 5, by - len);
       const cx = bx + lean * len * 0.30;
       const cy = by - len * 0.60;
-      const w = half * (0.019 + Math.random() * 0.020);
+      const w = half * (0.019 + rand() * 0.020);
 
-      const straw = Math.random() < pal.strawFrac;
+      const straw = rand() < pal.strawFrac;
       const g = ctx.createLinearGradient(bx, by, tipX, tipY);
       if (straw) {
         g.addColorStop(0, 'rgb(74,62,32)');
         g.addColorStop(0.5, 'rgb(140,122,66)');
         g.addColorStop(1, 'rgb(196,178,110)');
       } else {
-        const hj = Math.floor(Math.random() * 22);
+        const hj = Math.floor(rand() * 22);
         g.addColorStop(0, `rgb(${34 + hj},${44 + hj},${18})`);
         g.addColorStop(0.55, `rgb(${64 + hj},${92 + hj},${34})`);
         g.addColorStop(1, `rgb(${118 + hj},${146 + hj},${62})`);
@@ -198,15 +199,15 @@ function makeFlowerTexture() {
   ctx.lineWidth = 1.6;
   const heads = [];
   for (let i = 0; i < 26; i++) {
-    const bx = size * (0.5 + (Math.random() - 0.5) * 0.7);
+    const bx = size * (0.5 + (rand() - 0.5) * 0.7);
     const by = size * 0.99;
-    const hx = Math.min(size - 6, Math.max(6, bx + (Math.random() - 0.5) * size * 0.42));
-    const hy = size * (0.12 + Math.random() * 0.62);
+    const hx = Math.min(size - 6, Math.max(6, bx + (rand() - 0.5) * size * 0.42));
+    const hy = size * (0.12 + rand() * 0.62);
     ctx.beginPath();
     ctx.moveTo(bx, by);
-    ctx.quadraticCurveTo((bx + hx) / 2 + (Math.random() - 0.5) * 8, (by + hy) / 2, hx, hy);
+    ctx.quadraticCurveTo((bx + hx) / 2 + (rand() - 0.5) * 8, (by + hy) / 2, hx, hy);
     ctx.stroke();
-    heads.push({ x: hx, y: hy, r: 2.6 + Math.random() * 3.4 });
+    heads.push({ x: hx, y: hy, r: 2.6 + rand() * 3.4 });
   }
   for (const h of heads) {
     const g = ctx.createRadialGradient(h.x, h.y, 0.4, h.x, h.y, h.r);
@@ -369,7 +370,7 @@ function circuitStats(frames) {
 function shuffled(arr) {
   const a = arr.slice();
   for (let i = a.length - 1; i > 0; i--) {
-    const j = (Math.random() * (i + 1)) | 0;
+    const j = (rand() * (i + 1)) | 0;
     const t = a[i]; a[i] = a[j]; a[j] = t;
   }
   return a;
@@ -389,31 +390,31 @@ function clumpedBand(frames, keepOut, count, cfg) {
   const clumps = [];
   const want = Math.max(6, Math.round(count / cfg.per));
   for (let i = 0; i < want * 4 && clumps.length < want; i++) {
-    const f = frames[(Math.random() * n) | 0];
-    const side = Math.random() < 0.5 ? 1 : -1;
-    const off = cfg.inner + Math.pow(Math.random(), cfg.bias) * (cfg.outer - cfg.inner);
+    const f = frames[(rand() * n) | 0];
+    const side = rand() < 0.5 ? 1 : -1;
+    const off = cfg.inner + Math.pow(rand(), cfg.bias) * (cfg.outer - cfg.inner);
     const x = f.pos.x + f.left.x * side * off;
     const z = f.pos.z + f.left.z * side * off;
     if (keepOut(x, z)) continue;
     if (distToTrack(frames, x, z) < cfg.inner) continue;
-    clumps.push({ x, z, r: cfg.rad[0] + Math.random() * (cfg.rad[1] - cfg.rad[0]) });
+    clumps.push({ x, z, r: cfg.rad[0] + rand() * (cfg.rad[1] - cfg.rad[0]) });
   }
   if (!clumps.length) return [];
 
   const out = [];
   for (let i = 0; i < count * 5 && out.length < count; i++) {
     let x, z;
-    if (Math.random() < cfg.clumped) {
-      const cl = clumps[(Math.random() * clumps.length) | 0];
-      const a = Math.random() * Math.PI * 2;
+    if (rand() < cfg.clumped) {
+      const cl = clumps[(rand() * clumps.length) | 0];
+      const a = rand() * Math.PI * 2;
       // sum of two uniforms => soft-edged clump instead of a hard disc
-      const rad = (Math.random() + Math.random()) * 0.5 * cl.r;
+      const rad = (rand() + rand()) * 0.5 * cl.r;
       x = cl.x + Math.cos(a) * rad;
       z = cl.z + Math.sin(a) * rad;
     } else {
-      const f = frames[(Math.random() * n) | 0];
-      const side = Math.random() < 0.5 ? 1 : -1;
-      const off = cfg.inner + Math.pow(Math.random(), cfg.bias) * (cfg.outer - cfg.inner);
+      const f = frames[(rand() * n) | 0];
+      const side = rand() < 0.5 ? 1 : -1;
+      const off = cfg.inner + Math.pow(rand(), cfg.bias) * (cfg.outer - cfg.inner);
       x = f.pos.x + f.left.x * side * off;
       z = f.pos.z + f.left.z * side * off;
     }
@@ -421,7 +422,7 @@ function clumpedBand(frames, keepOut, count, cfg) {
     const d = distToTrack(frames, x, z);
     if (d < cfg.inner || d > cfg.outer * 1.25) continue;
     // Thin with distance so most of the budget lands where the driver is.
-    if (Math.random() > 1 - smoothstep(cfg.inner + cfg.solid, cfg.outer, d) * cfg.fade) continue;
+    if (rand() > 1 - smoothstep(cfg.inner + cfg.solid, cfg.outer, d) * cfg.fade) continue;
     out.push({ x, z, d });
   }
   return out;
@@ -436,7 +437,7 @@ function paint(geo, color) {
   const arr = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {
     // per-vertex grain jitter: free variation on a single-material mesh
-    const j = 0.86 + Math.random() * 0.28;
+    const j = 0.86 + rand() * 0.28;
     arr[i * 3] = color.r * j;
     arr[i * 3 + 1] = color.g * j;
     arr[i * 3 + 2] = color.b * j;
@@ -568,16 +569,16 @@ function addTufts(scene, frames, D, pal, ground, keepOut, terrain, count) {
     const near = 1 - smoothstep(D.armco + 2, D.armco + 34, sp.d);
     // Capped at ~1.0 m: the 1.2 x 1.0 m card scaled past 1.3 stopped reading
     // as a tussock and started reading as a pale tent pitched in the field.
-    const sc = (ground === 'alpine' ? 0.26 : 0.32) + Math.random() * (0.34 + near * 0.42);
-    s.set(sc * (0.8 + Math.random() * 0.7), sc * (0.7 + Math.random() * 0.9), sc);
-    e.set((Math.random() - 0.5) * 0.22, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.22);
+    const sc = (ground === 'alpine' ? 0.26 : 0.32) + rand() * (0.34 + near * 0.42);
+    s.set(sc * (0.8 + rand() * 0.7), sc * (0.7 + rand() * 0.9), sc);
+    e.set((rand() - 0.5) * 0.22, rand() * Math.PI * 2, (rand() - 0.5) * 0.22);
     q.setFromEuler(e);
     p.set(sp.x, terrain.height(sp.x, sp.z) - 0.06, sp.z);
     m.compose(p, q, s);
     inst.setMatrixAt(i, m);
-    col.setHSL(h0 + Math.random() * (h1 - h0),
-               s0 + Math.random() * (s1 - s0),
-               l0 + Math.random() * (l1 - l0));
+    col.setHSL(h0 + rand() * (h1 - h0),
+               s0 + rand() * (s1 - s0),
+               l0 + rand() * (l1 - l0));
     inst.setColorAt(i, col);
   }
   inst.instanceMatrix.needsUpdate = true;
@@ -596,18 +597,18 @@ function addFlowerDrifts(scene, frames, D, pal, keepOut, terrain, count) {
   const drifts = [];
   const dry = new THREE.Color(pal.dry);
   for (let i = 0; i < 90 && drifts.length < 34; i++) {
-    const f = frames[(Math.random() * n) | 0];
-    const side = Math.random() < 0.5 ? 1 : -1;
-    const off = D.armco + 3 + Math.pow(Math.random(), 1.5) * 70;
+    const f = frames[(rand() * n) | 0];
+    const side = rand() < 0.5 ? 1 : -1;
+    const off = D.armco + 3 + Math.pow(rand(), 1.5) * 70;
     const x = f.pos.x + f.left.x * side * off;
     const z = f.pos.z + f.left.z * side * off;
     if (keepOut(x, z)) continue;
     if (distToTrack(frames, x, z) < D.armco + 2.5) continue;
-    const isDry = Math.random() < 0.34;
+    const isDry = rand() < 0.34;
     drifts.push({
       x, z,
-      r: isDry ? 9 + Math.random() * 16 : 4 + Math.random() * 11,
-      col: isDry ? dry : new THREE.Color(pal.flowers[(Math.random() * pal.flowers.length) | 0]),
+      r: isDry ? 9 + rand() * 16 : 4 + rand() * 11,
+      col: isDry ? dry : new THREE.Color(pal.flowers[(rand() * pal.flowers.length) | 0]),
       dry: isDry,
     });
   }
@@ -616,9 +617,9 @@ function addFlowerDrifts(scene, frames, D, pal, keepOut, terrain, count) {
   const placed = [];
   const cols = [];
   for (let i = 0; i < count * 4 && placed.length < count; i++) {
-    const dr = drifts[(Math.random() * drifts.length) | 0];
-    const a = Math.random() * Math.PI * 2;
-    const rad = (Math.random() + Math.random()) * 0.5 * dr.r;
+    const dr = drifts[(rand() * drifts.length) | 0];
+    const a = rand() * Math.PI * 2;
+    const rad = (rand() + rand()) * 0.5 * dr.r;
     const x = dr.x + Math.cos(a) * rad;
     const z = dr.z + Math.sin(a) * rad;
     if (keepOut(x, z)) continue;
@@ -663,15 +664,15 @@ function addFlowerDrifts(scene, frames, D, pal, keepOut, terrain, count) {
   const col = new THREE.Color();
   for (let i = 0; i < placed.length; i++) {
     const sp = placed[i];
-    const sc = (sp.dry ? 0.42 : 0.34) + Math.random() * 0.34;
-    s.set(sc * (0.8 + Math.random() * 0.5), sc * (0.85 + Math.random() * 0.6), sc);
-    e.set(0, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.3);
+    const sc = (sp.dry ? 0.42 : 0.34) + rand() * 0.34;
+    s.set(sc * (0.8 + rand() * 0.5), sc * (0.85 + rand() * 0.6), sc);
+    e.set(0, rand() * Math.PI * 2, (rand() - 0.5) * 0.3);
     q.setFromEuler(e);
     p.set(sp.x, terrain.height(sp.x, sp.z) - 0.04, sp.z);
     m.compose(p, q, s);
     inst.setMatrixAt(i, m);
     // brightness jitter inside the drift so the patch isn't a flat colour blob
-    col.copy(cols[i]).multiplyScalar(0.78 + Math.random() * 0.36);
+    col.copy(cols[i]).multiplyScalar(0.78 + rand() * 0.36);
     inst.setColorAt(i, col);
   }
   inst.instanceMatrix.needsUpdate = true;
@@ -712,8 +713,8 @@ function buildShrubGeometry() {
   for (let v = 0; v < pos.count; v++) {
     const t = smoothstep(-0.1, 0.9, pos.getY(v));
     const k = 0.50 + t * 0.55;
-    cols[v * 3] = k * (0.92 + Math.random() * 0.14);
-    cols[v * 3 + 1] = k * (0.98 + Math.random() * 0.10);
+    cols[v * 3] = k * (0.92 + rand() * 0.14);
+    cols[v * 3 + 1] = k * (0.98 + rand() * 0.10);
     cols[v * 3 + 2] = k * 0.82;
   }
   geo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
@@ -749,17 +750,17 @@ function addShrubs(scene, frames, D, pal, keepOut, terrain, count) {
   const [h0, h1] = pal.shrub, [s0, s1] = pal.shrubSat, [l0, l1] = pal.shrubLum;
   for (let i = 0; i < spots.length; i++) {
     const sp = spots[i];
-    const sc = 0.42 + Math.pow(Math.random(), 1.8) * 1.05;
-    s.set(sc * (0.75 + Math.random() * 0.6), sc * (0.55 + Math.random() * 0.75), sc * (0.75 + Math.random() * 0.6));
-    e.set((Math.random() - 0.5) * 0.16, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.16);
+    const sc = 0.42 + Math.pow(rand(), 1.8) * 1.05;
+    s.set(sc * (0.75 + rand() * 0.6), sc * (0.55 + rand() * 0.75), sc * (0.75 + rand() * 0.6));
+    e.set((rand() - 0.5) * 0.16, rand() * Math.PI * 2, (rand() - 0.5) * 0.16);
     q.setFromEuler(e);
     // Sunk a little so the base never shows a hovering rim on rolling ground.
     p.set(sp.x, terrain.height(sp.x, sp.z) - 0.16 * sc, sp.z);
     m.compose(p, q, s);
     inst.setMatrixAt(i, m);
-    col.setHSL(h0 + Math.random() * (h1 - h0),
-               s0 + Math.random() * (s1 - s0),
-               l0 + Math.random() * (l1 - l0));
+    col.setHSL(h0 + rand() * (h1 - h0),
+               s0 + rand() * (s1 - s0),
+               l0 + rand() * (l1 - l0));
     inst.setColorAt(i, col);
   }
   inst.instanceMatrix.needsUpdate = true;
@@ -817,9 +818,9 @@ function buildFieldLines(frames, D, ctx, cfg) {
   const clearance = D.armco + 24;
 
   const lines = shuffled(FIELD_LINES).slice(0, cfg.lineCount);
-  const mirrorU = Math.random() < 0.5 ? 1 : -1;
-  const mirrorV = Math.random() < 0.5 ? 1 : -1;
-  const swap = Math.random() < 0.4;
+  const mirrorU = rand() < 0.5 ? 1 : -1;
+  const mirrorV = rand() < 0.5 ? 1 : -1;
+  const swap = rand() < 0.4;
 
   for (const line of lines) {
     const world = line.pts.map(([u, v]) => {
@@ -849,12 +850,12 @@ function buildFieldLines(frames, D, ctx, cfg) {
         // Choose the next run. Hedge-style lines are mostly hedge with fenced
         // stretches where the hedge was grubbed out; fence-style lines invert
         // that. Every run change is a chance for a gateway.
-        const r = Math.random();
+        const r = rand();
         if (!allowHedge) runType = 'fence';
         else if (line.style === 'hedge') runType = r < 0.66 ? 'hedge' : (r < 0.9 ? 'fence' : 'gap');
         else runType = r < 0.66 ? 'fence' : (r < 0.88 ? 'hedge' : 'gap');
-        runLeft = runType === 'gap' ? 4 + Math.random() * 5 : 26 + Math.random() * 96;
-        gateArmed = runType === 'gap' && Math.random() < 0.55;
+        runLeft = runType === 'gap' ? 4 + rand() * 5 : 26 + rand() * 96;
+        gateArmed = runType === 'gap' && rand() < 0.55;
       }
       runLeft -= STEP;
 
@@ -880,8 +881,8 @@ function buildFieldLines(frames, D, ctx, cfg) {
         const pitch = Math.asin(Math.max(-0.7, Math.min(0.7, (yb - ya) / len)));
         ctx.hedges.push({
           x: mx, y: (ya + yb) / 2, z: mz, yaw, pitch,
-          h: 2.0 + Math.random() * 1.1,     // ~1.3-2.8 m of hedge above ground
-          w: 0.85 + Math.random() * 0.55,
+          h: 2.0 + rand() * 1.1,     // ~1.3-2.8 m of hedge above ground
+          w: 0.85 + rand() * 0.55,
         });
       } else {
         if (ctx.posts >= cfg.postCap) continue;
@@ -892,8 +893,8 @@ function buildFieldLines(frames, D, ctx, cfg) {
 }
 
 function buildFencePost(ctx, x1, y1, z1, x2, y2, z2) {
-  const H = 1.18 + Math.random() * 0.22;
-  const lean = (Math.random() - 0.5) * 0.06;
+  const H = 1.18 + rand() * 0.22;
+  const lean = (rand() - 0.5) * 0.06;
   const m = new THREE.Matrix4().makeRotationZ(lean);
   m.setPosition(x1, y1 + H / 2 - 0.32, z1);
   const post = new THREE.CylinderGeometry(0.055, 0.075, H + 0.64, 5);
@@ -938,7 +939,7 @@ function buildGate(ctx, x, y, z, yaw, span) {
 function buildPoleRoutes(frames, D, ctx, cfg) {
   const { stats, keepOut, terrain } = cfg;
   const routes = shuffled(POLE_ROUTES).slice(0, cfg.routeCount);
-  const mirror = Math.random() < 0.5 ? 1 : -1;
+  const mirror = rand() < 0.5 ? 1 : -1;
   const clearance = D.armco + 30;
 
   for (const route of routes) {
@@ -956,7 +957,7 @@ function buildPoleRoutes(frames, D, ctx, cfg) {
       const nxt = pts[Math.min(pts.length - 1, i + 1)];
       const yaw = Math.atan2(nxt.x - p.x, nxt.z - p.z);
       poles.push(ok ? { x: p.x, y: terrain.height(p.x, p.z), z: p.z, yaw } : null);
-      i += 7 + ((Math.random() * 3) | 0);
+      i += 7 + ((rand() * 3) | 0);
     }
 
     for (const pole of poles) if (pole) buildPole(ctx, pole);
@@ -1024,25 +1025,25 @@ function buildLogPiles(frames, D, ctx, cfg, count) {
   const { stats, keepOut, terrain } = cfg;
   let built = 0;
   for (let tries = 0; tries < count * 12 && built < count; tries++) {
-    const x = stats.cx + (Math.random() * 2 - 1) * stats.hx * 0.85;
-    const z = stats.cz + (Math.random() * 2 - 1) * stats.hz * 0.85;
+    const x = stats.cx + (rand() * 2 - 1) * stats.hx * 0.85;
+    const z = stats.cz + (rand() * 2 - 1) * stats.hz * 0.85;
     if (keepOut(x, z) || insideCircuit(frames, x, z)) continue;
     if (distToTrack(frames, x, z) < D.armco + 26) continue;
     const y = terrain.height(x, z);
-    const yaw = Math.random() * Math.PI * 2;
+    const yaw = rand() * Math.PI * 2;
     const base = new THREE.Matrix4().makeRotationY(yaw);
     base.setPosition(x, y, z);
-    const L = 3.2 + Math.random() * 1.4;
-    const rows = 2 + ((Math.random() * 2) | 0);
+    const L = 3.2 + rand() * 1.4;
+    const rows = 2 + ((rand() * 2) | 0);
     for (let r = 0; r < rows; r++) {
       const nInRow = 4 - r;
       for (let i = 0; i < nInRow; i++) {
-        const rad = 0.16 + Math.random() * 0.07;
+        const rad = 0.16 + rand() * 0.07;
         const log = new THREE.CylinderGeometry(rad, rad * 0.92, L, 6);
         log.rotateZ(Math.PI / 2);
         log.applyMatrix4(localMat(base,
-          (i - (nInRow - 1) / 2) * 0.42 + (Math.random() - 0.5) * 0.06,
-          0.18 + r * 0.36, (Math.random() - 0.5) * 0.25));
+          (i - (nInRow - 1) / 2) * 0.42 + (rand() - 0.5) * 0.06,
+          0.18 + r * 0.36, (rand() - 0.5) * 0.25));
         ctx.geos.push(paint(log, ctx.logs));
       }
     }
@@ -1088,15 +1089,15 @@ function addAlpineRocks(scene, frames, D, keepOut, terrain, count) {
     const sp = spots[i];
     const steep = Math.min(1, (terrain.slope ? terrain.slope(sp.x, sp.z) : 0) * 3.2);
     // steep ground => lots of small scree; flat ground => the odd big boulder
-    const scree = Math.random() < 0.35 + steep * 0.5;
-    const sc = scree ? 0.16 + Math.random() * 0.34 : 0.7 + Math.pow(Math.random(), 1.8) * 2.1;
-    s.set(sc * (0.8 + Math.random() * 0.6), sc * (0.5 + Math.random() * 0.7), sc * (0.8 + Math.random() * 0.6));
-    e.set((Math.random() - 0.5) * 0.7, Math.random() * Math.PI * 2, (Math.random() - 0.5) * 0.7);
+    const scree = rand() < 0.35 + steep * 0.5;
+    const sc = scree ? 0.16 + rand() * 0.34 : 0.7 + Math.pow(rand(), 1.8) * 2.1;
+    s.set(sc * (0.8 + rand() * 0.6), sc * (0.5 + rand() * 0.7), sc * (0.8 + rand() * 0.6));
+    e.set((rand() - 0.5) * 0.7, rand() * Math.PI * 2, (rand() - 0.5) * 0.7);
     q.setFromEuler(e);
     p.set(sp.x, terrain.height(sp.x, sp.z) - sc * 0.3, sp.z);
     m.compose(p, q, s);
     inst.setMatrixAt(i, m);
-    col.setHSL(0.08 + Math.random() * 0.05, 0.06 + Math.random() * 0.10, 0.34 + Math.random() * 0.16);
+    col.setHSL(0.08 + rand() * 0.05, 0.06 + rand() * 0.10, 0.34 + rand() * 0.16);
     inst.setColorAt(i, col);
   }
   inst.instanceMatrix.needsUpdate = true;
@@ -1111,7 +1112,7 @@ function addAlpineRocks(scene, frames, D, keepOut, terrain, count) {
 function addFarmTracks(scene, frames, D, ground, cfg) {
   const { stats, keepOut, terrain } = cfg;
   const routes = shuffled(TRACK_ROUTES).slice(0, cfg.trackCount);
-  const mirror = Math.random() < 0.5 ? 1 : -1;
+  const mirror = rand() < 0.5 ? 1 : -1;
   const clearance = D.armco + 26;
   const HW = 1.75;
   const parts = [];
@@ -1291,7 +1292,7 @@ export function addGroundCover(scene, frames, D, opts = {}) {
       p.set(h.x, h.y, h.z);
       m.compose(p, q, s);
       inst.setMatrixAt(i, m);
-      col.setHSL(0.235 + Math.random() * 0.055, 0.24 + Math.random() * 0.2, 0.42 + Math.random() * 0.16);
+      col.setHSL(0.235 + rand() * 0.055, 0.24 + rand() * 0.2, 0.42 + rand() * 0.16);
       inst.setColorAt(i, col);
     }
     inst.instanceMatrix.needsUpdate = true;

@@ -5,9 +5,13 @@
 import { chromium } from 'playwright-core';
 import { existsSync, mkdirSync } from 'node:fs';
 
-const EXE = process.env.HOME +
-  '/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/' +
-  'Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
+// CHROME_EXE first, like every other shooter — this script had only the macOS
+// path, so it could not run on the routine's Linux container at all.
+const EXE = (process.env.CHROME_EXE && existsSync(process.env.CHROME_EXE))
+  ? process.env.CHROME_EXE
+  : process.env.HOME +
+    '/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/' +
+    'Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
 if (!existsSync(EXE)) throw new Error('chromium not found: ' + EXE);
 
 const OUT = process.argv[2] || '/tmp/audit';

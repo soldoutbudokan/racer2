@@ -34,6 +34,7 @@
  */
 import * as THREE from 'three';
 import { fractalNoise, ridgedNoise, smoothstep } from './noise.js';
+import { rand } from './rng.js';
 
 const TAU = Math.PI * 2;
 
@@ -322,9 +323,9 @@ export function addDistantMountains(scene, kind = 'far', terrain = null) {
 
     // Decorrelate every band's noise fields AND rotate its authored structure,
     // so the three ranges never stack their summits at the same azimuth.
-    const rot = Math.random();
-    const ox = Math.random() * 320 - 160, oz = Math.random() * 320 - 160;
-    const sox = Math.random() * 320 - 160, soz = Math.random() * 320 - 160;
+    const rot = rand();
+    const ox = rand() * 320 - 160, oz = rand() * 320 - 160;
+    const sox = rand() * 320 - 160, soz = rand() * 320 - 160;
     const table = P.mesaFlag ? BUTTES[b] : MASSIFS[b];
     const cols = COLS[b];
 

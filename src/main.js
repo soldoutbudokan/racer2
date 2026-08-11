@@ -136,6 +136,13 @@ async function bootstrap() {
     // Length of the start-light sequence, so a probe can pump exactly up to
     // (and past) the green without hard-coding the timing.
     window.__startSequenceS = START_SEQUENCE_S;
+    // Rebuild a circuit from its id, exactly the way the track selector does
+    // (dispose + createTrack). physics-test builds the same circuit twice
+    // through this and compares every vertex, which is what stops a stray
+    // Math.random() creeping back into the scenery. rebuildTrack is a hoisted
+    // declaration further down this function, so the closure resolves fine.
+    window.__rebuildTrackById = (id) => rebuildTrack(getTrackById(id));
+    window.__trackIds = TRACKS.map((t) => t.id);
   }
 
   document.querySelectorAll('button.mode').forEach((btn) => {

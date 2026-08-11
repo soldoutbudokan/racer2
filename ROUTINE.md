@@ -73,10 +73,17 @@ The visuals render through SwiftShader here, which is representative of the
 deployed build but not pixel-identical to a real GPU — judge gross issues
 (blow-outs, black voids, z-fighting, floating geometry), not subtle tone.
 
-**And do not compare two shooter PNGs whole-frame.** The scenery seed is
-unpinned, so two runs of identical code differ on ~44 % of the frame — the
-noise floor is the same size as any real change. Use `pngdiff --box` on the
-region you actually changed. See the 2026-08-05 Backlog entry.
+**Whole-frame PNG comparison works now, but only for `viewshot.mjs`.** The
+scenery seed was pinned on 2026-08-06 (`src/scenery/rng.js`, plus GTAO's noise
+texture and the shooter's film-grain phase — see that Changelog entry), so two
+`viewshot` runs of identical code are **byte-identical** where they used to
+differ on 56–81 % of the frame. Diff those whole-frame and believe the answer.
+**Every other shooter still carries the wall-clock film grain**
+(`startlights`, `bodyshot`, `wheelshot`, `lineshot`, `launchshot`,
+`audit-shots`, …): their scenery is stable but a `pngdiff` of two of their runs
+reads a few percent of grain that means nothing, so keep using `pngdiff --box`
+on the region you changed for those until the pin is lifted into a shared
+helper. See the 2026-08-06 Backlog entry.
 
 ## Workflow each run
 
@@ -90,6 +97,78 @@ region you actually changed. See the 2026-08-05 Backlog entry.
 7. Append what you did to the Changelog, and add/clear Backlog items.
 
 ## Changelog (accepted to `main`)
+
+- **2026-08-06** (accepted → `main` 2026-08-11, owner replied "You can push to
+  main"; was branch `claude/epic-franklin-kx43xh`)
+  — **Two screenshots of identical code differed on 56–81 % of the frame.**
+  Took the item the last run flagged as "the highest-leverage open item in the
+  file": **pin the scenery seed**. Re-measured the noise floor first, on
+  unchanged code, with `viewshot 6` twice: **chase 63.8 %, front34 65.5 %,
+  high 81.3 %, low 56.2 %, trackside 65.5 %** of pixels differing. Worse than
+  the 44.7 % the 2026-08-05 note recorded. Every "verified: before/after
+  viewshots on all five angles" line above this one was an eyeball comparison
+  against a background re-randomising underneath it.
+  **It was three causes, not one** — this matters, because pinning the seed
+  alone gets you a third of the way and looks like a failure:
+  (1) **the scatter.** 307 `Math.random()` calls across `track.js` and six
+  `scenery/*` modules, so trees, crowd, rocks, buildings and the asphalt
+  speckle were re-rolled per page load. Fixed properly, below.
+  (2) **GTAO's denoise noise.** `GTAOPass` builds a 64×64 sample texture in its
+  constructor from `new SimplexNoise()`, and three's `SimplexNoise` defaults to
+  `Math.random` for its permutation table. That put a faint *full-frame*
+  speckle over every render — on its own it left two shots differing over half
+  the frame at meanDelta ~12 even after the scatter was pinned. `scene.js` now
+  rebuilds that texture from a seeded stream (and reassigns
+  `pdMaterial.uniforms.tNoise`, which the pass wires in its own constructor —
+  replacing only `pdNoiseTexture` does nothing).
+  (3) **the film grain.** `CinematicShader`'s `uGrain` term is phased on
+  `uTime`, which `main.js` drives from the wall clock. A deliberate per-frame
+  effect, and not something a before/after diff should be measuring — so the
+  fix is in the shooter, not the product: `viewshot.mjs` pins the phase once
+  after freezing the loop (`ctx.mode` is null by then, so `tick` no longer
+  overwrites it). **Other shooters still need this** — see the Backlog.
+  The scatter fix is `src/scenery/rng.js`: mulberry32 behind a `rand()` that is
+  a drop-in for `Math.random()`. The design decision worth keeping is **named
+  per-builder streams, not one sequence per circuit**. One sequence would be
+  deterministic but useless: adding a draw to the tree scatter shifts every
+  later draw, so a tree change would still move the grandstands and the diff
+  would be the whole frame again. Each builder instead gets
+  `hash(circuit id, stream name)`, so the streams are independent —
+  `createTrack` calls `beginStream('trees')`, `beginStream('grandstands')` and
+  so on before each builder, and builders just call `rand()` and inherit the
+  current stream (sub-builders and canvas texture makers share their caller's,
+  which is right — they are one visual feature).
+  **Result: two runs of `viewshot 6` are now byte-identical.** 0 changed
+  pixels, maxDelta 0, on all five angles. From 56–81 % to zero.
+  **The isolation claim is measured, not asserted.** Control: added one
+  throwaway `rand()` at the top of `scatterTrees` — i.e. perturbed exactly one
+  stream — and re-shot. **3.3–5.1 %** of the frame changed, bbox confined to
+  the treeline band, and the amplified diff shows *only trees and their
+  shadows*: road, kerbs, armco, groundcover, mountains and the car are all
+  pure black (identical). That is what the whole change is for.
+  Two new `physics-test` gates. **Rebuilding a circuit reproduces it vertex for
+  vertex** — builds `gp` and `sprint` twice each *interleaved* (so a pass can't
+  come from the builder caching a result) through the production
+  dispose+rebuild path, fingerprinting every mesh's world matrix, material
+  colour and full position attribute at 0.1 mm. `gp` 223 meshes / 185 399
+  verts, `sprint` 263 / 164 422. And **the fingerprint distinguishes two
+  circuits**, which guards the first: a degenerate hash would pass the equality
+  check for the wrong reason.
+  **Control run:** with `rand()` reverted to `return Math.random()` — keeping
+  every new name, hook and code path — the first gate **fails**
+  (`gp f66205bf/7008920d`, and the mesh *count* moves 235→211), while the
+  second correctly still passes. The numbers are load-bearing, not the plumbing.
+  Two small product hooks: `track` now exposes its `group` (it always owned it;
+  `dispose()` closes over the same node), and `main.js` exposes
+  `__rebuildTrackById` / `__trackIds` alongside the existing dev hooks.
+  Also fixed `scripts/audit-shots.mjs`, which had a hard-coded macOS Chrome
+  path and ignored `CHROME_EXE`, so it could not run on this container at all.
+  Verified: `physics-test` **43/43** incl. no console errors, smoke OK (no NaN,
+  outward winding, triangle budget unchanged at 24880/24228/21778), build
+  clean, paired `viewshot` runs byte-identical on all five angles, and
+  `audit-shots` on **downtown, alpine and dunes** — the city, alpine and desert
+  themes all still build correctly (buildings/storefronts/streetlights, pines/
+  rocks/huts, mesas/cacti/gravel), no voids, nothing floating.
 
 - **2026-08-05** (accepted → `main`, owner replied "go"; was branch
   `claude/epic-franklin-76ypbv`)
@@ -1135,7 +1214,17 @@ New findings from the 2026-08-04 run (not acted on — one change per run):
 
 New findings from the 2026-08-05 run (not acted on — one change per run):
 
-- **PIN THE SCENERY SEED** (harness, **high** — measured 2026-08-05). This has
+- ~~**PIN THE SCENERY SEED**~~ (harness, **high**) — DONE 2026-08-06, accepted
+  → `main` 2026-08-11 (see Changelog). It was three causes, not one: the scatter, GTAO's
+  denoise noise texture, and the wall-clock-phased film grain. Paired
+  `viewshot` runs are now byte-identical, and perturbing one builder's stream
+  moves only that builder's pixels (3.3–5.1 %, trees only). The note below was
+  right that it was the highest-leverage item and roughly right about the fix
+  ("a one-line seeded PRNG threaded through `src/scenery/*`") — but a single
+  global stream would NOT have delivered it; see the Changelog on why the
+  streams are named per builder.
+  Original note:
+  **PIN THE SCENERY SEED** (harness, **high** — measured 2026-08-05). This has
   been carried as a soft caveat since 2026-07-27 ("the trees move between the
   two sets, read the pairs with care"). It is much worse than a caveat.
   Measured with the new `pngdiff.mjs`: two `startlights` runs of **byte-identical
@@ -1178,3 +1267,37 @@ New findings from the 2026-08-05 run (not acted on — one change per run):
   is missing the rear wing entirely — the most distinctive part of the
   car's outline. Cheap to reconsider if the shadow finding above ever gets
   acted on; pointless before then, since nothing reads on the road anyway.
+
+New findings from the 2026-08-06 run (not acted on — one change per run):
+
+- **Only `viewshot.mjs` pins the film grain** (harness, medium — new
+  2026-08-06): the grain phase fix is four lines in the shooter's freeze block,
+  and every other shooter that renders through the composer still has the
+  wall-clock phase — `startlights.mjs`, `bodyshot.mjs`, `wheelshot.mjs`,
+  `scene-shot.mjs`, `skyshot.mjs`, `lineshot.mjs`, `launchshot.mjs`,
+  `shoot.mjs`, `audit-shots.mjs`. Their output is *scenery*-stable now, but
+  still carries a full-frame grain difference between runs, so a `pngdiff` of
+  two of their PNGs will read a few percent that means nothing. Lift the pin
+  into a shared helper — which is overdue anyway, since `findChrome()` is
+  copy-pasted into nine shooters with three different bodies (that is how
+  `audit-shots.mjs` ended up macOS-only, fixed this run).
+- **`facing-check.mjs` should be re-tested as a gate** (harness, medium —
+  updated 2026-08-06): the 2026-07-27 note parked it because "mesh counts swing
+  ±30 per circuit between runs on an unchanged tree" and blamed the unpinned
+  seed. That is now fixed — `physics-test` measures `gp` at exactly 223 meshes
+  across rebuilds — so the swing should be gone and the intermittent
+  100 %-face-down `downtown` mesh should either reproduce every run or not at
+  all. Worth 20 minutes to find out; it would give the suite a real
+  winding/normals gate.
+- **The scenery is now reproducible but still unauthored** (env, low — new
+  2026-08-06): pinning the seed means each circuit's scatter is *a* fixed
+  arrangement, not a *good* one — `gp`'s tree stand happens to sit further from
+  the main straight than it did before, which is neither better nor worse. Now
+  that a change to one builder provably moves only that builder's pixels, it is
+  finally cheap to iterate on a scatter and see the result. Composing the
+  treeline against the horizon on `gp` is a reasonable first target.
+- **`strSeed` and `rng.js` are two seed systems** (harness, low — new
+  2026-08-06): `track.js` keeps its own `strSeed(def.id)` for the terrain
+  displacement, which predates `rng.js` and does not go through it. Harmless —
+  both are deterministic per circuit — but there is no reason for two. Fold
+  `strSeed` into `rng.js` next time either is touched.
