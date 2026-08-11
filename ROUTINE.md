@@ -73,10 +73,17 @@ The visuals render through SwiftShader here, which is representative of the
 deployed build but not pixel-identical to a real GPU — judge gross issues
 (blow-outs, black voids, z-fighting, floating geometry), not subtle tone.
 
-**And do not compare two shooter PNGs whole-frame.** The scenery seed is
-unpinned, so two runs of identical code differ on ~44 % of the frame — the
-noise floor is the same size as any real change. Use `pngdiff --box` on the
-region you actually changed. See the 2026-08-05 Backlog entry.
+**Whole-frame PNG comparison works now, but only for `viewshot.mjs`.** The
+scenery seed was pinned on 2026-08-06 (`src/scenery/rng.js`, plus GTAO's noise
+texture and the shooter's film-grain phase — see that Changelog entry), so two
+`viewshot` runs of identical code are **byte-identical** where they used to
+differ on 56–81 % of the frame. Diff those whole-frame and believe the answer.
+**Every other shooter still carries the wall-clock film grain**
+(`startlights`, `bodyshot`, `wheelshot`, `lineshot`, `launchshot`,
+`audit-shots`, …): their scenery is stable but a `pngdiff` of two of their runs
+reads a few percent of grain that means nothing, so keep using `pngdiff --box`
+on the region you changed for those until the pin is lifted into a shared
+helper. See the 2026-08-06 Backlog entry.
 
 ## Workflow each run
 
@@ -91,7 +98,8 @@ region you actually changed. See the 2026-08-05 Backlog entry.
 
 ## Changelog (accepted to `main`)
 
-- **2026-08-06** (PENDING REVIEW — branch `claude/epic-franklin-kx43xh`)
+- **2026-08-06** (accepted → `main` 2026-08-11, owner replied "You can push to
+  main"; was branch `claude/epic-franklin-kx43xh`)
   — **Two screenshots of identical code differed on 56–81 % of the frame.**
   Took the item the last run flagged as "the highest-leverage open item in the
   file": **pin the scenery seed**. Re-measured the noise floor first, on
@@ -1206,8 +1214,8 @@ New findings from the 2026-08-04 run (not acted on — one change per run):
 
 New findings from the 2026-08-05 run (not acted on — one change per run):
 
-- ~~**PIN THE SCENERY SEED**~~ (harness, **high**) — DONE 2026-08-06, pending
-  review (see Changelog). It was three causes, not one: the scatter, GTAO's
+- ~~**PIN THE SCENERY SEED**~~ (harness, **high**) — DONE 2026-08-06, accepted
+  → `main` 2026-08-11 (see Changelog). It was three causes, not one: the scatter, GTAO's
   denoise noise texture, and the wall-clock-phased film grain. Paired
   `viewshot` runs are now byte-identical, and perturbing one builder's stream
   moves only that builder's pixels (3.3–5.1 %, trees only). The note below was
