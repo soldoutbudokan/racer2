@@ -574,6 +574,49 @@ function kerbProfile(kind, width) {
 }
 
 /**
+ * The contiguous arc spans one side's kerbs occupy, with the profile each span
+ * is laid in. Shared by the mesh builder and the collision builder below so the
+ * two can never disagree about where a kerb is or how tall it is — the physics
+ * kerb has to be the one that is drawn, or a car climbs an invisible step.
+ *
+ * Wrap-aware: a run that crosses the start/finish line is returned once, with
+ * `s1` past `total`.
+ */
+function kerbRuns(frames, sideSign, active, arcLens, width, total) {
+  const n = frames.length;
+  const spans = [];
+  let allOn = true;
+  for (let i = 0; i < n; i++) if (!active[i]) { allOn = false; break; }
+  if (allOn) {
+    spans.push([0, total]);
+  } else {
+    for (let i = 0; i < n; i++) {
+      if (!active[i] || active[(i - 1 + n) % n]) continue;
+      let len = 0;
+      while (len < n && active[(i + len) % n]) len++;
+      const s0 = arcLens[i];
+      const i1 = (i + len - 1) % n;
+      let s1 = arcLens[i1];
+      if (s1 < s0) s1 += total;
+      if (s1 - s0 > 2) spans.push([s0, s1]);
+    }
+  }
+
+  return spans.map(([s0, s1], r) => {
+    // Scheme and profile per run, not per metre: a circuit does not change
+    // kerb type halfway round a corner. Deterministic from the run's position
+    // so a reload does not reshuffle them.
+    const h = hashFn(Math.round(s0), sideSign * 7.3 + r);
+    const kind = (h > 0.82 && s1 - s0 > 22) ? 'apron' : 'kerb';
+    return {
+      s0, s1, kind,
+      scheme: (kind === 'apron' || h < 0.14) ? 0.5 : 0.0,   // atlas half
+      prof: kerbProfile(kind, width),
+    };
+  });
+}
+
+/**
  * A real racing kerb: chamfered face at the road edge climbing to ~10.5 cm,
  * a ribbed top, and a drop-off to the verge.
  *
@@ -588,30 +631,12 @@ function kerbProfile(kind, width) {
  * (plus 4 mm) so the kerb foot lands on the verge rather than z-fighting it.
  */
 export function buildKerb3DGeometry(frames, offsetIn, width, sideSign, active, arcLens) {
-  const n = frames.length;
   const hw = Math.abs(offsetIn);
   const S = arcSampler(frames, arcLens);
   const total = S.total;
   const edgeY = roadCrownY(hw, hw);
 
-  // ---- contiguous runs of active frames, wrap-aware ----
-  const runs = [];
-  let allOn = true;
-  for (let i = 0; i < n; i++) if (!active[i]) { allOn = false; break; }
-  if (allOn) {
-    runs.push([0, total]);
-  } else {
-    for (let i = 0; i < n; i++) {
-      if (!active[i] || active[(i - 1 + n) % n]) continue;
-      let len = 0;
-      while (len < n && active[(i + len) % n]) len++;
-      const s0 = arcLens[i];
-      const i1 = (i + len - 1) % n;
-      let s1 = arcLens[i1];
-      if (s1 < s0) s1 += total;
-      if (s1 - s0 > 2) runs.push([s0, s1]);
-    }
-  }
+  const runs = kerbRuns(frames, sideSign, active, arcLens, width, total);
 
   const positions = [];
   const uvs = [];
@@ -619,15 +644,7 @@ export function buildKerb3DGeometry(frames, offsetIn, width, sideSign, active, a
   const indices = [];
 
   for (let r = 0; r < runs.length; r++) {
-    const [s0, s1] = runs[r];
-    const runLen = s1 - s0;
-    // Scheme and profile per run, not per metre: a circuit does not change
-    // kerb type halfway round a corner. Deterministic from the run's position
-    // so a reload does not reshuffle them.
-    const h = hashFn(Math.round(s0), sideSign * 7.3 + r);
-    const kind = (h > 0.82 && runLen > 22) ? 'apron' : 'kerb';
-    const scheme = (kind === 'apron' || h < 0.14) ? 0.5 : 0.0;   // atlas half
-    const prof = kerbProfile(kind, width);
+    const { s0, s1, scheme, prof } = runs[r];
     const P = prof.pts.length;
     const bands = P - 1;
 
@@ -702,6 +719,133 @@ export function buildKerb3DGeometry(frames, offsetIn, width, sideSign, active, a
   g.computeVertexNormals();
   g.computeBoundingSphere();
   return g;
+}
+
+// ---------------------------------------------------------------------------
+// Kerb collision
+// ---------------------------------------------------------------------------
+
+const KERB_SEG_LEN = 3.0;       // m of arc per collision box
+const KERB_SEG_PAD = 0.15;      // half-length padding: no gap where boxes meet
+const KERB_CHUNK = 10;          // segments per body ≈ 30 m, so an AABB stays local
+const KERB_FOOT_Y = -0.25;      // slab underside, below the flat physics ground
+
+/**
+ * The kerb profile reduced to a lateral staircase the physics can be built
+ * from: one flat-topped band between each pair of authored profile points.
+ *
+ * The chamfer becomes two steps rather than a ramp, which is the one real
+ * approximation here. It is a fair one, because a `RaycastVehicle` wheel is a
+ * point ray with no contact patch: it cannot feel the difference between a
+ * 21 cm ramp and two steps to the same height, only where the height changes.
+ * The first step (~2.9 cm at the white line) is the lip that unsettles a car
+ * putting a wheel over the edge, and that is the point of the whole thing.
+ *
+ * A band whose *both* ends are ribbed is modelled at the rib crest, not the
+ * mean: a rolling tyre bridges the 1 m grooves and rides the crests. Modelling
+ * the ribs themselves would be false precision — at 40 m/s a 1 m pitch is
+ * 40 Hz against a 120 Hz step, so the ripple would alias into noise.
+ */
+function kerbCollisionBands(prof, width) {
+  const pts = prof.pts.filter((p) => p.y !== null);
+  const bands = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1];
+    const lat0 = Math.min(a.lat, width), lat1 = Math.min(b.lat, width);
+    if (lat1 - lat0 < 0.02) continue;
+    bands.push({
+      lat0, lat1,
+      top: (a.y + b.y) / 2 + (a.rib && b.rib ? prof.rib : 0),
+    });
+  }
+  return bands;
+}
+
+/**
+ * Collision slabs for one side's kerbs, as chunks of boxes ready to hang off a
+ * static body each (see `buildKerbPhysics` in track.js).
+ *
+ * Why this exists: the world's ground is a single flat `CANNON.Box`, so every
+ * bit of relief on a circuit — the camber, the terrain, and these kerbs — was
+ * decoration. A car could cut an apex across a 10.5 cm kerb with the
+ * suspension none the wiser, and nothing anywhere on any circuit could put a
+ * wheel in the air (ROUTINE.md, 2026-08-12). Riding a kerb is now a decision
+ * with a cost instead of a free line.
+ *
+ * Heights are the *drawn* kerb's world y, not a height above the physics
+ * ground. The two are not the same: the physics ground is flat at y=0 while
+ * the road is drawn with a crown, so its edge sits ~1.4 cm lower. Seating the
+ * slabs on the drawn kerb is what puts the tyre where the kerb is seen to be.
+ *
+ * Each slab is a chord between its own two end samples, taken at that band's
+ * lateral offset — not a fixed-length box dropped on the mid-arc frame. That
+ * matters more than it sounds: the arc the runs are cut in is CENTRELINE arc
+ * length, and a kerb sits ~8 m to the side of it, so on the outside of a 50 m
+ * corner 3 m of centreline is 3.5 m of kerb. Sizing boxes by the arc step left
+ * a ~0.3 m gap at every joint round the outside of every corner — a ray (and a
+ * wheel) dropped straight through onto the road below, roughly every third
+ * metre of kerb. Chords share their endpoints exactly, so the only thing
+ * `KERB_SEG_PAD` still has to cover is the wedge that opens at the outer
+ * lateral edge where consecutive boxes yaw apart.
+ */
+export function buildKerbCollision(frames, offsetIn, width, sideSign, active, arcLens) {
+  const hw = Math.abs(offsetIn);
+  const S = arcSampler(frames, arcLens);
+  const edgeY = roadCrownY(hw, hw);
+  const baseY = ROAD_LIFT + edgeY;
+  const chunks = [];
+
+  for (const run of kerbRuns(frames, sideSign, active, arcLens, width, S.total)) {
+    const bands = kerbCollisionBands(run.prof, width);
+    const runLen = run.s1 - run.s0;
+    const nSeg = Math.max(1, Math.round(runLen / KERB_SEG_LEN));
+    const segLen = runLen / nSeg;
+    let chunk = null;
+
+    for (let k = 0; k < nSeg; k++) {
+      const arc = run.s0 + (k + 0.5) * segLen;
+      // Same ramp-in as the mesh: a kerb that starts at full height mid-corner
+      // looks (and now feels) like a dropped brick.
+      const taper = Math.min(
+        smoothstep(0, 1.4, arc - run.s0),
+        smoothstep(0, 1.4, run.s1 - arc)
+      );
+      if (taper < 0.02) continue;
+      const fA = S.at(run.s0 + k * segLen);
+      const fB = S.at(run.s0 + (k + 1) * segLen);
+      const fM = S.at(arc);
+      if (!chunk || k % KERB_CHUNK === 0) { chunk = []; chunks.push(chunk); }
+
+      for (const band of bands) {
+        const lat = sideSign * (hw + (band.lat0 + band.lat1) / 2);
+        const ax = fA.pos.x + fA.left.x * lat, az = fA.pos.z + fA.left.z * lat;
+        const bx = fB.pos.x + fB.left.x * lat, bz = fB.pos.z + fB.left.z * lat;
+        const dx = bx - ax, dz = bz - az;
+        const len = Math.hypot(dx, dz);
+        if (len < 1e-3) continue;
+        // A chord cuts the corner: its middle sits `sag` inside the kerb it is
+        // standing in for (10 cm on a street hairpin, enough to hand a wheel
+        // the next band down). Split the difference — centre the box halfway
+        // between the chord and the real mid-point, and widen it by the other
+        // half — so the band covers its lateral span everywhere.
+        const cx = (ax + bx) / 2, cz = (az + bz) / 2;
+        const mx = fM.pos.x + fM.left.x * lat, mz = fM.pos.z + fM.left.z * lat;
+        const sag = Math.hypot(mx - cx, mz - cz);
+        const top = baseY + band.top * taper;
+        const halfY = (top - KERB_FOOT_Y) / 2;
+        chunk.push({
+          x: (cx + mx) / 2,
+          y: top - halfY,
+          z: (cz + mz) / 2,
+          yaw: Math.atan2(dx, dz),
+          hx: (band.lat1 - band.lat0) / 2 + sag / 2,
+          hy: halfY,
+          hz: len / 2 + KERB_SEG_PAD,
+        });
+      }
+    }
+  }
+  return chunks;
 }
 
 // ---------------------------------------------------------------------------

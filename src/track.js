@@ -14,6 +14,7 @@ import { addGrandstands, addPitComplex } from './scenery/stands.js';
 import { addGroundCover } from './scenery/groundcover.js';
 import {
   roadCrownY, buildRoadGeometry, buildEdgeLineGeometry, buildKerb3DGeometry,
+  buildKerbCollision,
   addSkidMarks, makeAsphaltMaterial, makeKerbMaterial, makeVergeMaterial,
 } from './scenery/roadwork.js';
 import { rand, seedCircuit, beginStream } from './scenery/rng.js';
@@ -62,6 +63,7 @@ export function createTrack(scene, world, materials, def) {
   const group = new THREE.Group();
   scene.add(group);
   const bodies = [];
+  let kerbShapes = 0;   // collision boxes the kerbs contributed (reported below)
 
   const cps = def.controlPoints.map(([x, z]) => new THREE.Vector3(x, 0, z));
   const curve = new THREE.CatmullRomCurve3(
@@ -139,11 +141,12 @@ export function createTrack(scene, world, materials, def) {
   group.add(lineRight);
 
   // ---- Profiled 3D kerbs with rumble ripples at every corner ----
+  // Threshold ≈ corners tighter than ~150 m radius, padded a few frames out.
+  let kerbActive = null;
   if (theme.kerbs !== false) {
     beginStream('kerb');
     const kerbMat = makeKerbMaterial();
-    // Threshold ≈ corners tighter than ~150 m radius, padded a few frames out.
-    const kerbActive = computeKerbActive(curvature, 0.00045, 8);
+    kerbActive = computeKerbActive(curvature, 0.00045, 8);
     for (const side of [+1, -1]) {
       const kerb = new THREE.Mesh(
         buildKerb3DGeometry(frames, side * ROAD_WIDTH / 2, KERB_WIDTH, side, kerbActive, arcLens),
@@ -151,8 +154,14 @@ export function createTrack(scene, world, materials, def) {
       );
       kerb.receiveShadow = true;
       kerb.castShadow = false;
+      // Named so a probe can raycast the drawn kerb and compare it with the
+      // collision slabs built from the same runs (physics-test.mjs).
+      kerb.name = 'kerb';
+      kerb.userData.side = side;
       group.add(kerb);
     }
+    kerbShapes = buildKerbPhysics(
+      world, frames, arcLens, ROAD_WIDTH, KERB_WIDTH, kerbActive, materials, bodies);
   }
 
   // ---- Dirt verge just outside the kerb line (natural-surface circuits) ----
@@ -274,6 +283,11 @@ export function createTrack(scene, world, materials, def) {
     spawn,
     width: ROAD_WIDTH,
     kerbWidth: KERB_WIDTH,
+    // Per-frame flag for "this bit of circuit has a kerb", plus how many
+    // collision boxes they cost. Exposed so a probe can pick a kerbed corner
+    // without guessing at the curvature threshold (physics-test.mjs).
+    kerbActive,
+    kerbShapes,
     // The gantry's start-light rig: `set(n)` lights the first n of five red
     // columns (0 = all out = go). Driven by the race-start sequence in main.js.
     startLights,
@@ -1386,6 +1400,58 @@ function addSponsorBoards(scene, frames, offset) {
       scene.add(leg);
     }
   }
+}
+
+// ---------- Kerb physics ----------
+
+/**
+ * Give the drawn kerbs something the car can actually hit.
+ *
+ * The slabs come from `buildKerbCollision`, which walks the same runs and the
+ * same profile the mesh is built from, so the physics kerb IS the drawn kerb.
+ *
+ * The boxes are grouped a chunk to a body rather than one body each. Both ends
+ * of that choice matter: `NaiveBroadphase` walks every body pair every step, so
+ * ~900 more bodies would triple the pair count on a circuit that already has
+ * 600 barrier boxes — while a single body holding the lot would carry an AABB
+ * the size of the circuit, and every car would be narrowphased against every
+ * slab. A chunk is ~30 m of one corner's kerb: far from the car it fails one
+ * AABB test, and next to the car it costs a handful of box pairs.
+ *
+ * `groundMat` is the material on purpose — a wheel meets a kerb the way it
+ * meets the road (the vehicle does its own tyre friction), and a chassis that
+ * lands on one should behave like a chassis landing on asphalt.
+ */
+function buildKerbPhysics(world, frames, arcLens, roadWidth, kerbWidth, active, materials, bodies) {
+  const q = new CANNON.Quaternion();
+  const up = new CANNON.Vec3(0, 1, 0);
+  let shapes = 0;
+  for (const side of [+1, -1]) {
+    const chunks = buildKerbCollision(
+      frames, side * roadWidth / 2, kerbWidth, side, active, arcLens);
+    for (const chunk of chunks) {
+      if (!chunk.length) continue;
+      // Body at the chunk's centroid, shapes offset from it: a static body's
+      // AABB is built once, and keeping it tight is the whole point.
+      let cx = 0, cy = 0, cz = 0;
+      for (const b of chunk) { cx += b.x; cy += b.y; cz += b.z; }
+      cx /= chunk.length; cy /= chunk.length; cz /= chunk.length;
+
+      const body = new CANNON.Body({ mass: 0, material: materials.groundMat });
+      for (const b of chunk) {
+        q.setFromAxisAngle(up, b.yaw);
+        body.addShape(
+          new CANNON.Box(new CANNON.Vec3(b.hx, b.hy, b.hz)),
+          new CANNON.Vec3(b.x - cx, b.y - cy, b.z - cz),
+          q.clone());
+        shapes++;
+      }
+      body.position.set(cx, cy, cz);
+      world.addBody(body);
+      bodies.push(body);
+    }
+  }
+  return shapes;
 }
 
 // ---------- Barrier physics ----------

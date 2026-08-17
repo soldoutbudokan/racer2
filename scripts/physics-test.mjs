@@ -894,6 +894,149 @@ console.log('racing-line:', JSON.stringify(rl));
 ck('ideal-speed profile is sane', rl.minKmh > 40 && rl.minKmh < 140 && rl.maxKmh > 180 && rl.maxKmh <= 260,
   `corners down to ${rl.minKmh} km/h, straights up to ${rl.maxKmh} km/h`);
 
+// ---------- Kerbs are solid ----------
+// The world's ground is one flat Box, so every kerb, camber and hillside on
+// every circuit used to be decoration: measured over 6 s of four-car racing,
+// no wheel of any car ever left the ground, because there was nothing to leave
+// it over. These three ask the opposite question of the same geometry — is the
+// physics kerb the drawn kerb, does a wheel over the line actually climb it,
+// and does any of it reach out onto the racing surface.
+const kerb = await page.evaluate(() => {
+  const THREE = window.__THREE;
+  const ctx = window.__ctx;
+  const t = ctx.track;
+  const world = ctx.world;
+  const me = ctx.cars[0].car;
+  const Vec3 = world.gravity.constructor;
+  const RaycastResult = me.vehicle.wheelInfos[0].raycastResult.constructor;
+  const active = t.kerbActive || [];
+  const n = t.frames.length;
+
+  // Every lookup below is optional-by-construction. Against a build with no
+  // kerb data, no named kerb meshes and no `__THREE` hook, this block has to
+  // REPORT failures rather than throw out of the evaluate and take the rest of
+  // the suite with it.
+  const meshes = [];
+  t.group.traverse((o) => { if (o.name === 'kerb') meshes.push(o); });
+  const rc = THREE ? new THREE.Raycaster() : null;
+  const down = THREE ? new THREE.Vector3(0, -1, 0) : null;
+  const dropRay = (x, z) => {
+    const res = new RaycastResult();
+    world.rayTest(new Vec3(x, 3, z), new Vec3(x, -1, z), res);
+    return res.hasHit ? res.hitPointWorld.y : null;
+  };
+  // Earlier scenarios leave cars parked on the circuit, and a ray dropped on
+  // one reads its roof (0.96 m) as the road. Hide them the way RaycastVehicle
+  // hides its own chassis — `Ray.checkCollisionResponse` is on by default.
+  const carBodies = ctx.cars.map((c) => c.car.body);
+  const wasResponsive = carBodies.map((b) => b.collisionResponse);
+  carBodies.forEach((b) => { b.collisionResponse = false; });
+
+  // ---- 1. the collision kerb is the drawn kerb ----
+  // Sized from the CENTRELINE arc, a slab is too short for the kerb it stands
+  // in for (which is 8 m further out, so longer round the outside of a
+  // corner), and the joints open ~0.3 m holes a wheel drops straight through.
+  // The signature of that is `below`: physics well under the drawn kerb.
+  let sampled = 0, below = 0, worstBelow = 0, worstAbove = 0, meshMiss = 0;
+  for (let i = 0; rc && meshes.length && i < n; i++) {
+    if (!active[i]) continue;
+    // Both builders ramp the kerb out at a run's ends, on different grids.
+    if (!active[(i + 4) % n] || !active[(i - 4 + n) % n]) continue;
+    const f = t.frames[i];
+    for (const side of [+1, -1]) {
+      for (const frac of [0.42, 0.66]) {
+        const off = side * (t.width / 2 + t.kerbWidth * frac);
+        const x = f.pos.x + f.left.x * off, z = f.pos.z + f.left.z * off;
+        rc.set(new THREE.Vector3(x, 3, z), down);
+        const hit = rc.intersectObjects(meshes, false);
+        if (!hit.length) { meshMiss++; continue; }
+        const d = dropRay(x, z) - hit[0].point.y;
+        sampled++;
+        if (d < -0.01) below++;
+        worstBelow = Math.min(worstBelow, d);
+        worstAbove = Math.max(worstAbove, d);
+      }
+    }
+  }
+
+  // ---- 3. nothing reaches out onto the road ----
+  // The slabs start flush with the asphalt edge and are widened slightly to
+  // cover the chord's dip on tight corners, so this is the check that the
+  // widening never grows into a step in the middle of the racing surface.
+  let roadSamples = 0, roadMaxY = 0;
+  for (let i = 0; i < n; i += 2) {
+    const f = t.frames[i];
+    for (let u = -0.85; u <= 0.851; u += 0.17) {
+      const off = u * (t.width / 2 - 0.15) / 0.85;
+      const y = dropRay(f.pos.x + f.left.x * off, f.pos.z + f.left.z * off);
+      roadSamples++;
+      if (y > roadMaxY) roadMaxY = y;
+    }
+  }
+
+  // ---- 2. what a wheel over the line feels ----
+  carBodies.forEach((b, i) => { b.collisionResponse = wasResponsive[i]; });
+  const dt = 1 / 120;
+  let idx = -1;
+  for (let i = 0; i < n; i++) {
+    if (active[i] && active[(i + 10) % n] && active[(i - 10 + n) % n]) { idx = i; break; }
+  }
+  // Fall back to frame 0 rather than indexing off the end: against a build
+  // with no kerb data at all these gates must REPORT a failure, not throw out
+  // of the evaluate and take the rest of the suite with them.
+  const f = t.frames[idx < 0 ? 0 : idx];
+  const yaw = Math.atan2(f.tan.x, f.tan.z);
+  const place = (lat) => {
+    me.reset({ x: f.pos.x + f.left.x * lat, y: 1.2, z: f.pos.z + f.left.z * lat }, yaw);
+    for (let i = 0; i < 240; i++) {
+      me.applyControls({ throttle: 0, brake: 0, steer: 0, handbrake: false }, dt,
+        ['road', 'road', 'road', 'road']);
+      world.step(dt);
+    }
+    const ground = me.vehicle.wheelInfos.map(
+      (w) => (w.raycastResult.body ? w.raycastResult.hitPointWorld.y : -1));
+    // Roll off the car's own lateral axis: a yaw/pitch/roll formula reads the
+    // yaw instead in a Y-up world.
+    const right = new Vec3(1, 0, 0);
+    me.body.quaternion.vmult(right, right);
+    return {
+      chassisY: +me.body.position.y.toFixed(4),
+      rollDeg: +(Math.asin(Math.max(-1, Math.min(1, right.y))) * 180 / Math.PI).toFixed(2),
+      lo: +Math.min(...ground).toFixed(3),
+      hi: +Math.max(...ground).toFixed(3),
+    };
+  };
+  const flat = place(0);                        // control: mid-road, same corner
+  const onKerb = place(t.width / 2 - 0.2);      // outside wheels over the line
+
+  return {
+    sampled, below, meshMiss,
+    worstBelow: +(worstBelow * 1000).toFixed(1),
+    worstAbove: +(worstAbove * 1000).toFixed(1),
+    roadSamples, roadMaxY: +(roadMaxY * 1000).toFixed(2),
+    kerbShapes: t.kerbShapes, bodies: world.bodies.length,
+    idx, flat, onKerb,
+  };
+});
+console.log('kerbs:', JSON.stringify(kerb));
+// A hole would show as `below`; the +15 mm ceiling is the flat-topped slab
+// standing in for a drawn top that falls 13 mm outward and ripples 11 mm.
+ck('the collision kerb is the kerb that is drawn',
+  kerb.sampled > 150 && kerb.meshMiss === 0 && kerb.below === 0
+  && kerb.worstBelow > -10 && kerb.worstAbove < 20,
+  `${kerb.sampled} samples, ${kerb.below} below the mesh, `
+  + `phys−mesh ${kerb.worstBelow}..${kerb.worstAbove} mm, ${kerb.kerbShapes} boxes`);
+ck('a wheel put over the kerb line climbs it',
+  kerb.flat.lo === 0 && kerb.flat.hi === 0 && Math.abs(kerb.flat.rollDeg) < 0.2
+  && kerb.onKerb.lo === 0 && kerb.onKerb.hi > 0.06
+  && Math.abs(kerb.onKerb.rollDeg) > 1.5
+  && kerb.onKerb.chassisY - kerb.flat.chassisY > 0.02,
+  `mid-road: ground ${kerb.flat.lo}/${kerb.flat.hi}, roll ${kerb.flat.rollDeg}° — `
+  + `on the kerb: ground ${kerb.onKerb.lo}/${kerb.onKerb.hi}, roll ${kerb.onKerb.rollDeg}°, `
+  + `chassis +${((kerb.onKerb.chassisY - kerb.flat.chassisY) * 1000).toFixed(0)} mm`);
+ck('the racing surface stays flat', kerb.roadMaxY < 1 && kerb.roadSamples > 3000,
+  `${kerb.roadSamples} samples across the road, highest ${kerb.roadMaxY} mm`);
+
 // ---------- Scenery determinism ----------
 // The scenery used to scatter from Math.random(), so a circuit was rebuilt
 // differently every time it was loaded and two screenshots of identical code
