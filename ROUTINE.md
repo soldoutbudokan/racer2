@@ -98,8 +98,8 @@ helper. See the 2026-08-06 Backlog entry.
 
 ## Changelog (accepted to `main`)
 
-- **2026-08-12** (**PENDING REVIEW** — branch `claude/epic-franklin-jlxl9v`,
-  preview https://soldoutbudokan.github.io/racer2/preview/)
+- **2026-08-12** (accepted → `main` 2026-08-17, owner replied "go"; was branch
+  `claude/epic-franklin-jlxl9v`)
   — **A car in the air took its shadow with it.** Top open *car* item in the
   Backlog ("the contact shadow does not react to airtime"), and the first
   product change since the seed pin, so a before/after diff finally means
@@ -1447,3 +1447,53 @@ New findings from the 2026-08-11 run (accept-and-merge only — no product chang
   `high 373cb9d3…`, `low 075d9e63…`, `trackside 7db2c822…`), `pngdiff` 0
   changed pixels on every one. Note the second argument to `viewshot.mjs` is a
   filename **prefix**, not a directory — `…/shots/a` writes `…/shots/a-chase.png`.
+
+New findings from the 2026-08-17 run (accept-and-merge only — no product change):
+
+- **The 2026-08-12 preview sat five days, and the run that built it never got
+  to say so** (process, medium — new 2026-08-17): pushed 08-12, accepted 08-17.
+  The runs of 08-13 through 08-16 each fetched, saw
+  `OPEN: claude/epic-franklin-jlxl9v` and stopped silently — the same pattern
+  the 2026-08-11 finding describes, second time in two reviews, so the
+  **one-time nudge that finding proposed is no longer hypothetical and should
+  be built**. Concretely: on a skip, if the open branch's tip commit is older
+  than 3 days *and* no nudge has been sent for that branch, send exactly one
+  notification naming the branch and the preview link, then record it (a line
+  in this file under the Changelog entry is enough state — the branch name is
+  the key, and it is already unique per preview). Still no daily nag: one
+  notification per preview, ever.
+- **`airshadow.mjs`'s first shot renders black** (harness, low — new
+  2026-08-17): re-running the probe on the branch tip, `air-grounded.png` came
+  out a uniform near-black frame while `air-hop` and `air-launched` — same run,
+  same code — are both correct. It is the shooter warming up, not the product:
+  the script calls `page.setViewportSize(1100×800)` and then renders
+  immediately, so the first `composer.render()` goes through render targets
+  that are still the old 640×480 size. The grounded case is independently
+  proven fine by the physics-test gate (fade 0, scale 1, blob y 0.030, drawn)
+  and by the paired viewshot against `main`, so nothing about the accept turns
+  on it. Fix when next in that file: one `waitForTimeout` (or a throwaway
+  render) after the resize, before the shot loop. Worth checking whether
+  `bodyshot`/`lineshot`/`wheelshot` resize the same way — if they do, their
+  first frame is suspect too, and that would explain any past "the first angle
+  looked wrong" note.
+- **`airshadow.mjs` silently does nothing if you pass the shot prefix first**
+  (harness, low — new 2026-08-17): its signature is
+  `airshadow.mjs [heights,csv] [shotPrefix]`, and `scripts/viewshot.mjs` takes
+  `[seconds] [prefix]` — so the natural `airshadow.mjs <prefix>` parses the
+  path as the heights CSV, `Number()`s it to NaN, filters it out, and prints a
+  bare header with **no rows, no shots and exit 0**. It reads as a broken probe.
+  Any script that filters its parsed arguments should fail loudly when the
+  filter empties the list.
+
+Re-verified on the branch tip before merging to `main` (nothing is scripted yet
+— this is the `scripts/preflight.mjs` the 2026-08-11 finding asks for, still
+assembled by hand): `physics-test` **45/45** incl. no console errors, smoke OK
+(no NaN, outward winding, 24880/24228/21778), `npm run build` clean, two
+`viewshot 6` runs **byte-identical** on all five angles (0 changed pixels,
+maxDelta 0), `main` vs branch at 6 s `chase`/`front34`/`low` **0 changed
+pixels** and `high`/`trackside` **5 pixels** (maxDelta 20 / 39) — reproducing
+the branch's own figures exactly, in a fresh container, which is a second
+independent confirmation of both the seed pin and that 0.27 mm explanation —
+and `airshadow`'s sweep: blob world y **0.030 at every height from 0 to 2.5 m**,
+contacts 4 → 0 between 0.05 and 0.15 m, fade 0 → 1, scale 1 → 1.6, drawn until
+0.8 m.
