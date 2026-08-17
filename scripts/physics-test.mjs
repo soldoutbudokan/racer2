@@ -223,6 +223,74 @@ ck('flywheel re-couples when gripping — no phantom RPM drift at cruise',
 ck('weight transfers onto the nose under braking', dm.frontLoad > dm.rearLoad * 1.3,
   `front ${dm.frontLoad} vs rear ${dm.rearLoad} (∑ over 0.5 s)`);
 
+// ---------- The fake contact shadow belongs to the road, not to the car ------
+// The blob used to be seated from `mean(hub.y) - WHEEL_RADIUS`, which is exact
+// while the tyres are down and meaningless once they are not: the suspension
+// raycast reaches only ~5 cm past the settled ride height, and beyond that the
+// wheels hang at full droop, so the "road" they imply climbs with the chassis.
+// A launched car carried a hard black patch through the air with it, measured
+// at world y 1.176 with the car 1.2 m up. See ROUTINE.md, 2026-08-12, and
+// scripts/airshadow.mjs. Both gates measure the same lift-and-hold sweep.
+const air = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  const me = ctx.cars[0].car;
+  const dt = 1 / 120;
+  const sh = me.visual.shadow;
+  me.reset({ x: 1500, y: 1.0, z: -1800 }, 0);
+  for (let i = 0; i < 120; i++) {
+    me.applyControls({ throttle: 0, brake: 0, steer: 0, handbrake: false }, dt, ['road', 'road', 'road', 'road']);
+    ctx.world.step(dt); me.update();
+  }
+  const settledY = me.body.position.y;
+  // Ground truth for the road the blob is supposed to lie on, taken from the
+  // tyres while they are still down — not from anything the shadow code
+  // computed. (Sampled here, because four steps later the car is 2.5 m up.)
+  const groundY = +(me.vehicle.wheelInfos
+    .reduce((a, w) => a + w.raycastResult.hitPointWorld.y, 0) / 4).toFixed(4);
+  const rows = [];
+  for (const h of [0, 0.15, 0.3, 0.6, 1.2, 2.5]) {
+    // Hold the car at a fixed height and take one step, so the suspension
+    // raycasts (and the wheel contacts they set) describe THIS pose.
+    me.body.position.set(1500, settledY + h, -1800);
+    me.body.velocity.setZero();
+    me.body.angularVelocity.setZero();
+    ctx.world.step(dt);
+    me.update();
+    me.visual.root.updateMatrixWorld(true);
+    rows.push({
+      h,
+      shadowY: +sh.matrixWorld.elements[13].toFixed(4),
+      // Tolerant of a missing uniform on purpose: a build without the fade
+      // should FAIL this gate, not throw out of the evaluate and take the rest
+      // of the suite with it (which is how the control run is read).
+      fade: sh.material.userData.fade ? +sh.material.userData.fade.value.toFixed(3) : null,
+      scale: +sh.scale.x.toFixed(3),
+      visible: sh.visible,
+    });
+  }
+  return { settledY: +settledY.toFixed(4), groundY, rows };
+});
+console.log('air-shadow:', JSON.stringify(air));
+// Every height, including 2.5 m of air, has to leave the blob within a
+// centimetre of the road — and clear of it, or the depth test buries it.
+const onRoad = air.rows.filter((r) => r.shadowY - air.groundY > 0.005
+  && r.shadowY - air.groundY < 0.05);
+ck('the contact shadow stays on the road when the car is airborne',
+  onRoad.length === air.rows.length,
+  `road y ${air.groundY}; blob ${air.rows.map((r) => `${r.h}m→${r.shadowY}`).join(' ')}`);
+// The other half: a shadow that stayed put but kept its size and its full
+// strength would pass the gate above and still be a hard patch under a flying
+// car. Requires a real mid-air step (0.3 m: partly faded, partly spread, still
+// drawn) so a fade that only ever snapped 0→1 could not pass either.
+const mid = air.rows.find((r) => r.h === 0.3);
+ck('the contact shadow fades and spreads with airtime',
+  air.rows[0].fade === 0 && air.rows[0].scale === 1 && air.rows[0].visible
+  && mid.fade > 0.15 && mid.fade < 0.85 && mid.scale > 1.05 && mid.visible
+  && air.rows.at(-1).fade === 1 && air.rows.at(-1).visible === false,
+  `grounded fade ${air.rows[0].fade}/scale ${air.rows[0].scale}, `
+  + `0.3 m ${mid.fade}/${mid.scale}, 2.5 m ${air.rows.at(-1).fade}`
+  + ` (drawn: ${air.rows.at(-1).visible})`);
+
 // ---------- The field is placed ON the grid, not dropped onto it ----------
 // A car spawned above its settled ride height starts with the springs at full
 // droop and falls; the whole field used to drop 36 cm and bounce through the

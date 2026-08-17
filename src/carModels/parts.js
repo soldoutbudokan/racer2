@@ -1375,6 +1375,23 @@ export function buildContactShadow({ w = 2.3, len = 4.8 } = {}) {
     map: contactShadowTexture(), transparent: true, depthWrite: false,
     blending: THREE.MultiplyBlending, toneMapped: false,
   });
+  // Airtime fade, exposed as `material.userData.fade` for car.js to drive.
+  //
+  // It has to be a shader uniform: MULTIPLY blending is `dst * src.rgb` and
+  // ignores alpha outright, so `material.opacity` cannot fade this blob at all,
+  // and `material.color` only ever multiplies it DARKER. The one direction that
+  // lightens a multiply is toward white — white is the no-op — so the fade
+  // mixes the sampled texel toward 1.0. At fade 0 that is `mix(x, 1.0, 0.0)`,
+  // i.e. exactly x: a grounded car renders bit-for-bit what it did before.
+  const fade = { value: 0 };
+  mat.userData.fade = fade;
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uShadowFade = fade;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', 'uniform float uShadowFade;\nvoid main() {')
+      .replace('#include <map_fragment>',
+        '#include <map_fragment>\n\tdiffuseColor.rgb = mix(diffuseColor.rgb, vec3(1.0), uShadowFade);');
+  };
   // Bake the lie-flat rotation into the geometry so the mesh quaternion is
   // free for the car's heading alone.
   const geo = new THREE.PlaneGeometry(w, len);

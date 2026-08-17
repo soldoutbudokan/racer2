@@ -98,6 +98,84 @@ helper. See the 2026-08-06 Backlog entry.
 
 ## Changelog (accepted to `main`)
 
+- **2026-08-12** (**PENDING REVIEW** — branch `claude/epic-franklin-jlxl9v`,
+  preview https://soldoutbudokan.github.io/racer2/preview/)
+  — **A car in the air took its shadow with it.** Top open *car* item in the
+  Backlog ("the contact shadow does not react to airtime"), and the first
+  product change since the seed pin, so a before/after diff finally means
+  something. Measured with the new `scripts/airshadow.mjs`, holding a car at a
+  series of heights above the road — blob world y **before**: 0.030 on the
+  ground, then **0.126 / 0.276 / 0.576 / 1.176 / 2.476** at 0.15 / 0.3 / 0.6 /
+  1.2 / 2.5 m of air. It climbed with the car, at full darkness and full size:
+  a launched car carried a hard black patch through the sky with it.
+  Cause is the seating, not the blob. `car.js` inferred the road from the car's
+  own wheels (`mean(hub.y) − WHEEL_RADIUS`), which is exact while the tyres are
+  down and meaningless the moment they are not — cannon's suspension raycast
+  reaches only `rest + radius` from the anchor, i.e. about **5 cm past the
+  settled ride height** (the probe shows contacts 4 → 0 between 0.05 and 0.15 m
+  of air), and past that the wheels hang at full droop, so the "road" they
+  imply is pinned to the chassis.
+  Fix, in `src/car.js`: the road height is now sampled from
+  `raycastResult.hitPointWorld` of the wheels that are **actually down** and
+  **remembered** for the frames when none are. Two details worth keeping:
+  contact must be read *before* `updateWheelTransform` (its first line clears
+  `isInContact` — the 2026-07-29 trap; `raycastResult` survives it), and
+  averaging all four wheels regardless of contact is what let one drooping
+  wheel drag the estimate up. The physics ground is a single flat `Box`
+  (`track.js`), so a remembered reading stays true while the car is airborne;
+  if the circuit ever gains real elevation this wants a downward raycast.
+  Then fade and spread it, which is the other half of the item: `AIR_SPAN`
+  0.8 m to fade out completely, `AIR_SPREAD` 0.6 (1.6× by then), and an
+  `AIR_DEADBAND` of 2 cm because **suspension rebound is not airtime** —
+  measured over 6 s of four-car racing, the worst chassis rise above static is
+  **0.25 cm**, so the fade stays exactly 0 for the whole of normal driving.
+  **The fade had to be a shader uniform, and that is not a style choice.**
+  MULTIPLY blending is `dst * src.rgb` and ignores alpha outright, so
+  `material.opacity` cannot fade this blob at all, and `material.color` only
+  ever multiplies it *darker*. The one direction that lightens a multiply is
+  toward white (white is the no-op), so `parts.js` mixes the sampled texel
+  toward 1.0 through one uniform injected after `<map_fragment>`. At fade 0
+  that is `mix(x, 1.0, 0.0)` — exactly x — which is why a grounded car is
+  bit-identical to before, and it is measured, not asserted: the grounded
+  before/after shot is **0 changed pixels, maxDelta 0**.
+  **After**: the blob sits at 0.030 at *every* height; fade
+  0 / 0.161 / 0.349 / 0.724 / 1 / 1 and scale 1 → 1.6 across the same sweep;
+  and past 0.8 m it drops out of the draw entirely (`visible = false`) since a
+  fully faded multiply is a no-op.
+  Two new `physics-test` gates on one lift-and-hold sweep: **the contact shadow
+  stays on the road when the car is airborne** (every height within a
+  centimetre of the tyre-measured road, and clear of it so the depth test
+  cannot bury it) and **it fades and spreads with airtime** (grounded fade 0 /
+  scale 1 / drawn; a real mid-air step at 0.3 m partly faded, partly spread and
+  still drawn, so a fade that only snapped 0→1 could not pass; gone at 2.5 m).
+  **Control run:** both **fail** against the pre-change `src/car.js` +
+  `parts.js` — the first on the climbing blob (0.126 at 0.15 m against a road
+  at 0), the second on the missing uniform. The gate's fade read is
+  deliberately tolerant of a missing uniform so that control *reports a
+  failure* instead of throwing out of the evaluate and taking the rest of the
+  suite with it.
+  New tool: **`scripts/airshadow.mjs`** — the height sweep above (blob y, fade,
+  scale, drawn, wheel contacts) plus, with a prefix argument, three shots of a
+  car on the racing surface held grounded / 0.35 m / 1.0 m up from a low
+  rear-3/4 angle where the road under the car is visible. It carries
+  `viewshot`'s film-grain pin, so its PNGs are comparable between runs (see the
+  standing Backlog item about lifting that pin into a shared helper).
+  Verified: `physics-test` **45/45** incl. no console errors — which also
+  proves the injected shader compiles under SwiftShader — smoke OK (no NaN,
+  outward winding, triangle budget unchanged at 24880/24228/21778), build
+  clean, `airshadow` before/after (grounded **0 changed pixels**; the 0.35 m
+  hop **6.03 %** with the bbox confined to the road under and behind the car,
+  and the amplified diff showing *only* the blob — car, kerbs, grass, trees and
+  sky all identical; the 1.0 m launch 1.02 %), and paired `viewshot` at 6 s:
+  `chase` and `front34` **0 changed pixels**, `high` and `trackside` **5 pixels
+  each** (maxDelta 20 and 39). Those five pixels are explained rather than
+  waved at — over the same 6 s the old and new road estimates differ by at most
+  **0.27 mm** (the hub sits along a suspension axis that tilts with body roll,
+  so it is not exactly `hitPoint + radius`), and no car ever leaves the ground,
+  so nothing fades. Worth recording that the `before` run reproduced the five
+  md5s the 2026-08-11 entry wrote down, byte for byte, in a fresh container:
+  the seed pin holds across machines and days.
+
 - **2026-08-06** (accepted → `main` 2026-08-11, owner replied "You can push to
   main"; was branch `claude/epic-franklin-kx43xh`)
   — **Two screenshots of identical code differed on 56–81 % of the frame.**
@@ -1012,7 +1090,16 @@ New findings from the 2026-07-27 run (not acted on — one change per run):
   2026-07-28, accepted → `main` (see Changelog): the shell now hangs at the
   derived settled hub height from `src/stance.js`, gated by a new
   `physics-test` check and measurable with `scripts/rideheight.mjs`.
-- **The contact shadow does not react to airtime** (car, low): it is seated
+- ~~**The contact shadow does not react to airtime**~~ (car, low) — DONE
+  2026-08-12 (see Changelog), pending review. It was worse than the note: the
+  blob did not merely stay hard, it **climbed with the car** (world y 1.176
+  with the car 1.2 m up), because the wheels it was seated from lose contact
+  5 cm past the settled ride height and then hang at full droop. Now seated
+  from the wheels that are actually down, remembered while airborne, and faded
+  and spread with the gap through a shader uniform (MULTIPLY blending ignores
+  `opacity`).
+  Original note:
+  it is seated
   from `mean(hub.y) − WHEEL_RADIUS`, which follows the wheels off a kerb, so a
   car launching over a sausage keeps a hard shadow directly beneath it. Fade
   and spread it with the chassis-to-ground gap.
@@ -1301,6 +1388,38 @@ New findings from the 2026-08-06 run (not acted on — one change per run):
   displacement, which predates `rng.js` and does not go through it. Harmless —
   both are deterministic per circuit — but there is no reason for two. Fold
   `strSeed` into `rng.js` next time either is touched.
+
+New findings from the 2026-08-12 run (not acted on — one change per run):
+
+- **Nothing on any circuit can launch a car** (game/env, medium — new
+  2026-08-12): measured while checking the airtime fade, over 6 s of four-car
+  racing on `gp`, **every wheel of every car is in contact on every single
+  frame** (`minContacts` 4, zero frames with a wheel up). The physics ground is
+  one flat `CANNON.Box` — kerbs, the road's camber, the sausages and all of
+  `terrain.js`'s relief are **visual only** — so the only airtime in the game
+  comes from car-to-car contact or a barrier hit. That is why this run's probe
+  has to hold the car at a height by hand rather than jump it off something.
+  It also means anything that models suspension travel, kerb strikes or airtime
+  has almost no opportunity to show itself. Giving the kerbs (and only the
+  kerbs) collision geometry would be the smallest version of this: ~11 cm of
+  ribbed lip is enough to unsettle a car that runs wide, and it would make
+  riding the kerb a decision instead of a free line.
+- **The contact blob is still a noon shadow under an 11° golden-hour sun**
+  (env/car, medium — new 2026-08-12): it now leaves the ground correctly, but
+  while the car is *on* the ground the blob is centred directly beneath it,
+  where the real sun would throw the shadow several metres to the side. This is
+  the same balance question as the 2026-08-05 finding above (a car's real
+  shadow measures a 21 % darkening on asphalt and still does not read), and the
+  two should be decided together — the blob exists to stand in for a shadow
+  that does not read. Now cheaper to experiment with than it was: the fade
+  uniform and the ground seating are both in one place in `car.js`, and
+  skewing/offsetting the blob along the sun direction is a couple of lines.
+- **`raycastResult.hitPointWorld` is the ground, and nothing else used it**
+  (harness, low — new 2026-08-12): every probe and gate in the suite infers the
+  road from hub heights or from `frames[i].pos.y`. The suspension raycast has
+  already measured it exactly, per wheel, and its result survives
+  `updateWheelTransform` (unlike `isInContact`). Worth reaching for the next
+  time something needs to know where the road is under a car.
 
 New findings from the 2026-08-11 run (accept-and-merge only — no product change):
 

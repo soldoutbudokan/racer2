@@ -3,6 +3,7 @@ import * as CANNON from 'cannon-es';
 import { buildVisualCar } from './carModels/index.js';
 import {
   WHEEL_RADIUS, SUSPENSION_REST, SUSPENSION_STIFFNESS, SUSPENSION_ANCHOR_Y,
+  STATIC_CHASSIS_HEIGHT,
 } from './stance.js';
 
 const CHASSIS_HALF = { x: 0.92, y: 0.32, z: 2.18 };
@@ -510,17 +511,42 @@ export function createCar(world, materials, options = {}) {
   // Clear the asphalt (0.01) and its cambered crown, but stay well under the
   // 0.36 wheel radius so the blob can never ride up over a tyre.
   const SHADOW_LIFT = 0.03;
+  // Airtime response. A caster that leaves the ground casts a shadow that stays
+  // on the ground, spreads, and lightens as the penumbra opens up — so a
+  // launched car's blob is not a hard black patch travelling with it.
+  const AIR_SPAN = 0.8;       // gap (m) at which the blob has faded out entirely
+  const AIR_SPREAD = 0.6;     // how much wider it has grown by then
+  // Suspension rebound is not airtime: a car cresting a rise or unloading after
+  // a stop lifts the chassis a centimetre or two with all four tyres still
+  // down, and that must leave the shadow exactly as it was.
+  const AIR_DEADBAND = 0.02;
+  // Road height under the car, carried over from the last frame a tyre was on
+  // it. An airborne car cannot measure the ground from its own wheels: the
+  // suspension raycast reaches only ~5 cm past the settled ride height, and
+  // past that the wheels hang at full droop, so the road they imply climbs with
+  // the chassis and the blob flies along with the car. The physics ground is a
+  // single flat plane (`track.js`), so the last reading stays true while the
+  // car is in the air; if the circuit ever gains real elevation this wants a
+  // downward raycast instead.
+  let groundY = 0;
 
   function update() {
-    let hubSum = 0;
+    let hitSum = 0, contacts = 0;
     for (let i = 0; i < vehicle.wheelInfos.length; i++) {
+      const w = vehicle.wheelInfos[i];
+      // Sample contact BEFORE updateWheelTransform — its first line clears
+      // `isInContact`. `raycastResult` survives the call, and on a wheel that
+      // is down, its hit point IS the road under that wheel.
+      if (w.raycastResult.body) { hitSum += w.raycastResult.hitPointWorld.y; contacts++; }
       vehicle.updateWheelTransform(i);
-      const t = vehicle.wheelInfos[i].worldTransform;
+      const t = w.worldTransform;
       const m = wheelMeshes[i];
       m.position.copy(t.position);
       m.quaternion.copy(t.quaternion);
-      hubSum += t.position.y;
     }
+    // Only wheels that are actually down get a vote: a lifted wheel hangs at
+    // full droop, and averaging it in drags the estimated road up with it.
+    if (contacts > 0) groundY = hitSum / contacts;
     visual.root.position.copy(chassisBody.position);
     visual.root.quaternion.copy(chassisBody.quaternion);
 
@@ -538,9 +564,19 @@ export function createCar(world, materials, options = {}) {
       _yawQ.setFromAxisAngle(_up, yaw);
       _invQ.set(q.x, q.y, q.z, q.w).invert();
       shadow.quaternion.copy(_invQ).multiply(_yawQ);
-      const groundY = hubSum / vehicle.wheelInfos.length - WHEEL_RADIUS + SHADOW_LIFT;
-      _off.set(0, groundY - chassisBody.position.y, 0).applyQuaternion(_invQ);
+      _off.set(0, groundY + SHADOW_LIFT - chassisBody.position.y, 0).applyQuaternion(_invQ);
       shadow.position.copy(_off);
+      // Fade and spread with the gap between the settled ride height and where
+      // the chassis actually is. Scaling the mesh also scales its 1.8 cm
+      // centring offset, which moves the blob by under a centimetre at full
+      // spread — far less than the spread itself.
+      const air = Math.max(0,
+        chassisBody.position.y - STATIC_CHASSIS_HEIGHT - groundY - AIR_DEADBAND);
+      const t = Math.min(1, air / AIR_SPAN);
+      shadow.material.userData.fade.value = t;
+      const s = 1 + t * AIR_SPREAD;
+      shadow.scale.set(s, 1, s);
+      shadow.visible = t < 1;   // fully faded is a no-op multiply — skip the draw
     }
     // Brake lights — pulse with brake input
     visual.brakeLights.material.emissiveIntensity = visual._brakeLevel;
