@@ -98,7 +98,8 @@ helper. See the 2026-08-06 Backlog entry.
 
 ## Changelog (accepted to `main`)
 
-- **2026-08-17** (pending review; branch `claude/epic-franklin-mrmtk5`)
+- **2026-08-17** (accepted → `main` 2026-08-22, owner replied "go"; was branch
+  `claude/epic-franklin-mrmtk5`)
   — **The kerbs are solid now.** Took the top open *env* item, new on 2026-08-12
   and the newest substantive finding in the file: **nothing on any circuit
   could launch a car**. The physics ground is a single flat `CANNON.Box`
@@ -1637,3 +1638,103 @@ independent confirmation of both the seed pin and that 0.27 mm explanation —
 and `airshadow`'s sweep: blob world y **0.030 at every height from 0 to 2.5 m**,
 contacts 4 → 0 between 0.05 and 0.15 m, fade 0 → 1, scale 1 → 1.6, drawn until
 0.8 m.
+
+New findings from the 2026-08-22 run (accept-and-merge only — no product change):
+
+- **The preview link served *production*, not the branch under review, for four
+  days** (process, HIGH — new 2026-08-22). This is why the kerbs preview sat
+  unreviewed from 08-17 to 08-22, and it will happen again unless the workflow
+  changes. `deploy-preview.yml` fires on a push to **any** `claude/**` branch
+  and publishes every one of them to the **same** `preview/` directory. On
+  2026-08-18 01:40 UTC a push to `claude/git-commit-author-config-opi6b7` — the
+  owner's own git-identity commit, branched off `main`, with no product change
+  in it — rebuilt `main` and overwrote the kerbs preview from 08-17 09:30.
+  Measured on the `gh-pages` branch, which is literally what Pages serves:
+  `preview/index.html` loaded `assets/index-Bgun-15k.js`, **the same entry
+  chunk `index.html` at the repo root (production) loads**, while the kerbs
+  build was `assets/index-CDSbzh1u.js`. Independently confirmed this run by
+  building the branch tip: `npm run build` emits `index-CDSbzh1u.js`, so the
+  chunk that was missing from the preview is provably this branch's.
+  **The fix is one line and should be the next process item:** give the
+  workflow `destination_dir: preview/${{ github.ref_name }}` (or a slug of it)
+  so each preview branch owns its own URL, and have the run send *that* URL
+  rather than the shared one. Until then, know the failure mode: **any push to
+  any `claude/**` branch destroys the preview currently under review**, which
+  also means a run that is skipping must not push anything at all — the skip
+  run of 08-21 deliberately committed nothing for exactly this reason, and that
+  is why its two findings had to wait for this entry to be written down.
+  Worth noting the routine cannot repair this itself: re-running the older
+  deploy needs `actions: write`, and the API returned
+  **403 Resource not accessible by integration** to this session.
+- **The one-time nudge was sent for `claude/epic-franklin-mrmtk5` on
+  2026-08-21** (process — new 2026-08-22, closing the 2026-08-11 and 2026-08-17
+  findings). This is the durable record those findings asked for, keyed by
+  branch name: **no further nudge for that branch, ever.** The mechanism now
+  has one run of evidence behind it and it worked — the nudge is what surfaced
+  the clobbered preview above, four days into a stall that would otherwise have
+  looked identical to a healthy day from the owner's side. But note the gap it
+  exposed: **a skip run has nowhere to write this record.** It cannot push to a
+  `claude/**` branch (that clobbers the preview, per the finding above) and it
+  must not push to `main`, so the nudge state lived only in the notification
+  until this accept run could commit it. If a second preview goes quiet before
+  the next accept, the routine will have no way to tell whether it already
+  nudged. Fixing the preview directory fixes this too, since a skip run could
+  then commit a one-line record to its own branch harmlessly.
+- **`pngdiff`'s "0 changed pixels" and "byte-identical" are NOT the same
+  claim, and this file has been using them interchangeably** (harness, medium —
+  new 2026-08-22). `pngdiff.mjs` counts a pixel as changed only when it differs
+  by **more than 6 summed over RGB** (its own header says so, line 15). So a
+  frame can read `changed: 0, pct: 0` and still have a different md5. Measured
+  here: pre-airshadow `main` (`2d05525`) against current `main` reads
+  **`chase` 0 changed pixels — but `maxDelta` 2**, and the two md5s differ
+  (`9fbe73c8…` → `a0e0a598…`). Same for `front34`. The 2026-08-17 entry's
+  "`chase`/`front34`/`low` **0 changed pixels**" reproduced exactly this run and
+  was correct as written; what it was not is a byte-identity claim, and the
+  2026-08-11 md5 method is the stricter of the two. **Read `maxDelta`, not just
+  `changed`** — a maxDelta of 0 is the only real "nothing moved".
+- **The seed pin holds across six weeks and three containers** (harness,
+  positive — new 2026-08-22). All five md5s the 2026-08-11 entry wrote down
+  reproduced **exactly** at `2d05525` in this container today —
+  `chase 9fbe73c8… front34 970cff9f… high 373cb9d3… low 075d9e63…
+  trackside 7db2c822…`. That is a third independent confirmation, and it means
+  a recorded md5 in this file is a usable long-lived baseline, not just a
+  within-run one. Worth re-shooting an old commit rather than assuming, though:
+  it took one `viewshot` run to settle a question the md5s alone made look like
+  a regression.
+- **`viewshot` cannot see the kerb change at all, and that is the correct
+  result** (harness — new 2026-08-22). `main` vs the branch tip at 6 s is **0
+  changed pixels and maxDelta 0 on all five angles**, and the two sets of md5s
+  are equal. Nothing is wrong: `physics-test` measures max centreline deviation
+  at **2.8 m** over 45 s of AI running and the kerbs sit ~8 m out, so no car in
+  a normal 6 s run gets within 5 m of a kerb. **A future run must not read this
+  as "the change did nothing"** — the feature only appears when a car is put
+  over the kerb line deliberately, which is what `kerbprobe.mjs` does. The
+  general lesson for the rotation: a physics-only change has no `viewshot`
+  evidence, so the routine's standing "verify with multi-angle screenshots"
+  step needs a purpose-built shooter for those, exactly as `stuckprobe` and
+  `airshadow` were built for theirs.
+- **`sprint` reports `kerbBoxes 0` and that is correct, not a gap** (harness —
+  new 2026-08-22). Checked because it looks alarming next to gp's 1504 and
+  because all six themes carry `kerbs: true`. Measured drawn kerb vertices
+  against collision shapes on every circuit: gp 22420/1504, **sprint 0/0**,
+  downtown 25300/1680, alpine 22380/1496, dunes 22600/1504, parco 29280/1944.
+  `sprint` draws **no kerbs at all** — `computeKerbActive(curvature, 0.00045, 8)`
+  finds no corner tight enough — so drawn and collision agree there too. Every
+  circuit that draws a kerb has collision for it.
+  **The gap that is real: nothing in the suite checks that agreement anywhere
+  but `gp`.** The "collision kerb is the kerb that is drawn" gate runs on one
+  circuit (884 samples, idx 86). A cheap and worthwhile next gate is the
+  drawn-verts-vs-`kerbShapes` pairing above across all six — it is one
+  `traverse` and it would catch a theme or threshold change that silently
+  leaves a circuit with kerbs you can see and drive through.
+
+Re-verified on the branch tip before merging to `main` (still assembled by hand
+— `scripts/preflight.mjs` remains unbuilt): `physics-test` **48/48** incl. no
+console errors, `smoke-car` OK (no NaN, outward winding, 24880/24228/21778
+unchanged), `npm run build` clean, two `viewshot 6` runs **byte-identical** on
+all five angles, `main` vs branch **0 changed pixels / maxDelta 0** on all five,
+and `kerbprobe` on **all six circuits**: agreement **−3.3 … +14.8 mm** with
+**0 samples below the drawn mesh** anywhere (that is the fault that matters — a
+hole a wheel drops through), 602–654 bodies, 42–57 % of the lap kerbed on the
+five kerbed circuits. Running wide at 6°: 23–51 frames of 300 with a wheel off
+the ground at 90/150/220 km/h, peak roll 3.0–3.5°, no launch and no roll-over.
