@@ -127,6 +127,11 @@ async function bootstrap() {
   if (typeof window !== 'undefined') {
     window.__ctx = ctx;
     window.__createAIDriver = createAIDriver;
+    // three itself, so a probe can raycast the built scene without the product
+    // growing a helper per measurement (kerbprobe.mjs casts at the drawn kerb
+    // and compares it with the kerb the physics built). It is already in the
+    // bundle; cannon's classes are all reachable from `ctx.world`.
+    window.__THREE = THREE;
     // Deterministic loop pump — headless Chrome throttles rAF, so tests
     // drive frames through this instead of waiting on wall-clock time.
     window.__tick = (dt) => tick(ctx, dt, performance.now());

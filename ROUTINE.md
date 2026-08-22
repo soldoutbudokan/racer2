@@ -98,6 +98,98 @@ helper. See the 2026-08-06 Backlog entry.
 
 ## Changelog (accepted to `main`)
 
+- **2026-08-17** (pending review; branch `claude/epic-franklin-mrmtk5`)
+  — **The kerbs are solid now.** Took the top open *env* item, new on 2026-08-12
+  and the newest substantive finding in the file: **nothing on any circuit
+  could launch a car**. The physics ground is a single flat `CANNON.Box`
+  (2000×0.5×2000, top at y=0), so the camber, `terrain.js`'s relief, the
+  sausages and the 10.5 cm kerbs were all *decoration*: over 6 s of four-car
+  racing every wheel of every car was in contact on every frame. A car could
+  cut an apex straight through a kerb and the suspension never knew. That item
+  proposed the smallest version of the fix — give the kerbs, and only the
+  kerbs, collision geometry — and that is what this is.
+  **The physics kerb is built from the same runs as the drawn one.** The run
+  and profile decision (where a kerb is, and whether the run is a `kerb` or a
+  flat `apron`, hashed per run) came out of `buildKerb3DGeometry` into a shared
+  `kerbRuns()` in `roadwork.js`; the new `buildKerbCollision()` walks the same
+  spans. Two builders picking kerb positions independently would drift, and a
+  physics kerb that is not the drawn kerb is an invisible step.
+  Each ~3 m of run becomes four flat-topped boxes across the profile — a
+  lateral staircase between the authored profile points, since a
+  `RaycastVehicle` wheel is a point ray with no contact patch and cannot tell a
+  21 cm chamfer ramp from two steps to the same height. The first step, **2.9 cm
+  at the white line**, is the lip that does the unsettling. Ribbed bands sit at
+  the **rib crest** (a rolling tyre bridges the 1 m grooves); modelling the ribs
+  themselves would be false precision — at 40 m/s a 1 m pitch is 40 Hz against a
+  120 Hz step.
+  **Heights are the drawn kerb's world y, not a height above the physics
+  ground**, and those differ: the ground is flat at 0 while the road is drawn
+  with a crown, so its edge is ~1.4 cm lower. Seating the slabs on the drawn
+  kerb is what puts the tyre where the kerb is seen to be.
+  **The bug worth remembering, because it is invisible in every other use of
+  this code:** slabs were first sized by the arc step they were cut at. That
+  arc is **centreline** arc length, and a kerb sits ~8 m to the side of it — so
+  round the outside of a corner 3.0 m of centreline is **3.4–3.6 m** of kerb.
+  Boxes cut for 3.0 m left a **0.08–0.30 m hole at every joint**, on the outside
+  of every corner, about every third metre of kerb; `kerbprobe` read the
+  physics **90 mm below** the drawn kerb at every fourth sampled frame. The mesh
+  never showed it because a triangle strip stretches between its samples and
+  boxes do not. Each slab is now a **chord between its own two end samples at
+  that band's lateral offset**, so consecutive boxes share endpoints and cannot
+  gap; then the box is re-centred half a sagitta out and widened by the other
+  half, because a chord cuts the corner it stands for (10 cm on a street
+  hairpin — which was the last −30 mm outlier, on `downtown`, a wheel handed
+  the next band down).
+  **Budget**: 1496–1944 boxes per circuit, but only **42–52 new bodies** (`gp`
+  602 → 644). They are grouped ~10 segments (≈30 m of one corner) to a static
+  body, which is the compromise the `NaiveBroadphase` forces: ~900 individual
+  bodies would triple the pair count on a circuit that already carries 600
+  barrier boxes, while one body for the lot would have an AABB the size of the
+  circuit and narrowphase every car against every slab. Building them is free
+  at the resolution anything here can measure — track rebuild (median of 3,
+  SwiftShader) `gp` **6102 → 6086 ms**, `parco` **5878 → 6023 ms**, i.e. inside
+  the run-to-run noise, so the standing "track rebuild is slow" item is no
+  worse. Material is `groundMat`
+  — a wheel meets a kerb the way it meets the road, and the vehicle does its own
+  tyre friction. `main.js` already classified a wheel out there as the `kerb`
+  surface, so grip was waiting for this.
+  **What it does.** Settled with the outside wheels over the line: wheel ground
+  heights **0.000 / 0.096**, chassis **+47 mm**, **3.35°** of roll. Running wide
+  at 6° at 90 / 150 / 220 km/h: peak chassis rise ~6 cm, peak roll
+  **1.1 / 3.1 / 3.3°**, and **37 / 44 / 70 frames of 300 with a wheel off the
+  ground** (down to **two** wheels at 90 km/h) — the first airtime available
+  anywhere in the game, and no NaN, no launch, no roll-over. Unsettling, not a
+  ramp.
+  Three new `physics-test` gates: **the collision kerb is the kerb that is
+  drawn** (884 samples on `gp`, cannon ray vs a three ray at the drawn mesh —
+  **0 below the mesh**, −1.1..+14.7 mm, which is exactly the flat band top
+  against a drawn top that falls 13 mm outward and ripples 11 mm; this is the
+  gate that catches the arc-length hole), **a wheel put over the kerb line
+  climbs it** (with a mid-road control on the same corner that must read
+  0/0 and 0° roll, so it cannot pass by lifting everything), and **the racing
+  surface stays flat** (3300 rays across the road, highest **0.00 mm** — the
+  guard on the sagitta widening ever growing into a step on the racing line).
+  Two things that gate caught on the way, both worth keeping: it first read
+  **962 mm** because earlier scenarios park cars on the circuit and a ray drops
+  onto a roof — the rays now hide the cars the way `RaycastVehicle` hides its
+  own chassis; and the whole block is written to degrade rather than throw when
+  the kerb data is absent, after the first control run died on `__THREE` instead
+  of reporting.
+  New tool: **`scripts/kerbprobe.mjs`** — per circuit, the body/box budget and
+  kerbed fraction of the lap, physics-vs-drawn agreement with the outliers
+  named, a settle sweep across the kerb line, a 6° run-wide strike at three
+  speeds, and (with `KERB_SHOTS=<prefix>`) a low rear-3/4 pair of the same car
+  mid-road and on the kerb. One product hook: `window.__THREE`, so a probe can
+  raycast the built scene (cannon's classes are all reachable from `ctx.world`).
+  Verified: `physics-test` **48/48** incl. no console errors, control run
+  against the pre-change `src/` fails exactly the two feature gates without
+  crashing, smoke OK, build clean, `kerbprobe` on all six circuits (agreement
+  −3.3..+14.8 mm, 0 mesh misses, 0 holes), and paired `viewshot 6`:
+  **0 changed pixels, maxDelta 0 on all five angles** — which is two proofs at
+  once, that the `kerbRuns` extraction leaves the drawn kerb bit-identical, and
+  that the player's line over those 6 s never touches a kerb, so nothing else
+  moved either.
+
 - **2026-08-12** (accepted → `main` 2026-08-17, owner replied "go"; was branch
   `claude/epic-franklin-jlxl9v`)
   — **A car in the air took its shadow with it.** Top open *car* item in the
@@ -1391,8 +1483,14 @@ New findings from the 2026-08-06 run (not acted on — one change per run):
 
 New findings from the 2026-08-12 run (not acted on — one change per run):
 
-- **Nothing on any circuit can launch a car** (game/env, medium — new
-  2026-08-12): measured while checking the airtime fade, over 6 s of four-car
+- ~~**Nothing on any circuit can launch a car**~~ (game/env, medium) — DONE
+  2026-08-17 (see Changelog), pending review: the kerbs, and only the kerbs,
+  now have collision geometry, built from the same runs the mesh is. A car run
+  wide over one at 90 km/h gets down to **two** wheels on the ground. The
+  note's other half — the camber and `terrain.js` — is still true and is
+  carried forward as its own item below.
+  Original note:
+  measured while checking the airtime fade, over 6 s of four-car
   racing on `gp`, **every wheel of every car is in contact on every single
   frame** (`minContacts` 4, zero frames with a wheel up). The physics ground is
   one flat `CANNON.Box` — kerbs, the road's camber, the sausages and all of
@@ -1484,6 +1582,48 @@ New findings from the 2026-08-17 run (accept-and-merge only — no product chang
   bare header with **no rows, no shots and exit 0**. It reads as a broken probe.
   Any script that filters its parsed arguments should fail loudly when the
   filter empties the list.
+
+New findings from the 2026-08-17 kerb run (not acted on — one change per run):
+
+- **Everything except the kerbs is still decoration** (env, medium — new
+  2026-08-17): the kerbs are now the *only* relief the physics can feel. The
+  road is still dead flat to a tyre while it is drawn with a 2.4 cm crown, and
+  all of `terrain.js`'s rolling ground outside the circuit is still fiction — a
+  car on the grass is on a billiard table. The 2026-08-12 note's headline ("the
+  physics ground is one flat `CANNON.Box`") is only half-retired. The honest
+  next step is a real ground surface: a per-frame road plane (the centreline
+  frames already carry everything needed) or a cannon `Heightfield` for the
+  terrain. Note the kerb slabs would then need to sit on the road's height
+  rather than assuming y=0, which is one line in `buildKerbCollision`
+  (`baseY`).
+- **Nothing knows whether the AI ever uses a kerb** (game, medium — new
+  2026-08-17): riding a kerb now has a cost, and the paired `viewshot` over 6 s
+  came back 0 changed pixels, which means the *player's* line never touched
+  one. Whether any AI does is unmeasured — it follows `racingLineOffset`, which
+  may or may not reach the kerb at an apex. If it never does, this change only
+  ever shows itself when a human runs wide, which is worth knowing before
+  anyone builds on it. A `stuckprobe`-style trace of each car's lateral offset
+  against `track.kerbActive` over a lap would settle it.
+- **`sprint` has no kerbs at all** (env, low — new 2026-08-17): it is the one
+  circuit with `theme.kerbs === false`, so it gained nothing here — 0 collision
+  boxes, and no kerb drawn at any corner either. That is pre-existing and may
+  well be deliberate, but it now also means `sprint` is the only circuit where
+  running wide costs a driver nothing at all.
+- **A dropped ray reads a parked car as ground** (harness, low — new
+  2026-08-17): the new "racing surface stays flat" gate went red at **962 mm**
+  on its first run — a car left on the circuit by an earlier scenario, measured
+  at the roof. Any probe that drops a ray to find the road needs
+  `body.collisionResponse = false` on the cars first; that is exactly how
+  `RaycastVehicle` hides its own chassis from its own suspension ray. Same trap
+  as the 2026-07-29 `isInContact` one: the suite's scenarios leave state behind.
+- **The kerb is a step, not a rumble** (env/car, low — new 2026-08-17):
+  deliberate — a 1 m rib pitch at 40 m/s is 40 Hz against a 120 Hz step, so
+  simulating the ribs would alias into noise rather than model anything. But it
+  does mean riding a kerb is felt as one smooth 10.5 cm platform where a driver
+  feels the vibration first. The right home for that is probably not the
+  collision at all: `main.js` already classifies the wheel as being on the
+  `kerb` surface, so a rumble could be driven off that as a camera/audio
+  effect, for free and at any frequency.
 
 Re-verified on the branch tip before merging to `main` (nothing is scripted yet
 — this is the `scripts/preflight.mjs` the 2026-08-11 finding asks for, still
