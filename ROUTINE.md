@@ -1738,3 +1738,30 @@ and `kerbprobe` on **all six circuits**: agreement **−3.3 … +14.8 mm** with
 hole a wheel drops through), 602–654 bodies, 42–57 % of the lap kerbed on the
 five kerbed circuits. Running wide at 6°: 23–51 frames of 300 with a wheel off
 the ground at 90/150/220 km/h, peak roll 3.0–3.5°, no launch and no roll-over.
+
+Post-merge state check (2026-08-22, after pushing the merge to `main`):
+
+- **The routine is now jammed: the skip rule will fire every run until
+  `claude/git-commit-author-config-opi6b7` is merged or deleted** (process,
+  HIGH — new 2026-08-22). With the kerbs preview merged, the open-branch check
+  still prints one line:
+  `OPEN: origin/claude/git-commit-author-config-opi6b7`. That branch is the
+  **owner's own** git-identity commit from 08-18 (a SessionStart hook in
+  `.claude/settings.json` plus `CLAUDE.md`), not a preview this routine built —
+  but the skip rule is deliberately mechanical and cannot tell the difference,
+  so **every future run will skip and build nothing**, silently, exactly the
+  failure the 08-11 and 08-17 findings describe.
+  Two ways out, and the first is better:
+  (1) **Owner merges or deletes `claude/git-commit-author-config-opi6b7`.** It
+      is a two-file config change that has been sitting since 08-18; merging it
+      also settles the commit-identity question the branch was opened for.
+  (2) Narrow the skip check so it only counts previews *this routine* created.
+      The naming is not a reliable key on its own (the branch family has changed
+      across runs — `stoic-thompson`, `epic-franklin`, …), so the sound version
+      is to skip only on branches whose tip is authored by the routine, or to
+      have each run record its own preview branch name in this file when it
+      pushes one and match against that. Option (2) is worth doing anyway,
+      because option (1) fixes today and not the next time the owner pushes a
+      branch of their own.
+  Note this interacts with the shared-`preview/` finding above: while that
+  branch is open, it is *also* the branch whose build the preview link serves.
