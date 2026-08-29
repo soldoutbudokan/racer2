@@ -15,6 +15,7 @@ import { createChaseCamera } from './camera.js';
 import { createHud } from './hud.js';
 import { createAIDriver } from './ai.js';
 import { createRacingLine } from './racingLine.js';
+import { createAudio } from './audio.js';
 import { STATIC_CHASSIS_HEIGHT } from './stance.js';
 
 const RACE_LAPS = 3;
@@ -122,6 +123,8 @@ async function bootstrap() {
     primaryPlayerIdx: 0,
     mode: null,
     state: null,
+    // Created on the first mode start (a click, so the browser lets it play).
+    audio: null,
   };
   // Dev hooks for headless screenshot/test harnesses (harmless in production).
   if (typeof window !== 'undefined') {
@@ -148,6 +151,9 @@ async function bootstrap() {
     // declaration further down this function, so the closure resolves fine.
     window.__rebuildTrackById = (id) => rebuildTrack(getTrackById(id));
     window.__trackIds = TRACKS.map((t) => t.id);
+    // The sound system's factory, so a probe can build the same graph on an
+    // OfflineAudioContext and measure the note it renders (audioprobe.mjs).
+    window.__createAudio = createAudio;
   }
 
   document.querySelectorAll('button.mode').forEach((btn) => {
@@ -272,11 +278,17 @@ function startMode(ctx, mode) {
   hideFinish();
   ctx.track.startLights.set(0);
 
+  // Sound: one voice per car on the grid. The mode button that got us here is
+  // the user gesture the autoplay policy wants, so the context can start now.
+  if (!ctx.audio) ctx.audio = createAudio();
+  ctx.audio.setCars(ctx.cars, mode === 'two-player');
+
   hideMenu();
   ctx.hud.show();
 }
 
 function stopMode(ctx) {
+  if (ctx.audio) ctx.audio.setCars([]);
   destroyCars(ctx);
   ctx.mode = null;
   ctx.state = null;
@@ -505,6 +517,10 @@ function tick(ctx, dt, now) {
         ctx.racingLine.setVisible(ctx.lineAid);
         if (!ctx.lineAid) ctx.hud.hidePace();
       }
+      if (c.input.consumeSoundToggle() && ctx.audio) {
+        const muted = ctx.audio.toggleMute();
+        ctx.hud.flashBanner(muted ? 'SOUND OFF' : 'SOUND ON', 900);
+      }
       if (c.input.consumeReset()) {
         for (const cc of ctx.cars) {
           const idx = ctx.cars.indexOf(cc);
@@ -569,6 +585,9 @@ function tick(ctx, dt, now) {
     const speedKmh = Math.hypot(v.x, v.y, v.z) * 3.6;
     c.chase.update(dt, c.car.body, speedKmh);
   }
+
+  // Sound, from this frame's driving state, heard from the primary camera.
+  if (ctx.audio) ctx.audio.update(dt, { camera: ctx.camera });
 
   // Update HUD with the primary player's stats.
   const primary = ctx.cars[ctx.primaryPlayerIdx];

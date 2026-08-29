@@ -60,7 +60,7 @@ const ASPHALT_TILE = 4.0;
 
 // Kerb ribs: one cast rib per colour block, sampled twice per rib so the
 // geometry carries the ripple and the normal map sharpens its edges.
-const RIB_PITCH = 1.0;
+export const RIB_PITCH = 1.0;   // exported: audio.js pulses the kerb rumble at this rate
 const KERB_STEP = RIB_PITCH / 2;
 
 // buildEdgeLineGeometry gets an offset but no road width, and the white lines

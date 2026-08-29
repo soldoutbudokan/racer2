@@ -191,6 +191,16 @@ export function createCar(world, materials, options = {}) {
     gearLabel: 'N',
     speedKmh: 0,
     slip: 0,             // exposed so the HUD/tests can see wheelspin
+    // The sound reads the engine straight off the driving state, not the
+    // smoothed tach: the raw flywheel speed, the throttle the engine is
+    // actually being given (zero through a shift cut), the gear, and the
+    // surface under each wheel (audio.js).
+    engineRpm: SPEC.idleRpm,
+    throttle: 0,
+    brake: 0,
+    gear: 0,
+    shifting: false,
+    surfaces: drive.surfaces,
   };
 
   // Scratch vectors for the per-substep force pass.
@@ -492,6 +502,11 @@ export function createCar(world, materials, options = {}) {
       (drive.smoothedRpm - SPEC.idleRpm) / (SPEC.redlineRpm - SPEC.idleRpm), 0, 1);
     telemetry.speedKmh = speed * 3.6;
     telemetry.slip = drive.slip;
+    telemetry.engineRpm = drive.engineRpm;
+    telemetry.throttle = onThrottle ? throttle : 0;
+    telemetry.brake = brakeCmd;
+    telemetry.gear = drive.mode === 'D' ? drive.gear : 0;
+    telemetry.shifting = drive.shiftT > 0;
     if (speed < 0.6 && throttle < 0.05) telemetry.gearLabel = 'N';
     else if (drive.mode === 'R') telemetry.gearLabel = 'R';
     else telemetry.gearLabel = String(drive.gear);
@@ -603,6 +618,11 @@ export function createCar(world, materials, options = {}) {
     drive.wheelOmega = 0;
     drive.smoothedRpm = SPEC.idleRpm;
     drive.slip = 0;
+    telemetry.engineRpm = SPEC.idleRpm;
+    telemetry.throttle = 0;
+    telemetry.brake = 0;
+    telemetry.gear = 0;
+    telemetry.shifting = false;
     vehicle.applyEngineForce(0, 2);
     vehicle.applyEngineForce(0, 3);
     vehicle.setSteeringValue(0, 0);
@@ -627,5 +647,7 @@ export function createCar(world, materials, options = {}) {
     dispose,
     telemetry,
     spec: SPEC,
+    // Body shape, so the sound can pick an engine character to match it.
+    archetype,
   };
 }

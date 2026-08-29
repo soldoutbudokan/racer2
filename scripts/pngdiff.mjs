@@ -38,6 +38,8 @@ function findChrome() {
       { shell: '/bin/bash' }).toString().trim();
     if (out && existsSync(out)) return out;
   } catch { /* fall through */ }
+  const mac = process.env.HOME + '/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing';
+  if (existsSync(mac)) return mac;
   throw new Error('No Chrome binary found — set CHROME_EXE');
 }
 

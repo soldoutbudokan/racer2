@@ -1037,6 +1037,231 @@ ck('a wheel put over the kerb line climbs it',
 ck('the racing surface stays flat', kerb.roadMaxY < 1 && kerb.roadSamples > 3000,
   `${kerb.roadSamples} samples across the road, highest ${kerb.roadMaxY} mm`);
 
+// ---------- Sound ----------
+// The sound is synthesised from the driving state (src/audio.js): the engine
+// note is the crank's harmonic stack at the real flywheel RPM, the throttle
+// opens a filter, tyres squeal from the physics' own slide, the surface under
+// the car is heard, and the AI are placed around the listener. These gates
+// read the computed parameters through `audio.debug` (no audio device is
+// needed — a suspended context still schedules), and one renders the graph on
+// an OfflineAudioContext and measures the note itself, so a disconnected node
+// or a wave that never reaches the destination fails here rather than in the
+// owner's headphones. All degrade to a reported failure rather than a throw if
+// the sound system is absent (scripts/audioprobe.mjs has the full trace).
+await startMode('time-trial');
+const snd = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  const world = ctx.world;
+  const entry = ctx.cars[0];
+  const me = entry.car;
+  const a = ctx.audio;
+  const out = { available: !!(a && a.available) };
+  if (!out.available) return out;
+  const dt = 1 / 120;
+  const ROAD = ['road', 'road', 'road', 'road'];
+  const N = { throttle: 0, brake: 0, steer: 0, handbrake: false };
+  const speed = () => Math.hypot(me.body.velocity.x, me.body.velocity.z);
+  let frame = 0;
+  const run = (ctrl, secs, surf = ROAD) => {
+    for (let i = 0; i < Math.round(secs * 120); i++) {
+      me.applyControls(ctrl, dt, surf);
+      world.step(dt);
+      if (++frame % 2 === 0) {
+        me.update();
+        entry.chase.update(2 * dt, me.body, speed() * 3.6);
+        a.update(2 * dt, { camera: ctx.camera });
+      }
+    }
+  };
+  const snap = () => {
+    const d = a.debug.cars[0];
+    return { rpm: d.rpm, fFire: d.fFire, cutoff: d.cutoff, gain: d.gain, gear: d.gear, load: d.load,
+      squeal: d.squeal, fSq: d.fSq, rumble: d.rumble, rumbleHz: d.rumbleHz, grass: d.grass, gravel: d.gravel,
+      wind: d.wind, roar: d.roar, pops: d.pops, bangs: d.bangs, clunks: d.clunks, speed: speed() };
+  };
+  const cyl = a.engines[me.archetype || 'gt'].cylinders;
+  out.cylinders = cyl;
+  me.reset({ x: 1500, y: 1.0, z: -1800 }, 0);
+  run(N, 1.5);
+  out.idle = snap();
+  run({ ...N, throttle: 1 }, 6);
+  out.wot = snap();
+  run(N, 0.5);
+  out.lift = snap();
+  run({ ...N, throttle: 0.3 }, 2);
+  out.cruise = snap();
+  run({ ...N, steer: 1, handbrake: true }, 1.0);
+  out.slide = snap();
+  me.reset({ x: 1500, y: 1.0, z: 0 }, 0);
+  run({ ...N, throttle: 1 }, 4);
+  run({ ...N, throttle: 0.5 }, 1, ['kerb', 'kerb', 'road', 'road']);
+  out.kerb = snap();
+  run({ ...N, throttle: 0.5 }, 1, ['grass', 'grass', 'grass', 'grass']);
+  out.grass = snap();
+  me.reset({ x: -1500, y: 1.0, z: -1800 }, 0);
+  run({ ...N, throttle: 1 }, 20);
+  out.fast = snap();
+  // Mute, and the remembered choice.
+  const was = a.muted;
+  a.setMuted(true);
+  out.mutedOn = { flag: a.muted, dbg: a.debug.muted, stored: localStorage.getItem('racer2.sound') };
+  a.setMuted(false);
+  out.mutedOff = { flag: a.muted, stored: localStorage.getItem('racer2.sound') };
+  a.setMuted(was);
+  out.state = a.debug.state();
+  return out;
+});
+console.log('sound:', JSON.stringify(snd));
+const sndOk = snd.available;
+const near = (x, y, tol) => Math.abs(x - y) <= tol;
+ck('sound: the engine note is the flywheel\'s firing order',
+  sndOk && near(snd.idle.fFire, snd.idle.rpm / 60 * snd.cylinders / 2, 0.5)
+  && near(snd.wot.fFire, snd.wot.rpm / 60 * snd.cylinders / 2, snd.wot.fFire * 0.01)
+  && snd.wot.rpm > 2 * snd.idle.rpm && snd.idle.rpm >= 1000,
+  sndOk ? `idle ${snd.idle.rpm.toFixed(0)} rpm → ${snd.idle.fFire.toFixed(1)} Hz, WOT ${snd.wot.rpm.toFixed(0)} rpm → ${snd.wot.fFire.toFixed(1)} Hz (V${snd.cylinders})` : 'no audio');
+ck('sound: the throttle opens the engine and a lift closes it, with the pops and the shift bang',
+  sndOk && snd.wot.cutoff > 2 * snd.lift.cutoff && snd.wot.gain > 1.8 * snd.lift.gain
+  && snd.lift.pops > 0 && snd.wot.bangs >= 1 && snd.wot.clunks >= 1 && snd.wot.gear >= 2,
+  sndOk ? `cutoff ${snd.wot.cutoff.toFixed(0)} → ${snd.lift.cutoff.toFixed(0)} Hz, gain ${snd.wot.gain.toFixed(2)} → ${snd.lift.gain.toFixed(2)}, ${snd.lift.pops} pops on the lift, ${snd.wot.bangs} bangs / ${snd.wot.clunks} clunks through ${snd.wot.gear} gears` : 'no audio');
+ck('sound: tyres squeal in a slide and not on a straight',
+  sndOk && snd.slide.squeal > 0.6 && snd.cruise.squeal < 0.1 && snd.idle.squeal === 0 && snd.slide.fSq > 800,
+  sndOk ? `handbrake slide ${snd.slide.squeal.toFixed(2)} at ${snd.slide.fSq.toFixed(0)} Hz, cruise ${snd.cruise.squeal.toFixed(3)}, idle ${snd.idle.squeal}` : 'no audio');
+// Wind is quadratic in speed (below its 78 m/s clamp), so the ratio of the
+// two readings must be the ratio of the speeds squared.
+const windLaw = sndOk && snd.cruise.wind > 0
+  ? (snd.fast.wind / snd.cruise.wind) / Math.pow(snd.fast.speed / snd.cruise.speed, 2) : 0;
+ck('sound: the surface is heard — kerb ribs at their passing rate, grass, wind with speed²',
+  sndOk && snd.kerb.rumble > 0.1 && near(snd.kerb.rumbleHz, snd.kerb.speed / 1.0, 0.5)
+  && snd.grass.grass > 0.2 && snd.grass.roar === 0 && snd.kerb.roar > 0
+  && snd.fast.wind > 0.4 && snd.fast.speed > snd.cruise.speed * 1.3 && near(windLaw, 1, 0.15)
+  && snd.idle.wind === 0,
+  sndOk ? `kerb rumble ${snd.kerb.rumble.toFixed(2)} at ${snd.kerb.rumbleHz.toFixed(1)} Hz for ${snd.kerb.speed.toFixed(1)} m/s, grass ${snd.grass.grass.toFixed(2)} (roar ${snd.grass.roar}), wind ${snd.fast.wind.toFixed(2)} at ${(snd.fast.speed * 3.6).toFixed(0)} km/h vs ${snd.cruise.wind.toFixed(3)} at ${(snd.cruise.speed * 3.6).toFixed(0)} (v² law ×${windLaw.toFixed(2)})` : 'no audio');
+ck('sound: mute is remembered',
+  sndOk && snd.mutedOn.flag === true && snd.mutedOn.dbg === true && snd.mutedOn.stored === 'off'
+  && snd.mutedOff.flag === false && snd.mutedOff.stored === null,
+  sndOk ? `on → ${snd.mutedOn.stored}, off → ${snd.mutedOff.stored}, context ${snd.state}` : 'no audio');
+
+// The AI voices: placed at their cars, attenuated by distance, Doppler-shifted.
+await startMode('quick-race');
+const sndAI = await page.evaluate(() => {
+  const ctx = window.__ctx;
+  const a = ctx.audio;
+  if (!a || !a.available) return null;
+  const allCars = ctx.cars.map((c) => c.car);
+  const dt = 1 / 120;
+  const ROAD = ['road', 'road', 'road', 'road'];
+  const player = ctx.cars.find((c) => c.isPlayer);
+  // The player is parked far away (an undriven car on the grid blocks the AI
+  // behind it — the quick-race gate above does the same); the listener stands
+  // at the start line looking down the track while the AI drive off.
+  player.car.reset({ x: 1500, y: 1, z: -1500 }, 0);
+  const THREE = window.__THREE;
+  const f0 = ctx.track.frames[0];
+  const camera = { position: new THREE.Vector3(f0.pos.x, f0.pos.y + 2, f0.pos.z), quaternion: new THREE.Quaternion() };
+  camera.quaternion.setFromRotationMatrix(new THREE.Matrix4().lookAt(
+    camera.position, new THREE.Vector3().copy(f0.pos).addScaledVector(f0.tan, 50), new THREE.Vector3(0, 1, 0)));
+  for (let s = 0; s < 6 * 120; s++) {
+    for (const c of ctx.cars) {
+      const cmd = c.isPlayer ? { throttle: 0, brake: 0, steer: 0, handbrake: true } : c.ai.update(c.car, allCars, dt);
+      c.car.applyControls(cmd, dt, ROAD);
+    }
+    ctx.world.step(dt);
+    if (s % 2 === 1) {
+      for (const c of ctx.cars) c.car.update();
+      a.update(2 * dt, { camera });
+    }
+  }
+  return ctx.cars.map((c, i) => {
+    const d = a.debug.cars[i];
+    const p = c.car.body.position;
+    return { label: d.label, ai: !c.isPlayer, atCar: d.x == null ? null : Math.hypot(d.x - p.x, d.y - p.y, d.z - p.z),
+      distance: d.distance, doppler: d.doppler, rpm: d.rpm };
+  });
+});
+console.log('sound AI:', JSON.stringify(sndAI));
+const aiV = sndAI ? sndAI.filter((v) => v.ai) : [];
+ck('sound: AI cars are heard from where they are',
+  sndAI && aiV.length === 3 && aiV.every((v) => v.atCar < 0.01 && v.distance > 10 && v.doppler >= 0.75 && v.doppler <= 1.35)
+  && aiV.some((v) => Math.abs(v.doppler - 1) > 0.01) && sndAI.find((v) => !v.ai).distance == null,
+  sndAI ? aiV.map((v) => `${v.distance.toFixed(0)} m ×${v.doppler.toFixed(3)}`).join(', ') : 'no audio');
+
+// Render the note offline and measure it.
+const sndR = await page.evaluate(async () => {
+  if (!window.__createAudio) return null;
+  const THREE = window.__THREE;
+  const SR = 48000;
+  const fake = (rpm, load, z) => ({
+    archetype: 'gt', spec: { idleRpm: 1100, redlineRpm: 7600 },
+    telemetry: { engineRpm: rpm, rpm, throttle: load, slip: 0, gear: 3, surfaces: ['road', 'road', 'road', 'road'] },
+    body: { position: { x: 0, y: 0.5, z }, velocity: { x: 0, y: 0, z: 0 }, quaternion: { x: 0, y: 0, z: 0, w: 1 },
+      addEventListener() {}, removeEventListener() {} },
+    vehicle: { wheelInfos: [0, 1, 2, 3].map(() => ({ skidInfo: 1, raycastResult: { body: true } })) },
+  });
+  const camera = { position: new THREE.Vector3(0, 1.5, 0), quaternion: new THREE.Quaternion() };
+  async function render({ rpm, load, z = -3, isPlayer = true, muted = false, secs = 3 }) {
+    const c = new OfflineAudioContext(2, SR * secs, SR);
+    const au = window.__createAudio({ context: c, virtualClock: true });
+    au.setMuted(muted);
+    au.setCars([{ car: fake(rpm, load, z), isPlayer, label: 'X' }], false);
+    for (let i = 0; i < secs * 60; i++) au.update(1 / 60, { camera });
+    const buf = await c.startRendering();
+    const L = buf.getChannelData(0), R = buf.getChannelData(1);
+    const start = buf.length - SR;                 // last second
+    const mono = new Float32Array(SR);
+    for (let i = 0; i < SR; i++) mono[i] = 0.5 * (L[start + i] + R[start + i]);
+    au.dispose();
+    return mono;
+  }
+  const rms = (x) => { let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i]; return Math.sqrt(s / x.length); };
+  function spectrum(x, n) {
+    const re = new Float64Array(n), im = new Float64Array(n);
+    for (let i = 0; i < n; i++) re[i] = (x[i] || 0) * (0.5 - 0.5 * Math.cos(2 * Math.PI * i / (n - 1)));
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1; for (; j & bit; bit >>= 1) j ^= bit; j ^= bit;
+      if (i < j) { [re[i], re[j]] = [re[j], re[i]]; [im[i], im[j]] = [im[j], im[i]]; }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const wr = Math.cos(-2 * Math.PI / len), wi = Math.sin(-2 * Math.PI / len);
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let k = 0; k < len / 2; k++) {
+          const p = i + k, q = i + k + len / 2;
+          const br = re[q] * cr - im[q] * ci, bi = re[q] * ci + im[q] * cr;
+          re[q] = re[p] - br; im[q] = im[p] - bi; re[p] += br; im[p] += bi;
+          const nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr;
+        }
+      }
+    }
+    const mag = new Float64Array(n / 2);
+    for (let i = 0; i < n / 2; i++) mag[i] = Math.hypot(re[i], im[i]);
+    return mag;
+  }
+  function line(mag, f, n) {
+    const c = f / (SR / n);
+    let peak = 0, bin = 0;
+    for (let k = Math.floor(c - 1.5); k <= Math.ceil(c + 1.5); k++) if (mag[k] > peak) { peak = mag[k]; bin = k; }
+    const lo = Math.floor(c * 0.7), hi = Math.ceil(c * 1.4);
+    const around = Array.from(mag.slice(lo, hi)).sort((p, q) => p - q);
+    return { peakHz: bin * SR / n, db: 20 * Math.log10(peak / (around[around.length >> 1] || 1e-9)) };
+  }
+  const n = 16384;
+  const wot = await render({ rpm: 4000, load: 1 });
+  const lift = await render({ rpm: 4000, load: 0 });
+  const mute = await render({ rpm: 4000, load: 1, muted: true });
+  const nearAI = await render({ rpm: 4000, load: 1, isPlayer: false, z: -5 });
+  const farAI = await render({ rpm: 4000, load: 1, isPlayer: false, z: -80 });
+  return {
+    fFire: 4000 / 60 * 4, wot: { rms: rms(wot), ...line(spectrum(wot, n), 4000 / 60 * 4, n) },
+    liftRms: rms(lift), muteRms: rms(mute), nearRms: rms(nearAI), farRms: rms(farAI),
+  };
+});
+console.log('sound render:', JSON.stringify(sndR));
+ck('sound: the rendered note has its firing line at rpm/60 · cyl/2, and mute is silence',
+  !!sndR && sndR.wot.rms > 0.05 && Math.abs(sndR.wot.peakHz - sndR.fFire) < 4 && sndR.wot.db > 20
+  && sndR.liftRms < 0.5 * sndR.wot.rms && sndR.muteRms < 1e-4
+  && sndR.nearRms > 5 * sndR.farRms && sndR.farRms > 0.001,
+  sndR ? `4000 rpm WOT: rms ${sndR.wot.rms.toFixed(3)}, line ${sndR.wot.peakHz.toFixed(1)} Hz (${sndR.fFire.toFixed(1)} expected) ${sndR.wot.db.toFixed(1)} dB over median; overrun rms ${sndR.liftRms.toFixed(3)}; muted ${sndR.muteRms.toExponential(1)}; AI 5 m ${sndR.nearRms.toFixed(3)} vs 80 m ${sndR.farRms.toFixed(4)}` : 'no __createAudio');
+
 // ---------- Scenery determinism ----------
 // The scenery used to scatter from Math.random(), so a circuit was rebuilt
 // differently every time it was loaded and two screenshots of identical code

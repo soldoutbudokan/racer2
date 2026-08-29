@@ -98,6 +98,101 @@ helper. See the 2026-08-06 Backlog entry.
 
 ## Changelog (accepted to `main`)
 
+- **2026-08-29** (preview, pending review; branch `claude/engine-audio-k7v2mq`;
+  owner-directed local run — the scheduled routine is paused and its skip rule
+  is jammed by the owner's own `claude/git-commit-author-config-opi6b7`, see
+  the 2026-08-22 Backlog note)
+  — **The game makes a sound.** Not a Backlog item: there was no audio anywhere
+  in the codebase — no `AudioContext`, no samples, nothing — and every other
+  open item is a few percent of a frame next to a racing game that is silent.
+  The owner asked for "much more realistic"; this is the single largest step
+  available. Procedural, per the README's "no external asset downloads":
+  everything is synthesised with the Web Audio API from the driving model.
+  New `src/audio.js` (one module, ~600 lines), wired into `main.js` in four
+  places; `car.js` exposes the raw flywheel RPM, the applied throttle (zero
+  through a shift cut), the gear and the per-wheel surfaces on `telemetry`,
+  plus its `archetype`; `roadwork.js` exports `RIB_PITCH`. `M` mutes and the
+  choice is remembered (`localStorage`). Started on the mode click, which is the
+  user gesture the autoplay policy wants; a window listener covers the rest.
+  **The engine note is the crank's harmonic stack at the real RPM**, not a
+  pitch-shifted loop. One `PeriodicWave` per archetype whose fundamental is the
+  *half-order* (rpm/120), so every half-order and integer order of the crank is
+  in one oscillator and one frequency parameter moves the lot; two copies
+  detuned 7 cents beat gently. Amplitudes are shaped around the **firing order**
+  (cylinders/2 per rev — the line the ear reads as pitch): flat-plane V8 for the
+  GT, cross-plane V8 with 0.55 half-order energy for the muscle car (the
+  burble), a V10 for the open-wheeler. Load: throttle drives a `tanh` waveshaper
+  (more harmonics) and opens a lowpass (420 → ~7000 Hz), so wide-open and
+  overrun are different sounds at the same revs; bandpassed noise for intake
+  roar; a faint straight-cut gear whine on load; a **shift clunk** and an
+  **upshift bang** (the ignition cut's charge going off), and a 3–6 pop
+  **overrun crackle** on a true lift at high revs. That last distinction matters:
+  the shift cut reads as a throttle lift, and the first cut fired the crackle on
+  every upshift.
+  **The spectrum was wrong the first time and only a measurement said so.** A
+  plain 1/k series put the crank's 1st/2nd orders above the firing line; the
+  V10 rendered with its loudest partial at order 1, an octave-and-more below
+  where it should scream. Reshaped relative to the firing order (its multiples
+  carry the energy; other integer orders 0.2, the V8's 2nd/6th 0.4; half-orders
+  per archetype). Now the loudest line is the firing order on all three.
+  **Tyres** squeal from four signals, each 0..1, max taken: lateral acceleration
+  against the grip *available at this speed* (μ·(g + downforce/m), from
+  `car.spec`), starting at 80 % of the limit; cannon's own per-wheel `skidInfo`,
+  but only a real deficit; the body slip angle; and the driven-axle slip ratio.
+  The `skidInfo` threshold is the bug worth remembering: it is the ratio of the
+  impulse the tyre had to the one the solver asked for, and under braking the
+  ask is bounded by the brake setting, so an unloaded rear at its limit reads
+  ~0.5 on *every* hard stop — at the limit, not locked — while a handbrake
+  slide is a constraint solve asking for ten times the grip and reads ~0.1.
+  Taken raw it had the AI field squealing on 29–45 % of frames; it now needs
+  `skidInfo` < 0.5 to start. Attack 30 ms, release 180 ms; tone + noise through a
+  bandpass that falls from 1500 toward 950 Hz as the slide grows, 6 Hz wobble.
+  **Surface** (players): grass hiss, gravel crunch, and a kerb rumble that is
+  bandpassed noise pulsed by a square LFO at **speed / RIB_PITCH** — the rib
+  rate the drawn kerb has (the 2026-08-17 finding's suggestion, done: a rumble
+  driven off `main.js`'s surface classification, at any frequency, for free).
+  Wind is quadratic in speed (0.7 at 78 m/s), plus a road roar on asphalt.
+  **Impacts**: a lowpassed noise thump on every chassis `collide` event scaled
+  by `getImpactVelocityAlongNormal()`, rate-limited to 80 ms.
+  **AI voices** go through a `PannerNode` at the car (inverse distance,
+  refDistance 5) with a Doppler factor `(c + v_listener)/(c + v_source)` along
+  the listener–source line, clamped 0.75–1.35; the listener is the primary
+  camera. Players are direct, panned ±0.55 in split-screen.
+  **Verification is measured, not asserted, and could not be by ear** (no one
+  in the loop can listen to a headless render). New `scripts/audioprobe.mjs`:
+  (1) a scripted drive — idle, launch through the gears, lift, full-brake stop,
+  hard corner, handbrake, kerb / grass / gravel with the surfaces forced — with
+  every computed parameter printed per quarter second; (2) 45 s of a real
+  four-car race stepped like `viewshot` with per-car squeal fractions and the
+  distance / Doppler range the listener saw; (3) **offline renders** on an
+  `OfflineAudioContext` (`createAudio({ context, virtualClock })` builds the
+  same graph) with an in-page FFT: at 4000 rpm WOT the firing line is at
+  **266.6 Hz** (266.7 expected), **51 dB** above the octave median, loudest bin
+  in the spectrum; 2000 rpm → 134.8; muscle 3000 → 199.2; V10 6000 → 501 Hz;
+  overrun at the same revs is **5.8× quieter** (rms 0.064 vs 0.368) with the
+  cutoff at 1580 vs 5780; **muted renders true silence** (rms 0.0000); an AI
+  voice at 5 m vs 80 m is **12.7× quieter** (0.365 → 0.029) — the panner path
+  is connected; closing at 40 m/s the line moves to 301.8 Hz (×1.132); a
+  1500→7000 rpm sweep tracks within a block's lag. `AUDIO_WAV=<dir>` writes the
+  renders as WAVs to listen to.
+  Seven new `physics-test` gates (55 total): the note is the firing order at
+  idle and WOT; throttle opens / lift closes with pops and the shift bang;
+  squeal in a slide (1.00) and not on a straight (0.000); the surface — kerb
+  ribs at their passing rate (32.3 Hz at 32.3 m/s), grass, wind by the v² law;
+  mute remembered; AI heard from where they are (positions, distance, Doppler
+  ≠ 1); and the rendered note's firing line + mute silence + near/far
+  attenuation. All degrade to a reported failure if the sound is absent.
+  **Visuals untouched by construction**, and proved: paired `viewshot 6` before
+  (on `main`) / after — **all five angles byte-identical** (matching MD5s `e93bade…`, `500f702…`, `693cf36…`, `dc443ee…`, `4d64074…`), no console errors. The
+  only pixel the change owns is the `M  Sound` line in the controls hint,
+  which the shooter hides.
+  Verified: `physics-test` **55/55** incl. no console errors (the render gate
+  crashed the suite once on a stand-in car with no `angularVelocity` — see the
+  Backlog — and two gates had wrong assumptions of their own, both fixed), smoke OK
+  (no NaN, outward winding, 24880/24228/21778 unchanged), `npm run build` clean.
+  Harness fix on the way: `pngdiff.mjs` was the one script whose `findChrome()`
+  lacked the Mac Playwright fallback the others have.
+
 - **2026-08-17** (accepted → `main` 2026-08-22, owner replied "go"; was branch
   `claude/epic-franklin-mrmtk5`)
   — **The kerbs are solid now.** Took the top open *env* item, new on 2026-08-12
@@ -1765,3 +1860,49 @@ Post-merge state check (2026-08-22, after pushing the merge to `main`):
       branch of their own.
   Note this interacts with the shared-`preview/` finding above: while that
   branch is open, it is *also* the branch whose build the preview link serves.
+
+New findings from the 2026-08-29 sound run (not acted on — one change per run):
+
+- **Nobody in the loop has heard it** (audio, HIGH — new 2026-08-29): every
+  number in the 2026-08-29 Changelog entry is a measurement of a render, and
+  the levels (engine 0.16 idle → 0.9 WOT, squeal 0.5, wind 0.7, master 0.7
+  into a 4:1 compressor) are a first guess at a mix. The preview review IS
+  the listening test. Things most likely to want a turn of the knob: the
+  squeal is probably still the thing to tame (AI field ≥0.3 on 15–32 %
+  of race frames, concentrated at the apexes); the shift bang (0.55) may be too
+  much on a GT; the V10's brightness (1.3× cutoff) may be harsh. All are one
+  constant each in `ENGINES` / `makeTyres` / `makeEngine`, and
+  `AUDIO_WAV=<dir> node scripts/audioprobe.mjs` writes WAVs of the fixed-RPM
+  renders to A/B a change without a browser.
+- **The engine has no idle character** (audio, medium — new 2026-08-29): at
+  1100 rpm the note is a steady 73 Hz stack at gain 0.16. A real race engine
+  idles lumpy — a slow amplitude wobble at the half-order and a slight RPM
+  hunt. `car.js` holds `idleRpm` exactly; a ±40 rpm authored wobble in the
+  sound (not the physics) would do it, a few lines in `makeEngine.set`.
+- **No crowd, no ambience, no start-light tone** (audio, low — new
+  2026-08-29): the only sources are the cars. A faint wind bed on the grid, a
+  grandstand murmur that swells past the pit straight (`track.js` knows where
+  the stands are), and nothing for the lights (F1 has no tone; correct as is).
+- **Hood camera hears the same mix as the chase camera** (audio, low — new
+  2026-08-29): `camera.js`'s modes are not fed to the sound. Inside the car the
+  wind and tyre roar should drop and the engine should gain a low body boom.
+  `createChaseCamera().getMode()` is already there to read.
+- **The listener is always the primary camera** (audio, low — new
+  2026-08-29): in split-screen both players are direct and panned ±0.55 and
+  there are no AI, so nothing is wrong today — but the moment an AI joins a
+  two-player race its panner will be placed relative to P1's camera only.
+- **Wheel-lock is not a sound the physics can make** (audio/harness, low —
+  new 2026-08-29): a `RaycastVehicle` wheel has no rotation state, so a locked
+  tyre and a tyre at its braking limit are the same `skidInfo`; the squeal
+  under full braking is deliberately a whisper (0.07) because the two cannot
+  be told apart. If wheel rotation ever becomes a state (it would fix the
+  visual too — wheels roll while "sliding"), a lock-up screech is one line.
+- **`physics-test` gained ~40 s** (harness, low — new 2026-08-29): the seven
+  sound gates step ~40 s of physics and render five 3 s offline clips. Cheap
+  next to the rest, but the standing "suite is slow" item grows.
+- **The probe's fake car is a second definition of a car** (harness, low —
+  new 2026-08-29): `audioprobe.mjs` and the render gate hand `createAudio` a
+  stand-in `{ telemetry, body, vehicle, spec, archetype }`. It is what let
+  `body.angularVelocity` be missing and crash the suite once. If the shape
+  `audio.js` reads grows, that stand-in must grow with it — or the render
+  should drive a real `createCar` on a throwaway world.
