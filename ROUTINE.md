@@ -98,8 +98,8 @@ helper. See the 2026-08-06 Backlog entry.
 
 ## Changelog (accepted to `main`)
 
-- **2026-08-29** (preview, pending review; branch `claude/engine-audio-k7v2mq`;
-  owner-directed local run — the scheduled routine is paused and its skip rule
+- **2026-08-29** (accepted → `main` 2026-08-29, owner replied "go"; was branch
+  `claude/engine-audio-k7v2mq`; owner-directed local run — the scheduled routine is paused and its skip rule
   is jammed by the owner's own `claude/git-commit-author-config-opi6b7`, see
   the 2026-08-22 Backlog note)
   — **The game makes a sound.** Not a Backlog item: there was no audio anywhere
