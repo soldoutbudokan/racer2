@@ -32,6 +32,7 @@ Then open the URL Vite prints (defaults to <http://localhost:5173>).
 | `Space`                 | Handbrake         |
 | `C`                     | Cycle camera      |
 | `L`                     | Racing-line aid   |
+| `M`                     | Sound on / off    |
 | `R`                     | Reset to start    |
 | `B`                     | Back to track     |
 
@@ -100,6 +101,20 @@ The AI runs the same physics through a pre-computed lap speed profile
 (corner speeds from curvature, anticipatory braking), pure-pursuit steering,
 traffic awareness, and stuck-recovery.
 
+## Sound
+
+Everything you hear is synthesised live with the Web Audio API — there are no
+samples to download. The engine note is the harmonic stack of a crankshaft
+turning at the flywheel's real RPM, so it flares with wheelspin, collapses
+through a shift cut and pops on the overrun; the throttle opens a filter the
+way a throttle opens an exhaust. Each body shape has its own character (a
+flat-plane V8 for the GT, a cross-plane burble for the muscle car, a V10 for
+the open-wheeler). Tyres squeal from the physics' own per-wheel slide, the
+surface under the car hisses (grass), crunches (gravel) or rumbles at the
+rib rate (kerbs), wind builds with speed, and the chassis thumps on contact.
+AI cars are positioned in 3D around the camera and Doppler-shifted as they
+pass. `M` mutes; the choice is remembered.
+
 ## What's under the hood
 
 - **Renderer**: WebGL2, ACES Filmic tone mapping, sRGB output, PCF soft
@@ -137,11 +152,13 @@ src/
   controls.js   keyboard input with smoothing
   camera.js     chase / hood / cinematic cameras
   hud.js        SVG tachometer + lap UI + pace pill + minimap
+  audio.js      procedural engine / tyre / surface / wind / impact sound
   carModels/    procedural car bodies, wheels, materials
 scripts/
   physics-test.mjs  deterministic driving-model assertions (23 checks)
   viewshot.mjs      deterministic drive + multi-angle screenshots
   smoke-car.mjs     car-builder geometry sanity
+  audioprobe.mjs    renders the engine note offline and measures its pitch
 ```
 
 Headless scripts resolve Chrome from `$CHROME_EXE`, the Puppeteer cache, or

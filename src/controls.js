@@ -14,6 +14,7 @@ export function createInput(bindings) {
     reset: false,
     rescue: false,
     lineToggle: false,
+    soundToggle: false,
   };
 
   const allBound = collectAllCodes(bindings);
@@ -24,6 +25,7 @@ export function createInput(bindings) {
     if (matches(e.code, bindings.reset)) state.reset = true;
     if (matches(e.code, bindings.rescue)) state.rescue = true;
     if (matches(e.code, bindings.lineToggle)) state.lineToggle = true;
+    if (matches(e.code, bindings.soundToggle)) state.soundToggle = true;
     if (allBound.has(e.code)) e.preventDefault();
   };
   const onUp = (e) => keys.delete(e.code);
@@ -54,8 +56,12 @@ export function createInput(bindings) {
   function consumeReset()  { const v = state.reset;        state.reset = false;        return v; }
   function consumeRescue() { const v = state.rescue;       state.rescue = false;       return v; }
   function consumeLineToggle() { const v = state.lineToggle; state.lineToggle = false; return v; }
+  function consumeSoundToggle() { const v = state.soundToggle; state.soundToggle = false; return v; }
 
-  return { update, consumeToggle, consumeReset, consumeRescue, consumeLineToggle, state };
+  return {
+    update, consumeToggle, consumeReset, consumeRescue, consumeLineToggle,
+    consumeSoundToggle, state,
+  };
 }
 
 // Single-player: WASD OR arrow keys, both work.
@@ -69,6 +75,7 @@ export const SINGLE_PLAYER_BINDINGS = {
   reset: 'KeyR',
   rescue: 'KeyB',
   lineToggle: 'KeyL',
+  soundToggle: 'KeyM',
 };
 
 // Player 1 in 2P mode: WASD only, with the global camera/reset/rescue bindings.
@@ -82,6 +89,7 @@ export const WASD_BINDINGS = {
   reset: 'KeyR',
   rescue: 'KeyB',
   lineToggle: 'KeyL',
+  soundToggle: 'KeyM',
 };
 
 // Player 2 in 2P mode: arrows only. Numpad-0 as handbrake.
@@ -95,6 +103,7 @@ export const ARROW_BINDINGS = {
   reset: null,
   rescue: null,
   lineToggle: null,
+  soundToggle: null,
 };
 
 function isPressed(keys, binding) {
