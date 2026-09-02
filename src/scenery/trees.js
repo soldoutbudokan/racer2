@@ -174,6 +174,12 @@ function addTube(buf, pts, radii, radial, colorAt, wobble = 0.22) {
  * column and the poles displace identically and the hull stays closed.
  */
 function addBlob(buf, cx, cy, cz, rx, ry, rz, lon, lat, seed, colTop, colBot, lump) {
+  // The species tables were authored at 7x3 / 5x3 rings, which at 20 m read
+  // as faceted green boulders — the single loudest "low-poly" cue in the
+  // trackside shots. Floor the tessellation here so every clump has enough
+  // vertices to carry a leafy silhouette, whatever the caller asked for.
+  lon = Math.max(lon, 9);
+  lat = Math.max(lat, 4);
   const base = buf.pos.length / 3;
   const n = new THREE.Vector3();
   for (let j = 0; j <= lat; j++) {
@@ -183,17 +189,22 @@ function addBlob(buf, cx, cy, cz, rx, ry, rz, lon, lat, seed, colTop, colBot, lu
       const th = (i / lon) * Math.PI * 2;
       const dx = sp * Math.sin(th), dy = cp, dz = sp * Math.cos(th);
       const h = hashFn((i % lon) * 1.93 + seed, j * 4.11 + seed * 0.7);
-      const rr = 1 + (h - 0.5) * lump;
+      // Two scales of displacement: the coarse lump gives the clump its
+      // lobes, the fine one frays the silhouette into leaf clusters.
+      const h2 = hashFn((i % lon) * 7.31 + seed * 1.7, j * 5.93 - seed);
+      const rr = 1 + (h - 0.5) * lump + (h2 - 0.5) * lump * 0.55;
       buf.pos.push(cx + dx * rx * rr, cy + dy * ry * rr, cz + dz * rz * rr);
       n.set(dx / (rx * rx), dy / (ry * ry), dz / (rz * rz)).normalize();
       buf.nor.push(n.x, n.y, n.z);
       // Vertical gradient inside the clump: this is what stops a low-poly
-      // spheroid reading as a plastic ball of broccoli.
+      // spheroid reading as a plastic ball of broccoli. The per-vertex
+      // brightness jitter is the leaf-scale variation a solid hull lacks.
       const t = (dy * 0.5 + 0.5) * 0.85 + h * 0.15;
+      const k = 0.86 + h2 * 0.28;
       buf.col.push(
-        colBot[0] + (colTop[0] - colBot[0]) * t,
-        colBot[1] + (colTop[1] - colBot[1]) * t,
-        colBot[2] + (colTop[2] - colBot[2]) * t);
+        (colBot[0] + (colTop[0] - colBot[0]) * t) * k,
+        (colBot[1] + (colTop[1] - colBot[1]) * t) * k,
+        (colBot[2] + (colTop[2] - colBot[2]) * t) * k);
     }
   }
   const row = lon + 1;
@@ -509,6 +520,23 @@ function sway(x0, y0, x1, y1, n, amp) {
   return pts;
 }
 
+/**
+ * Foliage clump at a limb tip: the main blob plus one or two smaller
+ * satellites hung off its flank, so a crown is a mass of overlapping lobes
+ * rather than five balloons on sticks.
+ */
+function clump(buf, x, y, z, rx, ry, rz, seed, fol, folLo, lump) {
+  addBlob(buf, x, y, z, rx, ry, rz, 9, 4, seed, fol, folLo, lump);
+  const nSat = 1 + (hashFn(seed * 3.3, 1.7) < 0.55 ? 1 : 0);
+  for (let k = 0; k < nSat; k++) {
+    const a = hashFn(seed + k * 9.1, 4.2) * Math.PI * 2;
+    const f = 0.55 + hashFn(seed * 1.3 + k, 8.8) * 0.2;
+    addBlob(buf,
+      x + Math.cos(a) * rx * 0.72, y - ry * (0.15 + k * 0.25), z + Math.sin(a) * rz * 0.72,
+      rx * f, ry * f, rz * f, 9, 4, seed * 2.1 + k * 5.7, fol, folLo, lump * 1.15);
+  }
+}
+
 /** Limb: from a point on the trunk out to a tip, sagging under its own weight. */
 function limb(buf, from, azim, elev, len, r0, colorAt) {
   const pts = [from.clone()];
@@ -546,8 +574,8 @@ function broadleafSpecies() {
       const az = (i / nL) * Math.PI * 2 + rnd(0, 0.9);
       const tip = limb(buf, top.clone().setY(top.y - rnd(0, 0.9)),
         az, rnd(0.55, 0.95), rnd(3.6, 5.0), 0.26, bark);
-      addBlob(buf, tip.x, tip.y + 0.5, tip.z,
-        rnd(2.1, 2.9), rnd(1.5, 2.0), rnd(2.1, 2.9), 7, 3, i * 3.3, fol, folLo, 0.42);
+      clump(buf, tip.x, tip.y + 0.5, tip.z,
+        rnd(2.1, 2.9), rnd(1.5, 2.0), rnd(2.1, 2.9), i * 3.3, fol, folLo, 0.42);
     }
     addBlob(buf, rnd(-0.6, 0.6), 7.4, rnd(-0.6, 0.6), 2.6, 1.9, 2.6, 7, 3, 9.1, fol, folLo, 0.44);
     return { w: 9.5, h: 9.2 };
@@ -563,8 +591,8 @@ function broadleafSpecies() {
       const az = i * 2.31 + rnd(0, 0.6);
       const from = new THREE.Vector3(0, y, 0);
       const tip = limb(buf, from, az, rnd(1.0, 1.25), rnd(1.5, 2.2), 0.11, bark);
-      addBlob(buf, tip.x, tip.y + 0.3, tip.z,
-        rnd(1.3, 1.9), rnd(1.6, 2.3), rnd(1.3, 1.9), 5, 3, i * 2.7, fol, folLo, 0.5);
+      clump(buf, tip.x, tip.y + 0.3, tip.z,
+        rnd(1.3, 1.9), rnd(1.6, 2.3), rnd(1.3, 1.9), i * 2.7, fol, folLo, 0.5);
     }
     addBlob(buf, 0, 12.2, 0, 1.4, 1.9, 1.4, 5, 3, 4.4, fol, folLo, 0.5);
     return { w: 4.4, h: 13.6 };
@@ -581,8 +609,8 @@ function broadleafSpecies() {
       const mid = limb(buf, fork.clone(), az, rnd(1.05, 1.30), rnd(4.0, 5.0), 0.30, bark);
       for (let k = 0; k < 2; k++) {
         const tip = limb(buf, mid.clone(), az + rnd(-1.2, 1.2), rnd(0.5, 0.95), rnd(1.6, 2.4), 0.13, bark);
-        addBlob(buf, tip.x, tip.y + 0.4, tip.z,
-          rnd(1.9, 2.5), rnd(1.5, 2.0), rnd(1.9, 2.5), 7, 3, i * 5 + k, fol, folLo, 0.44);
+        clump(buf, tip.x, tip.y + 0.4, tip.z,
+        rnd(1.9, 2.5), rnd(1.5, 2.0), rnd(1.9, 2.5), i * 5 + k, fol, folLo, 0.44);
       }
     }
     return { w: 8.4, h: 11.4 };
@@ -602,8 +630,8 @@ function broadleafSpecies() {
       const az = (i / nL) * Math.PI * 2 + rnd(0, 0.7);
       const tip = limb(buf, top.clone().setY(top.y - rnd(0, 0.5)),
         az, rnd(0.30, 0.55), rnd(3.2, 4.4), 0.20, bark);
-      addBlob(buf, tip.x, tip.y + 0.55, tip.z,
-        rnd(2.3, 3.0), rnd(0.75, 1.05), rnd(2.3, 3.0), 7, 3, i * 4.7, fol, folLo, 0.36);
+      clump(buf, tip.x, tip.y + 0.55, tip.z,
+        rnd(2.3, 3.0), rnd(0.75, 1.05), rnd(2.3, 3.0), i * 4.7, fol, folLo, 0.36);
     }
     return { w: 9.8, h: 10.6 };
   };
@@ -619,8 +647,8 @@ function broadleafSpecies() {
       const az = (i / 4) * Math.PI * 2 + rnd(0, 1.1);
       const tip = limb(buf, top.clone().setY(top.y - rnd(0.4, 1.8)),
         az, rnd(0.75, 1.15), rnd(1.8, 2.6), 0.09, bark);
-      addBlob(buf, tip.x, tip.y + 0.35, tip.z,
-        rnd(1.4, 1.9), rnd(1.3, 1.8), rnd(1.4, 1.9), 5, 3, i * 6.1, fol, folLo, 0.5);
+      clump(buf, tip.x, tip.y + 0.35, tip.z,
+        rnd(1.4, 1.9), rnd(1.3, 1.8), rnd(1.4, 1.9), i * 6.1, fol, folLo, 0.5);
     }
     return { w: 4.8, h: 8.6 };
   };
@@ -773,10 +801,14 @@ function buildMidTrunk(h, r0, r1) {
 function makeStands(count, extent, weights) {
   const nSpecies = weights.length;
   const stands = [];
-  const n = Math.max(7, Math.round(count / 26));
+  // Fewer, bigger stands than the old count/26 at 15-58 m: the F1-derived
+  // circuits sit in real woodland (Monza's park, the Ardennes round Spa), so
+  // most of the sites have to land in a few large blocks of forest with
+  // meadow between them, not in copses scattered over a lawn.
+  const n = Math.max(7, Math.round(count / 200));
   for (let i = 0; i < n; i++) {
     const rot = rand() * Math.PI;
-    const rx = rnd(15, 58);
+    const rx = rnd(28, 110);
     const dom = weightedPick(weights);
     let sec = weightedPick(weights);
     if (sec === dom) sec = (dom + 1 + ((rand() * (nSpecies - 1)) | 0)) % nSpecies;
@@ -887,18 +919,35 @@ export function scatterTrees(scene, frames, opts = {}) {
   const weights = species.map((s) => s.weight);
 
   // ---- Sites ----
-  const fx = [], fz = [];
-  for (let k = 0; k < frames.length; k += 2) { fx.push(frames[k].pos.x); fz.push(frames[k].pos.z); }
-  const nf = fx.length;
-  const distToTrack = (x, z) => {
-    let m = Infinity;
-    for (let k = 0; k < nf; k++) {
-      const dx = fx[k] - x, dz = fz[k] - z;
-      const d = dx * dx + dz * dz;
-      if (d < m) m = d;
+  // Distance to the centreline, rasterised once on a 6 m grid so the site
+  // search is O(1) per candidate. With ten thousand trees and eight tries
+  // each, the old per-candidate sweep over 650 frames was the whole build.
+  const distToTrack = (() => {
+    const CELL = 6;
+    const half = extent + 40;
+    const N = Math.ceil((2 * half) / CELL) + 1;
+    const grid = new Float32Array(N * N).fill(1e9);
+    const rad = Math.ceil(160 / CELL);
+    for (let k = 0; k < frames.length; k += 2) {
+      const p = frames[k].pos;
+      const ci = Math.round((p.x + half) / CELL), cj = Math.round((p.z + half) / CELL);
+      for (let j = Math.max(0, cj - rad); j <= Math.min(N - 1, cj + rad); j++) {
+        const dz = j * CELL - half - p.z;
+        for (let i = Math.max(0, ci - rad); i <= Math.min(N - 1, ci + rad); i++) {
+          const dx = i * CELL - half - p.x;
+          const d = dx * dx + dz * dz;
+          const o = j * N + i;
+          if (d < grid[o]) grid[o] = d;
+        }
+      }
     }
-    return Math.sqrt(m);
-  };
+    return (x, z) => {
+      const i = Math.round((x + half) / CELL), j = Math.round((z + half) / CELL);
+      if (i < 0 || j < 0 || i >= N || j >= N) return 1e4;
+      const d = grid[j * N + i];
+      return d >= 1e9 ? 161 : Math.sqrt(d);   // beyond the raster radius: far enough
+    };
+  })();
 
   const stands = makeStands(count, extent, weights);
   const sites = [];
@@ -921,9 +970,9 @@ export function scatterTrees(scene, frames, opts = {}) {
 
     const d = distToTrack(x, z);
     if (d < nearMin) continue;
-    // Thin with distance so the wood hugs the ribbon and hands off to the
-    // horizon rather than tiling the whole square evenly.
-    if (d > 120 && rand() < ((d - 120) / Math.max(1, extent - 120)) * 0.62) continue;
+    // Thin gently with distance so the wood hands off to the horizon rather
+    // than stopping at a wall; the far tier is cheap, so the taper is mild.
+    if (d > 160 && rand() < ((d - 160) / Math.max(1, extent - 160)) * 0.35) continue;
 
     let y = 0;
     if (terrain) {

@@ -610,12 +610,16 @@ const qr = await page.evaluate(() => {
       }
     }
   }
-  const progressed = total.map((t) => Math.round(t / frames.length * 100)); // % of laps
-  return { nCars: ctx.cars.length, progressed, maxDev: +maxDev.toFixed(1) };
+  // Progress in METRES of lap, not a fraction: the F1-derived circuits are
+  // 2.7 km, so a percentage gate tuned on the 1.3 km layouts would only be
+  // testing lap length.
+  const lapM = ctx.track.length;
+  const progressed = total.map((t) => Math.round(t / frames.length * lapM));
+  return { nCars: ctx.cars.length, progressed, lapM: Math.round(lapM), maxDev: +maxDev.toFixed(1) };
 });
 console.log('quick-race:', JSON.stringify(qr));
 ck('quick-race spawns 4 cars', qr.nCars === 4, `${qr.nCars}`);
-ck('AI completes ≥ 60% of a lap in 45 s', qr.progressed.every((p) => p > 60), `progress=${qr.progressed.join(',')}%`);
+ck('AI covers ≥ 800 m of circuit in 45 s', qr.progressed.every((p) => p > 800), `progress=${qr.progressed.join(',')} m of a ${qr.lapM} m lap`);
 ck('AI stays inside the circuit', qr.maxDev < 16, `max centreline deviation ${qr.maxDev} m`);
 
 // ---------- AI stuck recovery ----------

@@ -577,6 +577,10 @@ export function addGrandstands(scene, frames, D) {
     { at: 0.408, kind: 'stadium', L: 30, tiers: 12, roof: true, fascia: 1, fill: 1 },
     { at: 0.672, kind: 'terrace', L: 35, tiers: 10, roof: false, fascia: 2, fill: 2 },
     { at: 0.215, kind: 'scaffold', L: 21, tiers: 8, roof: false, fill: 3 },
+    // Two more for the F1-length laps: a stand at the far end of the
+    // circuit and a temporary scaffold on the way home.
+    { at: 0.545, kind: 'stadium', L: 26, tiers: 11, roof: true, fascia: 3, fill: 1 },
+    { at: 0.835, kind: 'scaffold', L: 18, tiers: 7, roof: false, fill: 2 },
   ];
 
   const n = frames.length;

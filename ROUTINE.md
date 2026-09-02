@@ -98,6 +98,84 @@ helper. See the 2026-08-06 Backlog entry.
 
 ## Changelog (accepted to `main`)
 
+- **2026-09-02** (accepted → `main` 2026-09-02, owner: "push to main when
+  done"; was branch `claude/game-visuals-track-modeling-wz4n8f`; owner-directed
+  run — the scheduled routine's one-change rule did not apply, the owner
+  asked for the whole look: "ALL tracks look bad … the shapes are so simple.
+  Use F1 tracks as inspiration.")
+  — **Real F1 layouts, and a landscape to put them in.**
+  **Layouts.** Every road circuit is now the real centreline of the F1 venue
+  it is named for: Interlagos (`gp`, 2.69 km), Marina Bay (`downtown`,
+  2.63 km), Spa-Francorchamps (`alpine`, 2.86 km), Sakhir (`dunes`, 2.71 km)
+  and Monza (`parco`, 2.88 km), traced from published centrelines and scaled
+  0.42-0.63 so the GT laps in ~70-80 s. Corners tighter than 20 m were
+  opened with a windowed curvature limiter (the car's lock and the
+  Catmull-Rom both misbehave below ~18 m), sections closer than 2 × the
+  barrier offset were eased apart (damped, spread over ±18 m of arc — the
+  first, undamped version turned Sakhir and Interlagos into knots), and
+  control points were picked densely on corners and sparsely on straights
+  with the density allowed to change 25 % per point. That uneven spacing
+  is why every circuit now uses the **centripetal** Catmull-Rom
+  (`curveType` in tracks.js): the uniform one kinked to R 2-7 m wherever a
+  9 m corner point met a 40 m straight point. The oval is a rounder exact
+  stadium (two 200 m semicircles, 104 m chutes, 52 m point spacing all the
+  way round so the straights stay straight). `track-geometry.mjs` reports
+  minR 13-16 m (the old hand-drawn layouts were 11-17), every gap OK, start
+  drift < 1.3°. Frame count follows lap length (`segmentsForLength`) so the
+  ~2.2 m spacing every per-frame curvature threshold was tuned at still
+  holds; barrier physics boxes are chunked 8 to a body (NaiveBroadphase
+  walks every pair — 1200 single-box bodies would have quadrupled the pair
+  count); brake markers walk back by arc length instead of assuming
+  "3.2 m per frame"; sponsor boards, gravel traps (6), marshal posts (8),
+  brake-marked corners (5) and grandstands (6) scale up for the longer laps.
+  The physics-test AI gate is now "≥ 800 m in 45 s" rather than a lap
+  fraction. The tracing tool is `scripts/realtrack.mjs` (input: TUMFTM
+  racetrack-database CSVs / f1-circuits GeoJSON, not in the repo); the
+  points are literal data — the header in tracks.js explains the derivation.
+  **Landscape.** Forests are forests: 5-20 k trees per circuit in a few
+  dozen dense stands (28-110 m) with meadow between, a mild distance taper,
+  and an O(1) rasterised distance-to-track so the site search is not the
+  build (the far tier is two card pairs per tree, so 20 k of them cost less
+  than one car).
+  Near-tree clumps get a tessellation floor (9×4), two scales of
+  displacement and per-vertex brightness so they stop reading as faceted
+  green boulders, and each limb tip carries satellite lobes. New
+  `scenery/mesas.js`: the desert's cylinder "buttes" are replaced by lathed
+  mesas, buttes and hoodoos — noisy elongated plans, a flat caprock with its
+  own vertices so the rim is a crease, strata keyed to absolute y with
+  ledges, desert varnish, and a talus apron coloured to the sand so it
+  dissolves into the ground (the first apron was pale and 2.45× wide and
+  read as fried eggs from above). New `scenery/city.js`: the street circuit
+  gets a district — a 48 m block / 12 m street grid over everything inside
+  ext + 330 m, two to four lots a block, heights stepping down from the
+  downtown core with landmark towers, podiums, setback crowns and roof
+  plant, painted streets with kerb lines, and a haze-tinted low-rise fringe
+  out to the skyline ring, whose towers are now facade-textured with lit
+  windows and setbacks and centred on the circuit's centroid. Farmland is a
+  contiguous patchwork on a jittered field grid (half the cells cropped,
+  crop rows by UV transpose) instead of eighteen rectangles on a lawn.
+  Terrain vertex colours get a wider dry wash plus a wet/dark wash between
+  the patches; the `far` and `hills` ranges are taller with less haze and
+  stronger fall-line shading (the "too soft" Backlog note); mow stripes are
+  cut to 1.8 %.
+  **A kerb bug the new layouts exposed.** `computeKerbActive` dilates the
+  curvature seeds by ±8 frames and stops; on Interlagos two corners' zones
+  stopped one frame short of each other (frame 809, and 944-945), and
+  because both the drawn kerb and its collision slab ramp OUT at a run's
+  ends, that 2 m hole in the mask was a 2 m break in the kerb with a
+  wheel-sized gap in the physics — the "collision kerb is the kerb that is
+  drawn" gate caught it as 16 raycast misses. The mask now closes any hole
+  under 12 frames (~26 m): no circuit paints a 2 m break in a kerb.
+  **Harness.** `scripts/trackshots.mjs` shoots every circuit (chase / high /
+  trackside / aerial / oblique) through the menu like a player, and
+  `scripts/svg2png.mjs` rasterises the geometry plots so they can be read
+  back. Shooters should run against `vite preview` on :5173 (a `vite` dev
+  server reloads the page on every source edit mid-shoot).
+  **Verified:** `track-geometry.mjs` on all six; `trackshots.mjs` three
+  passes (baseline / layouts / final) read back; `physics-test.mjs` 55/55
+  (the first run was 54/55 — the kerb hole above); `smoke-car.mjs` OK;
+  `npm run build` clean.
+
 - **2026-08-29** (accepted → `main` 2026-08-29, owner replied "go"; was branch
   `claude/engine-audio-k7v2mq`; owner-directed local run — the scheduled routine is paused and its skip rule
   is jammed by the owner's own `claude/git-commit-author-config-opi6b7`, see
@@ -1257,10 +1335,12 @@ confirmed against the `after-*` shots, highest impact first):
 - ~~**Trackside billboards**~~ (env, medium) — DONE 2026-07-26: the boards were
   yawed to the direction of travel, so an 8 m hoarding ran ACROSS the track and
   aimed its logo down the road at nobody. Now faces the racing surface.
-- **Misc polish** (low): grass mow banding is still visible as diagonal stripes
-  from high cameras; the `far`/`hills` mountain presets are deliberately modest
-  (de-mountaining, 2026-07-24) but now read a little too soft — worth another
-  look at the value contrast if the owner wants more horizon.
+- ~~**Misc polish**~~ (low) — touched 2026-09-02 (pending review): mow banding
+  cut from 5 % to 1.8 %; `far`/`hills` ranges taller with less haze and
+  stronger fall-line shading. Original note: grass mow banding is still
+  visible as diagonal stripes from high cameras; the `far`/`hills` mountain
+  presets are deliberately modest (de-mountaining, 2026-07-24) but read a
+  little too soft.
 - **Track rebuild is ~1.8 s** (perf, low — new 2026-07-26): was ~1.2 s before
   the scenery overhaul. Menu-time only, no effect on frame rate (draw calls
   went DOWN), but a slow phone will feel it on a circuit switch. `perf.mjs`
