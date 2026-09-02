@@ -1,5 +1,5 @@
 // Track layout validator + plotter. Samples each track's centreline exactly
-// like src/track.js (CatmullRomCurve3, 600 arc-spaced frames), reports
+// like src/track.js (CatmullRomCurve3, ~2.2 m arc-spaced frames), reports
 // geometry stats, and writes one SVG per track for visual review.
 //   node scripts/track-geometry.mjs [outDir]     (run from repo root)
 // Checks worth acting on:
@@ -11,17 +11,17 @@
 //   - startDrift: heading wobble around the start line; keep < ~2 deg so the
 //     painted grid sits on a straight.
 import * as THREE from 'three';
-import { TRACKS } from '../src/tracks.js';
+import { TRACKS, segmentsForLength } from '../src/tracks.js';
 import { writeFileSync, mkdirSync } from 'node:fs';
 
 const OUT = process.argv[2] || '/tmp/track-layouts';
 mkdirSync(OUT, { recursive: true });
-const SEGS = 600;
 
 function sample(def) {
   const cps = def.controlPoints.map(([x, z]) => new THREE.Vector3(x, 0, z));
-  const curve = new THREE.CatmullRomCurve3(cps, def.closed !== false, 'catmullrom', def.tension ?? 0.5);
+  const curve = new THREE.CatmullRomCurve3(cps, def.closed !== false, def.curveType ?? 'catmullrom', def.tension ?? 0.5);
   const frames = [];
+  const SEGS = segmentsForLength(curve.getLength());
   for (let i = 0; i < SEGS; i++) {
     const t = i / SEGS;
     frames.push({ pos: curve.getPointAt(t), tan: curve.getTangentAt(t).normalize() });
@@ -126,8 +126,8 @@ for (const def of TRACKS) {
   const road = `<polygon points="${left.join(' ')} ${right.reverse().join(' ')}" fill="#444" stroke="none"/>`;
 
   let segsSvg = '';
-  for (let i = 0; i < SEGS; i++) {
-    const f = frames[i], g = frames[(i + 1) % SEGS];
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i], g = frames[(i + 1) % frames.length];
     const r = s.radii[i];
     const col = r < 40 ? '#ff2222' : r < 80 ? '#ff9922' : r < 200 ? '#ffee22' : '#22cc44';
     segsSvg += `<line x1="${px(f.pos.x).toFixed(1)}" y1="${pz(f.pos.z).toFixed(1)}" x2="${px(g.pos.x).toFixed(1)}" y2="${pz(g.pos.z).toFixed(1)}" stroke="${col}" stroke-width="2"/>`;

@@ -175,12 +175,12 @@ const PRESETS = {
     snow: 0xdfe6ee, scree: 0x9aa0a4,
     snowY: 176, treeY: 128, treeBand: 44, snowy: true,
     bands: [
-      { r: 1500, rVar: 190, H: 168, na: 300, floor: 0.30, haze: 0.07,
-        crestK: 1.5, spurK: 3.4, spur: 0.14, gully: 0.11, rough: 0.055 },
-      { r: 1960, rVar: 230, H: 250, na: 260, floor: 0.25, haze: 0.19,
-        crestK: 1.8, spurK: 3.0, spur: 0.13, gully: 0.10, rough: 0.045 },
-      { r: 2420, rVar: 260, H: 345, na: 220, floor: 0.20, haze: 0.34,
-        crestK: 2.1, spurK: 2.6, spur: 0.12, gully: 0.09, rough: 0.035 },
+      { r: 1550, rVar: 190, H: 205, na: 300, floor: 0.30, haze: 0.05,
+        crestK: 1.5, spurK: 3.4, spur: 0.17, gully: 0.13, rough: 0.065 },
+      { r: 2010, rVar: 230, H: 300, na: 260, floor: 0.25, haze: 0.15,
+        crestK: 1.8, spurK: 3.0, spur: 0.15, gully: 0.12, rough: 0.055 },
+      { r: 2470, rVar: 260, H: 395, na: 220, floor: 0.20, haze: 0.28,
+        crestK: 2.1, spurK: 2.6, spur: 0.13, gully: 0.10, rough: 0.040 },
     ],
   },
   // The alpine pass: the front wall is close enough to loom over the circuit,
@@ -227,12 +227,12 @@ const PRESETS = {
     snow: 0xeee6cf, scree: 0xb5a878,
     snowY: 9e9, treeY: 400, treeBand: 120, snowy: false,
     bands: [
-      { r: 1420, rVar: 200, H: 95, na: 260, floor: 0.34, haze: 0.15,
-        crestK: 1.6, spurK: 3.0, spur: 0.16, gully: 0.10, rough: 0.05 },
-      { r: 1900, rVar: 230, H: 135, na: 220, floor: 0.30, haze: 0.23,
-        crestK: 1.9, spurK: 2.6, spur: 0.14, gully: 0.09, rough: 0.04 },
-      { r: 2380, rVar: 250, H: 185, na: 190, floor: 0.26, haze: 0.38,
-        crestK: 2.2, spurK: 2.2, spur: 0.12, gully: 0.08, rough: 0.03 },
+      { r: 1420, rVar: 200, H: 125, na: 260, floor: 0.34, haze: 0.12,
+        crestK: 1.6, spurK: 3.0, spur: 0.18, gully: 0.12, rough: 0.06 },
+      { r: 1900, rVar: 230, H: 175, na: 220, floor: 0.30, haze: 0.20,
+        crestK: 1.9, spurK: 2.6, spur: 0.16, gully: 0.11, rough: 0.05 },
+      { r: 2380, rVar: 250, H: 235, na: 190, floor: 0.26, haze: 0.34,
+        crestK: 2.2, spurK: 2.2, spur: 0.14, gully: 0.09, rough: 0.04 },
     ],
   },
 };
@@ -476,7 +476,7 @@ export function addDistantMountains(scene, kind = 'far', terrain = null) {
         }
 
         // Fake self-shadowing: crests catch the low sun, gullies sit in shade.
-        col.multiplyScalar(0.74 + g * 0.40 + (d2 - 0.5) * 0.12);
+        col.multiplyScalar(0.66 + g * 0.52 + (d2 - 0.5) * 0.16);
 
         // Aerial perspective. Two terms: distance from the circuit (which is
         // just the ring radius) and altitude above the valley floor — haze

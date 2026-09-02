@@ -6,10 +6,10 @@ Inspired by the look of GT Racing 2: golden-hour light, rubbered-in racing
 groove, kerbs and gravel traps, a pit complex and grandstands, glossy
 clear-coated bodywork.
 
-Pick from **five themed circuits** — a fast GT autodromo, a wide easy oval, a
-walled-in city street circuit, an alpine mountain pass, and a desert canyon
-speedway — then choose a mode. Each circuit has its own layout, surfaces and
-scenery.
+Pick from **six circuits** — five of them the real layouts of F1 venues
+(Interlagos, Marina Bay, Spa-Francorchamps, Sakhir and Monza) brought down to a
+scale the GT car laps in about 70-80 s, plus a near-circular speedway oval —
+then choose a mode. Each circuit has its own layout, surfaces and scenery.
 
 **Play it:** <https://soldoutbudokan.github.io/racer2/>
 
@@ -57,16 +57,21 @@ demands speed the car can't actually build.
 Choose a circuit from the menu before picking a mode. Switching circuits rebuilds
 the track, scenery and minimap on the fly.
 
-| Circuit | Style | Difficulty | Notes |
-| ------- | ----- | ---------- | ----- |
-| **Autodromo** | Grand prix circuit | Medium | The full GT circuit: fast sweeps, heavy braking, gravel traps, grandstands. |
-| **Sunset Speedway** | Club oval | Easy | Wide, fast and forgiving D-oval with acres of run-off — a great first track. |
-| **Marina Street** | City grand prix | Hard | Tight street fight: 90° corners, a snap chicane, concrete walls at the kerb, skyscrapers all around. |
-| **Col du Pin** | Mountain pass | Medium-Hard | Flowing linked esses through dense pine forest, ringed by towering peaks, guardrail close. |
-| **Red Mesa** | Canyon speedway | Medium | Wide desert speedway: long flat-out straights, a sandy ess, red-rock mesas on the horizon. |
+| Circuit | Layout | Difficulty | Notes |
+| ------- | ------ | ---------- | ----- |
+| **Autodromo** | Interlagos, 2.7 km | Medium | The Senna S, Curva do Sol, the back straight, the twisting infield climb; grandstands, gravel traps, a pit complex. |
+| **Sunset Speedway** | Oval, 1.5 km | Easy | A near-circular stadium oval — two 200 m turns, two short chutes — in a patchwork of farmland. |
+| **Marina Street** | Marina Bay, 2.6 km | Hard | 23 corners of street circuit: the T1-2-3 flick, the Sling, the hairpin, walls at the kerb, a city of blocks and towers around it. |
+| **Col du Pin** | Spa-Francorchamps, 2.9 km | Medium-Hard | La Source, Eau Rouge, Kemmel, Pouhon, Blanchimont and the Bus Stop, through dense pine forest under near peaks. |
+| **Red Mesa** | Sakhir, 2.7 km | Medium | The T1 hard stop, the esses, the double-left and long straights, among mesas, buttes and hoodoos. |
+| **Parco Veloce** | Monza, 2.9 km | Medium | The Rettifilo, Curva Grande, both Lesmos, Ascari and the Parabolica, in a park of dense woodland. |
 
 Each circuit is pure data in `src/tracks.js` — a centreline plus a `theme` that
 selects the surface, barrier style and scenery — so new tracks are easy to add.
+The five road circuits were traced from the real centrelines (scaled, with any
+corner tighter than 20 m opened out for the car's steering lock, and sections
+eased apart where barriers would otherwise overlap); `scripts/track-geometry.mjs`
+validates a layout's corner radii, section gaps and start straight.
 
 ## Driving model
 
@@ -128,9 +133,11 @@ pass. `M` mutes; the choice is remembered.
   marks, gravel traps wired into the physics, armco with posts, debris
   fencing, a 12-bay pit complex, tiered grandstands with an instanced crowd,
   a lattice start gantry with light rig, brake markers, sponsor boards, tyre
-  stacks, instanced trees, mountains and clouds — plus per-theme scenery:
-  glowing-window city skylines and concrete walls, alpine pine forests under
-  near peaks, and desert sand with red-rock mesas. Each circuit is a data
+  stacks, instanced forests (thousands of trees in stands, three LOD tiers),
+  rolling terrain, mountains and clouds — plus per-theme scenery: a city of
+  street-grid blocks, lit towers and concrete walls, alpine pine forests under
+  near peaks, farmland patchwork, and desert sand with stratified mesas, buttes
+  and hoodoos. Each circuit is a data
   definition; everything is parented to a disposable group so switching
   circuits tears down and rebuilds cleanly.
 - **Cars**: procedurally lofted bodies (GT coupe, muscle, open-wheeler) with
@@ -157,6 +164,9 @@ src/
 scripts/
   physics-test.mjs  deterministic driving-model assertions (23 checks)
   viewshot.mjs      deterministic drive + multi-angle screenshots
+  trackshots.mjs    every circuit: chase / high / trackside / aerial / oblique
+  track-geometry.mjs layout validator + SVG plots (svg2png.mjs rasterises them)
+  realtrack.mjs     traces a real circuit centreline into game-scale control points
   smoke-car.mjs     car-builder geometry sanity
   audioprobe.mjs    renders the engine note offline and measures its pitch
 ```

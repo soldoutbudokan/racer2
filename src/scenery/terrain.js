@@ -242,7 +242,11 @@ export function makeTerrain(frames, opts = {}) {
       const hn = Math.max(-1, Math.min(1, h / (P.ampFar || 1) * 1.6));
       tmp.copy(hn >= 0 ? crest : hollow);
       base.lerp(tmp, Math.abs(hn) * 0.34);
-      base.lerp(dry, Math.max(0, macro - 0.5) * 0.75 + Math.max(0, patch - 0.62) * 0.5);
+      base.lerp(dry, Math.max(0, macro - 0.44) * 0.95 + Math.max(0, patch - 0.56) * 0.7);
+      // ...and the wet ground between the dry patches goes darker and
+      // greener, so the field is a patchwork rather than one green with
+      // some straw in it.
+      base.lerp(hollow, Math.max(0, 0.42 - macro) * 0.9);
       // Steep faces shed soil to bare earth/rock.
       base.lerp(dry, steep * 0.5);
       // Small-scale brightness jitter so adjacent cells never match exactly.

@@ -12,12 +12,15 @@ import { scatterTrees } from './scenery/trees.js';
 import { addArmco, addTireStacks, addConcreteWall } from './scenery/barriers.js';
 import { addGrandstands, addPitComplex } from './scenery/stands.js';
 import { addGroundCover } from './scenery/groundcover.js';
+import { addMesas } from './scenery/mesas.js';
+import { addCityDistrict } from './scenery/city.js';
 import {
   roadCrownY, buildRoadGeometry, buildEdgeLineGeometry, buildKerb3DGeometry,
   buildKerbCollision,
   addSkidMarks, makeAsphaltMaterial, makeKerbMaterial, makeVergeMaterial,
 } from './scenery/roadwork.js';
 import { rand, seedCircuit, beginStream } from './scenery/rng.js';
+import { segmentsForLength } from './tracks.js';
 
 // Stable per-circuit seed so a track's hills are the same every reload.
 function strSeed(s) {
@@ -26,7 +29,6 @@ function strSeed(s) {
   return (h >>> 0) % 9973;
 }
 
-const TRACK_SEGMENTS = 600;
 const ROAD_WIDTH_DEFAULT = 14;
 const KERB_WIDTH_DEFAULT = 2.0;
 const RUNOFF_WIDTH_DEFAULT = 5.5;
@@ -67,8 +69,10 @@ export function createTrack(scene, world, materials, def) {
 
   const cps = def.controlPoints.map(([x, z]) => new THREE.Vector3(x, 0, z));
   const curve = new THREE.CatmullRomCurve3(
-    cps, def.closed !== false, 'catmullrom', def.tension ?? 0.5);
-  const frames = sampleCurve(curve, TRACK_SEGMENTS);
+    cps, def.closed !== false, def.curveType ?? 'catmullrom', def.tension ?? 0.5);
+  // Frame count follows lap length so the spacing stays ~2.2 m on every
+  // circuit (see segmentsForLength in tracks.js).
+  const frames = sampleCurve(curve, segmentsForLength(curve.getLength()));
   const arcLens = computeArcLengths(frames);
   const curvature = computeCurvature(frames);
   // Frame indices where the run-off is a gravel trap (heavy-braking corners).
@@ -229,7 +233,16 @@ export function createTrack(scene, world, materials, def) {
   // ---- Scenery (theme-selected) ----
   if (theme.trees) { beginStream('trees'); scatterTrees(group, frames, { ...theme.trees, terrain }); }
   if (theme.sidewalks) addSidewalks(group, frames, D);
-  if (theme.buildings) { beginStream('buildings'); addCityBuildings(group, frames, D); }
+  if (theme.buildings) {
+    beginStream('buildings');
+    const city = addCityBuildings(group, frames, D);
+    // The districts behind the raced blocks: see scenery/city.js.
+    beginStream('district');
+    addCityDistrict(group, frames, D, {
+      ...city,
+      clearOfTrack: (px, pz, hw, hd, margin) => rectClearOfTrack(frames, px, pz, hw, hd, margin),
+    });
+  }
   if (theme.skyline) { beginStream('skyline'); addCitySkyline(group, frames); }
   if (theme.marina) { beginStream('marina'); addMarina(group, frames, D); }
   if (theme.streetlights) addStreetlights(group, frames, D);
@@ -367,6 +380,21 @@ function computeKerbActive(curvature, threshold, dilate) {
       if (seed[(i + k + n) % n]) { out[i] = true; break; }
     }
   }
+  // Close short holes between runs. Two corners whose dilated zones stop
+  // just short of each other left a one- or two-frame gap (~2-4 m) in the
+  // mask, and since both the drawn kerb and its collision slab ramp OUT at a
+  // run's ends, that gap became a break in the kerb with a wheel-sized hole
+  // in the physics. No circuit paints a 2 m break in a kerb: anything under
+  // `minGap` frames (~26 m) is one kerb.
+  const minGap = 12;
+  for (let i = 0; i < n; i++) {
+    if (out[i] || !out[(i - 1 + n) % n]) continue;      // start of a hole
+    let len = 0;
+    while (len < n && !out[(i + len) % n]) len++;
+    if (len < minGap && len < n) {
+      for (let k = 0; k < len; k++) out[(i + k) % n] = true;
+    }
+  }
   return out;
 }
 
@@ -440,7 +468,8 @@ function addGravelTraps(scene, frames, curvature, gravelFrames, D) {
     } else i++;
   }
   zones.sort((a, b) => b.peak - a.peak);
-  const picked = zones.slice(0, 4);
+  // Six traps on a 2.7 km F1-derived lap (was four on the 1.3 km layouts).
+  const picked = zones.slice(0, 6);
 
   const mat = makeGravelMaterial();
   for (const z of picked) {
@@ -497,7 +526,7 @@ function makeGrassMaterial() {
     const lush = fractalNoise(x * 3 + 2, y * 3 + 7, 3);   // large wet/dry patches
     // Soft mowing stripes (smooth, not hard-edged) — a groundskept circuit
     // infield reads as alternating light/dark bands of cut grass.
-    const mow = 1 + 0.05 * Math.sin(x * Math.PI * 8);
+    const mow = 1 + 0.018 * Math.sin(x * Math.PI * 8);
     // Richer, slightly darker base with bigger wet/dry swings so the field
     // isn't a single flat green from the cockpit. Stronger dry-yellow patches
     // and more macro contrast break up the uniform "video-game green".
@@ -1004,15 +1033,21 @@ function addBrakeMarkers(scene, frames, curvature, D) {
   // behind instead of showing a mirrored unlit number.
   const backMat = new THREE.MeshStandardMaterial({ color: 0xc9cbcd, roughness: 0.75, metalness: 0 });
   const boardGeo = new THREE.PlaneGeometry(1.15, 0.85);
-  for (const z of zones.slice(0, 3)) {
+  for (const z of zones.slice(0, 5)) {
     // outside of the corner
     const t1 = frames[z.i0].tan;
     const t2 = frames[(z.i0 + 4) % n].tan;
     const crossY = t1.x * t2.z - t1.z * t2.x;
     const sign = crossY > 0 ? +1 : -1;
     for (const dist of [100, 50]) {
-      const stepBack = Math.round(dist / 3.2); // ≈3.2 m per frame
-      const fi = (z.i0 - stepBack + n) % n;
+      // Walk back along the centreline by arc length (frames are ~2.2 m
+      // apart, but never assume it).
+      let fi = z.i0, walked = 0;
+      while (walked < dist) {
+        const prev = (fi - 1 + n) % n;
+        walked += frames[fi].pos.distanceTo(frames[prev].pos);
+        fi = prev;
+      }
       const f = frames[fi];
       const pos = f.pos.clone().add(f.left.clone().multiplyScalar(sign * (D.armco - 1.6)));
       const yaw = Math.atan2(f.tan.x, f.tan.z);
@@ -1362,7 +1397,9 @@ function addSponsorBoards(scene, frames, offset) {
   // Chunky posts near the panel ends, sunk into the ground — the old 0.12 m
   // legs vanished at any distance and left the panel "floating" on the grass.
   const legGeo = new THREE.BoxGeometry(0.24, 2.1, 0.24);
-  const N = 22;
+  // One board site every ~60 m of lap (about 22 on the original 1.3 km
+  // layouts), a third of which are skipped below.
+  const N = Math.max(12, Math.round(frames.length / 27));
   const step = Math.floor(frames.length / N);
   for (let i = 0; i < frames.length; i += step) {
     if (rand() < 0.35) continue;
@@ -1466,7 +1503,15 @@ function buildBarrierPhysics(world, frames, offset, materials, bodies) {
   // squeezed through at speed.) Boxes are thick and tall enough that neither
   // a 300 km/h head-on hit (≈0.75 m of travel per physics substep) nor a
   // kerb-launched car can pass them, and they overlap at the joints.
+  //
+  // The boxes are grouped CHUNK to a body, the same way the kerb slabs are
+  // (see buildKerbPhysics). One body per box was ~600 static bodies on the
+  // original 1.3 km layouts; the F1-derived circuits are twice that length,
+  // and NaiveBroadphase walks every body pair every step, so the pair count
+  // would have quadrupled. A chunk is ~35 m of wall: far from a car it fails
+  // one AABB test, next to it a handful of box pairs are narrowphased.
   const STRIDE = 2;
+  const CHUNK = 8;
   const HALF_THICK = 0.6;
   const HALF_HEIGHT = 1.9;
   const OVERLAP = 0.7;        // extra half-length so angled joints stay sealed
@@ -1477,6 +1522,26 @@ function buildBarrierPhysics(world, frames, offset, materials, bodies) {
     // Keep the contact face at the visual rail line: the box centre sits
     // slightly outside `offset` so its inner face lands on the armco.
     const centerOff = (offset + HALF_THICK - 0.25) * sign;
+    let chunk = [];
+    const flush = () => {
+      if (!chunk.length) return;
+      let cx = 0, cz = 0;
+      for (const b of chunk) { cx += b.x; cz += b.z; }
+      cx /= chunk.length; cz /= chunk.length;
+      const body = new CANNON.Body({ mass: 0, material: bodyMat });
+      for (const b of chunk) {
+        q.setFromAxisAngle(up, b.yaw);
+        body.addShape(
+          new CANNON.Box(new CANNON.Vec3(HALF_THICK, HALF_HEIGHT, b.halfLen)),
+          new CANNON.Vec3(b.x - cx, 0, b.z - cz),
+          q.clone());
+      }
+      // Sunk slightly so there is no slit at ground level: spans y -0.3..3.5.
+      body.position.set(cx, HALF_HEIGHT - 0.3, cz);
+      world.addBody(body);
+      if (bodies) bodies.push(body);
+      chunk = [];
+    };
     for (let i = 0; i < n; i += STRIDE) {
       const fA = frames[i];
       const fB = frames[(i + STRIDE) % n];
@@ -1487,16 +1552,13 @@ function buildBarrierPhysics(world, frames, offset, materials, bodies) {
       const dx = bx - ax;
       const dz = bz - az;
       const len = Math.hypot(dx, dz);
-      const body = new CANNON.Body({ mass: 0, material: bodyMat });
-      body.addShape(new CANNON.Box(
-        new CANNON.Vec3(HALF_THICK, HALF_HEIGHT, len / 2 + OVERLAP)));
-      // Sunk slightly so there is no slit at ground level: spans y -0.3..3.5.
-      body.position.set((ax + bx) / 2, HALF_HEIGHT - 0.3, (az + bz) / 2);
-      q.setFromAxisAngle(up, Math.atan2(dx, dz));
-      body.quaternion.copy(q);
-      world.addBody(body);
-      if (bodies) bodies.push(body);
+      chunk.push({
+        x: (ax + bx) / 2, z: (az + bz) / 2,
+        halfLen: len / 2 + OVERLAP, yaw: Math.atan2(dx, dz),
+      });
+      if (chunk.length >= CHUNK) flush();
     }
+    flush();
   }
 }
 
@@ -1708,6 +1770,9 @@ function addCityBuildings(scene, frames, D) {
   buckets.forEach((geos, i) => addMerged(geos, facadeMats[i]));
   addMerged(podiumBucket, podiumMat);
   addMerged(darkBucket, darkMat);
+  // The district fill (scenery/city.js) shares the lot grid and materials so
+  // its blocks never overlap these and the two read as one city.
+  return { occupied, facadeMats, podiumMat, darkMat, seaX };
 }
 
 // Hazed silhouette towers well beyond the raced blocks, so the skyline
@@ -1716,33 +1781,43 @@ function addCityBuildings(scene, frames, D) {
 function addCitySkyline(scene, frames) {
   const haze = new THREE.Color(0xb7bcc4);
   const tmp = new THREE.Color();
-  // Modest haze lerp: the env lighting already lifts these — with the fog
-  // colour mixed in too strongly the slabs bloomed into white monoliths.
+  // Ring centre: the circuit's centroid, not the origin — the real layouts
+  // sit hundreds of metres off it.
+  let cx = 0, cz = 0;
+  for (const f of frames) { cx += f.pos.x; cz += f.pos.z; }
+  cx /= frames.length; cz /= frames.length;
+  let ext = 0;
+  for (const f of frames) ext = Math.max(ext, Math.hypot(f.pos.x - cx, f.pos.z - cz));
+  // Bands start past the low-rise fringe (scenery/city.js runs to ext + 780).
   const bands = [
-    [780, 340, 26, 55, 150, 0.28],
-    [1180, 420, 30, 85, 210, 0.46],
-    [1650, 500, 34, 110, 250, 0.62],
+    [ext + 800, 300, 34, 60, 150, 0.30],
+    [ext + 1150, 380, 38, 85, 210, 0.48],
+    [ext + 1600, 460, 40, 110, 250, 0.64],
   ];
+  // Lit-window curtain wall so the towers read as buildings, not slabs; the
+  // vertex tint carries the haze so the far band still melts into the sky.
+  const tex = makeFacadeTexture('curtain', '#2a3038', 0.12);
   const geos = [];
   for (const [innerR, span, N, hMin, hVar, hazeAmt] of bands) {
     for (let i = 0; i < N; i++) {
       const a = (i / N) * Math.PI * 2 + (rand() - 0.5) * 0.18;
       if (Math.cos(a) > 0.35) continue;          // open water to the east
       const r = innerR + rand() * span;
-      const cx = Math.cos(a) * r;
-      const cz = Math.sin(a) * r;
-      const clusterN = 1 + ((rand() * 3) | 0);
+      const kx = cx + Math.cos(a) * r;
+      const kz = cz + Math.sin(a) * r;
+      const clusterN = 2 + ((rand() * 3) | 0);
       for (let cti = 0; cti < clusterN; cti++) {
-        const w = 26 + rand() * 48;
-        const dd = 26 + rand() * 48;
+        const w = 24 + rand() * 44;
+        const dd = 24 + rand() * 44;
         const h = hMin + rand() * hVar;
-        const px = cx + (rand() - 0.5) * 90;
-        const pz = cz + (rand() - 0.5) * 90;
+        const px = kx + (rand() - 0.5) * 110;
+        const pz = kz + (rand() - 0.5) * 110;
         const geo = new THREE.BoxGeometry(w, h, dd);
+        const uv = geo.getAttribute('uv');
+        const fx = Math.max(1, Math.round(w / 13)), fy = Math.max(1, Math.round(h / 24));
+        for (let v = 0; v < uv.count; v++) uv.setXY(v, uv.getX(v) * fx, uv.getY(v) * fy);
         geo.translate(px, h / 2, pz);
-        // flat slab colour lerped toward the haze; faces darker on the sides
-        tmp.setHSL(0.58 + (rand() - 0.5) * 0.04, 0.10 + rand() * 0.08,
-          0.15 + rand() * 0.07);
+        tmp.setHSL(0.58 + (rand() - 0.5) * 0.04, 0.10 + rand() * 0.08, 0.34 + rand() * 0.12);
         tmp.lerp(haze, hazeAmt);
         const count = geo.getAttribute('position').count;
         const colors = new Float32Array(count * 3);
@@ -1751,13 +1826,27 @@ function addCitySkyline(scene, frames) {
         }
         geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         geos.push(geo);
+        // A setback crown on a third of them breaks the flat-top row.
+        if (rand() < 0.33) {
+          const sw = w * 0.6, sd = dd * 0.6, sh = h * 0.25;
+          const crown = new THREE.BoxGeometry(sw, sh, sd);
+          const cuv = crown.getAttribute('uv');
+          for (let v = 0; v < cuv.count; v++) cuv.setXY(v, cuv.getX(v) * Math.max(1, Math.round(sw / 13)), cuv.getY(v) * Math.max(1, Math.round(sh / 24)));
+          crown.translate(px, h + sh / 2, pz);
+          const cc = new Float32Array(crown.getAttribute('position').count * 3);
+          for (let v = 0; v < cc.length; v += 3) { cc[v] = tmp.r; cc[v + 1] = tmp.g; cc[v + 2] = tmp.b; }
+          crown.setAttribute('color', new THREE.BufferAttribute(cc, 3));
+          geos.push(crown);
+        }
       }
     }
   }
   if (!geos.length) return;
   const mesh = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.95, metalness: 0, envMapIntensity: 0.14, fog: true,
+    map: tex, vertexColors: true, emissive: 0xffe6c4, emissiveMap: tex, emissiveIntensity: 0.10,
+    roughness: 0.9, metalness: 0.05, envMapIntensity: 0.18, fog: true,
   }));
+  mesh.name = 'city-skyline';
   for (const g of geos) g.dispose();
   scene.add(mesh);
 }
@@ -2088,61 +2177,10 @@ function addRocks(scene, frames, D) {
   if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
   scene.add(inst);
 
-  // A few larger flat-topped buttes for drama, set further back.
-  const butteMat = new THREE.MeshStandardMaterial({
-    vertexColors: true, roughness: 0.97, metalness: 0, envMapIntensity: 0.3,
-  });
-  const strata = [new THREE.Color(0x8a4a2c), new THREE.Color(0xa9663a), new THREE.Color(0xc08a55)];
-  for (let i = 0; i < 7; i++) {
-    // Buttes are big (base radius up to ~90 m) — sample positions until one
-    // clears every road section. The old fixed ring around the origin planted
-    // them straight on the circuit.
-    const h = 60 + rand() * 90;
-    const topR = 26 + rand() * 30;
-    let x = 0, z = 0, ok = false;
-    for (let t = 0; t < 50 && !ok; t++) {
-      const a = rand() * Math.PI * 2;
-      const r = 250 + rand() * 280;
-      x = Math.cos(a) * r;
-      z = Math.sin(a) * r;
-      if (distToTrack(frames, x, z) > topR * 1.7 + D.armco + 12) ok = true;
-    }
-    if (!ok) continue;
-    const geo = new THREE.CylinderGeometry(topR, topR * 1.5, h, 18, 6);
-    const pos = geo.getAttribute('position');
-    const colors = [];
-    const tmp = new THREE.Color();
-    for (let v = 0; v < pos.count; v++) {
-      const yFrac = (pos.getY(v) + h / 2) / h;
-      // erode the sides a little so the silhouette isn't a clean cylinder
-      const ang = Math.atan2(pos.getZ(v), pos.getX(v));
-      const er = 0.9 + fractalNoise(ang * 2.5 + i, yFrac * 3, 3) * 0.22;
-      pos.setX(v, pos.getX(v) * er);
-      pos.setZ(v, pos.getZ(v) * er);
-      const bandIdx = Math.max(0, Math.min(strata.length - 1,
-        Math.floor(yFrac * strata.length + fractalNoise(ang * 4, yFrac * 6, 2) * 0.6)));
-      const band = strata[bandIdx];
-      tmp.copy(band).multiplyScalar(0.85 + yFrac * 0.2);
-      // Sedimentary striation: thin light/dark layers running around the rock
-      // break the smooth "flower-pot" vertical gradient of the old shading.
-      const strat = 0.90 + 0.11 * Math.sin(yFrac * 30 + fractalNoise(ang * 3, yFrac * 9, 2) * 4);
-      tmp.multiplyScalar(strat);
-      colors.push(tmp.r, tmp.g, tmp.b);
-    }
-    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    geo.computeVertexNormals();
-    const butte = new THREE.Mesh(geo, butteMat);
-    butte.position.set(x, groundY(D, x, z) + h / 2 - 4, z);
-    // NOT a shadow caster. A 60-150 m butte under an 11-degrees sun throws a
-    // 300-760 m shadow, and the sun's shadow camera is a 180 m box that FOLLOWS
-    // the car — so instead of a butte-shaped shadow you get the frustum's own
-    // footprint painted across the desert as a hard-edged grey band ~180 m wide
-    // and ~950 m long (the box stretches by 1/sin(elevation) on the ground).
-    // These are backdrop; nothing is close enough for their shadow to inform.
-    butte.castShadow = false;
-    butte.receiveShadow = true;
-    scene.add(butte);
-  }
+  // Mesas, buttes and hoodoos: see scenery/mesas.js. Their own RNG stream so
+  // re-tuning the boulders does not move the skyline.
+  beginStream('mesas');
+  addMesas(scene, frames, D, (x, z) => distToTrack(frames, x, z));
 }
 
 // Dry desert brush + saguaros: ground cover so the sand flats read as living
@@ -2254,23 +2292,55 @@ function addFarmland(scene, frames, D) {
     });
   });
 
+  // Fields as a PATCHWORK, not eighteen rectangles dropped on a lawn: a
+  // field grid with irregular cell sizes covers the land beyond the corridor,
+  // about half the cells are cropped (the rest stay pasture), and adjacent
+  // fields share edges the way a real parish does. Cells that touch the
+  // circuit are skipped, so the run-off and the infield stay grass.
   const fields = [];
-  for (let tries = 0; tries < 140 && fields.length < 18; tries++) {
-    const w = 55 + rand() * 110;
-    const d = 45 + rand() * 100;
-    const px = Math.round(((rand() * 2 - 1) * 680) / 10) * 10;
-    const pz = Math.round(((rand() * 2 - 1) * 680) / 10) * 10;
-    if (!rectClearOfTrack(frames, px, pz, w / 2, d / 2, D.armco + 6)) continue;
-    // keep fields from stacking on each other
-    if (fields.some((fl) => Math.abs(fl.px - px) < (fl.w + w) / 2 - 8 &&
-                            Math.abs(fl.pz - pz) < (fl.d + d) / 2 - 8)) continue;
-    fields.push({ px, pz, w, d });
-    const mat = cropMats[(rand() * cropMats.length) | 0];
-    const rot = rand() < 0.5 ? 0 : Math.PI / 2;
-    const field = new THREE.Mesh(drapeQuad(D, px, pz, w, d, rot, 0.06), mat);
-    field.position.set(px, 0, pz);
-    field.receiveShadow = true;
-    scene.add(field);
+  const cx = D.terrain?.centre?.x ?? 0, cz = D.terrain?.centre?.z ?? 0;
+  const EXTENT = 760;
+  // The whole parish is turned a few degrees off the circuit's axes — field
+  // boundaries follow the lie of the land, not the pit straight. One angle
+  // about one pivot, so rotated neighbours still share their edges.
+  const theta = (8 + rand() * 14) * Math.PI / 180 * (rand() < 0.5 ? 1 : -1);
+  const cT = Math.cos(theta), sT = Math.sin(theta);
+  const colsX = [];
+  for (let x = -EXTENT; x < EXTENT; x += 70 + rand() * 90) colsX.push(x);
+  colsX.push(EXTENT);
+  const rowsZ = [];
+  for (let z = -EXTENT; z < EXTENT; z += 60 + rand() * 80) rowsZ.push(z);
+  rowsZ.push(EXTENT);
+  for (let i = 0; i < colsX.length - 1; i++) {
+    for (let j = 0; j < rowsZ.length - 1; j++) {
+      if (rand() < 0.48) continue;                    // pasture
+      const x0 = colsX[i], x1 = colsX[i + 1];
+      const z0 = rowsZ[j], z1 = rowsZ[j + 1];
+      const w = x1 - x0 - 6, d = z1 - z0 - 6;          // a hedge's width apart
+      const gx = (x0 + x1) / 2, gz = (z0 + z1) / 2;   // grid space
+      const px = cx + gx * cT - gz * sT, pz = cz + gx * sT + gz * cT;
+      // Axis-aligned clearance test on a rotated rectangle: pad by the
+      // rotation's reach so a corner can never swing onto the run-off.
+      const pad = Math.abs(sT) * (w + d) / 2;
+      if (!rectClearOfTrack(frames, px, pz, w / 2 + pad, d / 2 + pad, D.armco + 14)) continue;
+      if (Math.hypot(px - cx, pz - cz) > EXTENT) continue;
+      fields.push({ px, pz, w, d });
+      const mat = cropMats[(rand() * cropMats.length) | 0];
+      // Crop rows run along one axis or the other: transpose the UVs rather
+      // than rotate the quad, which would swap its footprint onto the
+      // neighbouring cell.
+      // three's rotateY(t) turns x toward -z, so the quad takes -theta to
+      // match the grid rotation above.
+      const geo = drapeQuad(D, px, pz, w, d, -theta, 0.06);
+      if (rand() < 0.5) {
+        const uv = geo.getAttribute('uv');
+        for (let v = 0; v < uv.count; v++) uv.setXY(v, uv.getY(v), uv.getX(v));
+      }
+      const field = new THREE.Mesh(geo, mat);
+      field.position.set(px, 0, pz);
+      field.receiveShadow = true;
+      scene.add(field);
+    }
   }
 
   // Barns + silos on a couple of the further fields.
@@ -2399,7 +2469,7 @@ function addMarshalPosts(scene, frames, curvature, D) {
   });
   let placedCount = 0;
   for (const z of zones) {
-    if (placedCount >= 5) break;
+    if (placedCount >= 8) break;
     const idx = (z.i0 - 6 + n) % n;
     const f = frames[idx];
     const t1 = frames[(idx - 1 + n) % n].tan;
