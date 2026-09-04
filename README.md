@@ -22,6 +22,24 @@ npm run dev
 
 Then open the URL Vite prints (defaults to <http://localhost:5173>).
 
+## Graphics
+
+**Auto** is the default. It starts with Balanced detail, then lowers rendering
+quality after sustained slow frames. Performance, Balanced and High can also
+be selected in the menu; the choice is remembered. All modes retain the same
+cars, track layouts, collision surfaces and driving physics.
+
+Performance skips post-processing and caps the scene at 0.92 million pixels.
+Balanced adds FXAA and caps at 1.44 million; High adds half-resolution ambient
+occlusion and subtle bloom, with a 2.07 million pixel budget. Shadow maps are
+1024 pixels (Performance/Balanced) or 2048 (High). These are physical-pixel
+budgets, including on Retina and 4K displays.
+
+Forests are split into spatial batches with distance-based detail, reflective
+car glass avoids the extra full-scene refraction render, and static menu
+previews render only when needed. Race restarts release their geometry and
+keyboard listeners. Hidden tabs stop advancing the simulation.
+
 ## Controls
 
 | Key                     | Action            |
@@ -122,12 +140,14 @@ pass. `M` mutes; the choice is remembered.
 
 ## What's under the hood
 
-- **Renderer**: WebGL2, ACES Filmic tone mapping, sRGB output, PCF soft
-  shadows from a texel-snapped 4096 shadow map that follows the player.
-- **Lighting**: Three.js `Sky` (golden hour) feeding a PMREM environment map
-  for image-based lighting + reflections; warm distance fog.
-- **Post-processing**: restrained `UnrealBloomPass`, cinematic shader
-  (chromatic aberration + vignette + grain), `SMAAPass`, `OutputPass`.
+- **Renderer**: adaptive resolution, ACES tone mapping, sRGB output and
+  texel-snapped 1024/2048 shadow maps following the player.
+- **Lighting**: a warm afternoon sky and PMREM environment reflections, cool
+  fill light and per-circuit atmospheric fog.
+- **Post-processing**: none in Performance; FXAA and output conversion in
+  Balanced; optional half-resolution GTAO and restrained bloom in High.
+- **Menu**: responsive circuit maps, a rendered GT showroom, clear race modes
+  and saved graphics choices. No running 3D animation while choosing a race.
 - **Tracks**: Catmull-Rom circuits with a vertex-coloured racing groove that
   weaves with the racing line, 3D profiled rumble kerbs, dirt verges, skid
   marks, gravel traps wired into the physics, armco with posts, debris
@@ -173,3 +193,16 @@ scripts/
 
 Headless scripts resolve Chrome from `$CHROME_EXE`, the Puppeteer cache, or
 the local Playwright install, and need `npm run dev` running first.
+
+## Verification
+
+`node scripts/graphics-test.mjs` checks render budgets, adaptation and tree
+batch transforms. `scripts/browser-check.mjs` exercises all circuits, quality
+presets, menu sizes, split-screen and restart memory in Chromium. Set
+`BASELINE_URL` to another served revision to compare completed render time,
+draw calls and triangles from an identical 1280×720 start-line camera.
+Timing uses software rendering in CI and is not a hardware FPS promise.
+
+The **Verify game** pull-request workflow runs these checks, the driving-model
+suite, car geometry checks and a production build. Screenshots and render
+measurements are attached as a workflow artifact.

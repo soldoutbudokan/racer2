@@ -1,0 +1,44 @@
+name: Verify game
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  gameplay-and-rendering:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/graphics-test.mjs && node scripts/smoke-car.mjs
+      - run: npx playwright-core install --with-deps chromium
+      - name: Start game and base revision
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git worktree add ../racer2-base "$BASE_SHA"
+          ln -s "$PWD/node_modules" ../racer2-base/node_modules
+          npm run dev -- --host 127.0.0.1 > /tmp/racer2-vite.log 2>&1 &
+          (cd ../racer2-base && npm run dev -- --host 127.0.0.1 --port 5174 > /tmp/racer2-base.log 2>&1) &
+          node --input-type=module -e 'import {chromium} from "playwright-core"; console.log("CHROME_EXE=" + chromium.executablePath())' >> "$GITHUB_ENV"
+      - name: Driving and circuit regression suite
+        run: node scripts/physics-test.mjs
+      - name: Visual and performance comparison
+        if: always()
+        env:
+          BASELINE_URL: http://localhost:5174/
+        run: node scripts/browser-check.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: racer2-visual-and-performance-checks
+          path: qa/
+          retention-days: 14

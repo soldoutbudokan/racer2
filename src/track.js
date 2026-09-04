@@ -183,6 +183,36 @@ export function createTrack(scene, world, materials, def) {
     }
   }
 
+  // Painted runoff beside rumble strips makes the course legible at speed.
+  // One merged ribbon, no extra physics or per-frame work; gravel stays clear.
+  if (theme.kerbs !== false && theme.ground !== 'city') {
+    const pos = [];
+    const tint = theme.ground === 'sand' ? 0x276d7d : 0x267d71;
+    const offset = ROAD_WIDTH / 2 + KERB_WIDTH + 0.08;
+    const width = theme.ground === 'pine' ? 0.65 : 1.1;
+    for (let i = 0; i < frames.length; i++) {
+      const j = (i + 1) % frames.length;
+      if (!kerbActive?.[i] || !kerbActive?.[j]) continue;
+      for (const side of [-1, 1]) {
+        const quad = [];
+        for (const [f, d] of [[frames[i], offset], [frames[j], offset],
+          [frames[j], offset + width], [frames[i], offset + width]]) {
+          quad.push([f.pos.x + f.left.x * d * side, 0.012, f.pos.z + f.left.z * d * side]);
+        }
+        for (const k of (side === 1 ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3])) pos.push(...quad[k]);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.computeVertexNormals();
+    const runoff = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      color: tint, roughness: 0.94, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    }));
+    runoff.name = 'painted-runoff'; runoff.receiveShadow = true;
+    group.add(runoff);
+  }
+
   // ---- Gravel traps on the outside of the heavy-braking corners ----
   if (theme.gravel) addGravelTraps(group, frames, curvature, gravelFrames, D);
 
@@ -318,17 +348,18 @@ export function createTrack(scene, world, materials, def) {
 // Tear down a track group: dispose every geometry, material and texture it
 // owns so switching circuits doesn't leak GPU memory.
 function disposeObject3D(root) {
-  root.traverse((o) => {
-    if (o.geometry) o.geometry.dispose();
-    const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
-    for (const m of mats) {
-      for (const key in m) {
-        const val = m[key];
-        if (val && val.isTexture) val.dispose();
-      }
-      m.dispose();
+  const geometries = new Set(), materials = new Set(), textures = new Set();
+  root.traverse(o => {
+    if (o.isInstancedMesh) o.dispose();
+    if (o.geometry) geometries.add(o.geometry);
+    for (const material of (o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [])) {
+      materials.add(material);
+      for (const value of Object.values(material)) if (value?.isTexture) textures.add(value);
     }
   });
+  for (const geometry of geometries) geometry.dispose();
+  for (const material of materials) material.dispose();
+  for (const texture of textures) texture.dispose();
 }
 
 // ---------- Geometry utilities ----------

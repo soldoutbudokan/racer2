@@ -63,6 +63,7 @@
 import * as THREE from 'three';
 import { hashFn, hideFromOverridePasses } from './noise.js';
 import { rand } from './rng.js';
+import { addTreeBatches } from './treeBatches.js';
 
 // Distance from the centreline at which each tier takes over.
 const NEAR_D = 90;
@@ -1046,7 +1047,9 @@ export function scatterTrees(scene, frames, opts = {}) {
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     inst.computeBoundingSphere();
-    scene.add(inst);
+    const distant = buildFarGeometry(cells, [1, 1, 1], 7);
+    distant.scale(species[i].wf, species[i].hf, species[i].wf);
+    addTreeBatches(scene, inst, distant, leafMat);
   }
 
   // ---- MID: crossed/tilted cards over a simple trunk ----
@@ -1099,8 +1102,8 @@ export function scatterTrees(scene, frames, opts = {}) {
     if (trunkInst.instanceColor) trunkInst.instanceColor.needsUpdate = true;
     cardInst.computeBoundingSphere();
     trunkInst.computeBoundingSphere();
-    scene.add(trunkInst);
-    scene.add(cardInst);
+    addTreeBatches(scene, trunkInst);
+    addTreeBatches(scene, cardInst);
   }
 
   // ---- FAR: one crossed card pair, graded into the haze ----
@@ -1136,7 +1139,7 @@ export function scatterTrees(scene, frames, opts = {}) {
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     inst.computeBoundingSphere();
-    scene.add(inst);
+    addTreeBatches(scene, inst);
   }
 
   // Unused species geometries would leak on a track switch — dispose() only

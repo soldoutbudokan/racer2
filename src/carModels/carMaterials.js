@@ -23,7 +23,7 @@ function tunePaint(hex) {
   // golden-hour sky), but not so dark the car reads as a black blob in the
   // shadowed three-quarter views.
   hsl.s = Math.min(1, hsl.s * 1.12);
-  hsl.l = hsl.l * 0.44;
+  hsl.l = hsl.l * 0.60;
   c.setHSL(hsl.h, hsl.s, hsl.l);
   return c;
 }
@@ -56,7 +56,7 @@ export function makePaint(colorHex) {
     // under ACES. Spreading the reflection keeps the sky gradient without the
     // clip — check the hood from the front-3/4 and the deck from trackside
     // after touching either this or envMapIntensity below.
-    clearcoatRoughness: 0.135,
+    clearcoatRoughness: 0.19,
     clearcoatNormalMap: orangePeelNormal(),
     clearcoatNormalScale: new THREE.Vector2(0.05, 0.05),
     normalMap: flake,
@@ -66,7 +66,7 @@ export function makePaint(colorHex) {
     // than a flat tone — but pulled back from 1.55 so the up-facing panels keep
     // the car's colour under the bright golden-hour sky + ACES instead of
     // blowing out to a white cap that erases the paint entirely.
-    envMapIntensity: 0.82,
+    envMapIntensity: 0.7,
   });
   paintCache.set(colorHex, m);
   return m;
@@ -121,7 +121,7 @@ export function makeGlass() {
     color: 0x0a1622,            // cool blue-grey smoked tint — reads as glass, not a void
     metalness: 0.0,
     roughness: 0.03,
-    transmission: 0.25,         // dark tint, but enough to read as a glazed surface
+    transmission: 0,         // Reflective tint avoids re-rendering the entire scene for refraction.
     thickness: 0.35,
     ior: 1.52,
     // A strong, crisp sky reflection on the glazing is what separates the cabin
@@ -133,7 +133,7 @@ export function makeGlass() {
     clearcoatRoughness: 0.02,
     transparent: true,
     opacity: 0.86,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     polygonOffset: true,
     // Light offset only: the greenhouse geometry now sits physically proud of
     // the paint (see buildGreenhouseShell), so it already draws in front. A
@@ -240,7 +240,7 @@ export function makeLens() {
   if (_lens) return _lens;
   _lens = new THREE.MeshPhysicalMaterial({
     color: 0xffffff, metalness: 0.0, roughness: 0.06,
-    transmission: 0.9, thickness: 0.05, ior: 1.45,
+    transmission: 0, thickness: 0.05, ior: 1.45,
     transparent: true, opacity: 0.4, envMapIntensity: 1.2,
   });
   return _lens;
