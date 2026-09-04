@@ -8,10 +8,11 @@ export function createGarage(renderer, environment) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x10191e);
   scene.environment = environment;
-  scene.add(new THREE.HemisphereLight(0xdbeaff, 0x25363e, 2));
-  const key = new THREE.DirectionalLight(0xffe4c2, 3);
+  scene.fog = new THREE.Fog(0x10191e, 8, 22);
+  scene.add(new THREE.HemisphereLight(0xdbeaff, 0x25363e, 1.0));
+  const key = new THREE.DirectionalLight(0xffe4c2, 1.8);
   key.position.set(3, 6, 5); scene.add(key);
-  const rim = new THREE.DirectionalLight(0x91c8df, 2);
+  const rim = new THREE.DirectionalLight(0x91c8df, 1.0);
   rim.position.set(-4, 3, -4); scene.add(rim);
   const car = buildVisualCar('gt', 0xc8161d);
   car.root.position.y = STATIC_CHASSIS_HEIGHT;
@@ -21,18 +22,20 @@ export function createGarage(renderer, environment) {
     car.wheels[i].position.set(i % 2 ? -0.88 : 0.88, WHEEL_RADIUS, i < 2 ? 1.45 : -1.45);
     scene.add(car.wheels[i]);
   }
-  const floor = new THREE.Mesh(new THREE.CircleGeometry(7, 64),
-    new THREE.MeshStandardMaterial({ color: 0x182329, roughness: 0.8 }));
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40),
+    new THREE.MeshStandardMaterial({ color: 0x080f13, roughness: 1, envMapIntensity: 0.05 }));
   floor.rotation.x = -Math.PI / 2; scene.add(floor);
   const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 40);
-  camera.position.set(6.2, 2.8, 7.4); camera.lookAt(0, 0.6, 0);
+  camera.position.set(4.2, 1.9, 5.5); camera.lookAt(0, 0.6, 0);
   return function render() {
     const canvas = document.getElementById('garage');
     const { width, height } = canvas.getBoundingClientRect();
     if (!width || !height) return;
     const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
     canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
-    camera.aspect = width / height; camera.updateProjectionMatrix();
+    camera.aspect = width / height;
+    camera.fov = camera.aspect < 1.4 ? 44 : 34;
+    camera.updateProjectionMatrix();
     renderer.render(scene, camera);
     canvas.getContext('2d').drawImage(renderer.domElement, 0, 0, canvas.width, canvas.height);
   };

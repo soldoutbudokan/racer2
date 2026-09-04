@@ -34,6 +34,7 @@ async function measure(label, preset) {
     c.camera.lookAt(f.pos.x + f.tan.x * 20, 0.8, f.pos.z + f.tan.z * 20);
     c.camera.updateProjectionMatrix();
     for (const car of c.cars) car.car.update();
+    c.hud.drawMinimap(c.cars.map(entry => ({ pos: entry.car.body.position, color: entry.color, isPlayer: entry.isPlayer })));
     c.updateShadowTarget(c.cars[0].car.body.position);
     c.composer.render();
     const gl = c.renderer.getContext(); gl.finish();
@@ -79,6 +80,8 @@ try {
     assert(!overflow, `menu fits ${width}px without horizontal overflow`);
     await page.screenshot({ path: `${out}/menu-${width}.png`, fullPage: true });
   }
+  const graphicsBounds = await page.locator('#graphics-quality').boundingBox();
+  assert(graphicsBounds.y + graphicsBounds.height <= 720, 'graphics setting is visible without scrolling at 720p');
   await page.selectOption('#graphics-quality', 'performance');
   await page.reload({ waitUntil: 'load' });
   await page.waitForFunction(() => window.__ctx?.graphics?.choice === 'performance');
@@ -86,6 +89,14 @@ try {
   await start();
   const performance = await measure('after-gp-performance', 'performance');
   const balanced = await measure('after-gp-balanced', 'balanced');
+  await page.evaluate(() => {
+    const c = window.__ctx, primary = c.cars[0].car.body.position;
+    const f = c.track.frames[0];
+    c.camera.position.set(primary.x - f.tan.x * 8, 2.7, primary.z - f.tan.z * 8);
+    c.camera.lookAt(primary.x + f.tan.x * 10, 0.8, primary.z + f.tan.z * 10);
+    c.composer.render();
+  });
+  await page.screenshot({ path: `${out}/after-driving-view.png` });
   await measure('after-gp-high', 'high');
   if (baseline) {
     assert(performance.triangles < baseline.triangles * 0.7, 'Performance cuts rendered triangle work by at least 30%');
@@ -119,6 +130,12 @@ try {
     memory.push(await page.evaluate(() => window.__ctx.renderer.info.memory.geometries));
   }
   assert(memory.at(-1) <= memory[0] + 3, `restarts retain stable geometry memory: ${memory}`);
+  await page.evaluate(() => { window.__ctx.mode = 'quick-race'; document.getElementById('finish').classList.remove('hidden'); });
+  await page.locator('#finish-restart').click();
+  assert.equal(await page.evaluate(() => window.__ctx.cars.length), 4, 'finish screen restarts the selected race');
+  await page.evaluate(() => { document.getElementById('finish').classList.remove('hidden'); });
+  await page.locator('#finish-menu').click();
+  assert.equal(await page.evaluate(() => window.__ctx.mode), null, 'finish screen returns to menu');
   assert.deepEqual(errors, [], 'no browser or WebGL errors');
   console.log('PASS: garage, responsive menu, saved quality, all circuits, split screen, restart memory and render budgets');
 } finally {

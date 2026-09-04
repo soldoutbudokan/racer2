@@ -365,6 +365,30 @@ kbd {
   color: #fff;
 }
 
+/* Keep every race mode and the graphics selector visible on laptop screens. */
+.race-setup .mode-list { display: grid; grid-template-columns: 1fr 1fr; }
+.race-setup .featured { grid-column: 1 / -1; }
+.race-setup .mode:not(.featured) .mode-icon { display: none; }
+.race-setup .mode:not(.featured) { gap: 8px; }
+.race-setup .mode:not(.featured) .mode-desc { font-size: 9px; }
+@media (min-width: 761px) and (max-height: 850px) {
+  .menu-header { height: 64px; }
+  .menu-layout { padding: 20px 0 18px; }
+  h1 { margin: 16px 0 12px; font-size: clamp(46px, 4.7vw, 64px); }
+  .garage-stage { height: 220px; margin-top: 16px; }
+  .car-specs { padding: 16px 0; }
+  .garage-footer { padding: 13px 0; }
+  .section-heading { margin-bottom: 12px; }
+  .track-card { padding: 9px 10px 10px; }
+  .track-card svg { height: 49px; margin-bottom: 4px; }
+  .track-sub { margin-top: 4px; }
+  .selected-circuit { min-height: 30px; }
+  .mode-heading { margin-top: 8px; margin-bottom: 10px; }
+  .race-setup button.mode { padding: 10px 14px; }
+  .graphics-settings { padding-top: 12px; }
+  .menu-footer { min-height: 36px; }
+}
+
 /* Race HUD: opaque enough to read without expensive live backdrop blur. */
 #race-identity { position: absolute; top: 29px; left: 30px; display: grid; gap: 5px; }
 #race-identity b { font-size: 24px; font-style: italic; letter-spacing: -1px; }
@@ -398,7 +422,7 @@ kbd {
   .menu-layout { grid-template-columns: 1fr; gap: 27px; padding-top: 24px; }
   .garage-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
   .eyebrow { grid-column: 1 / -1; font-size: 8px; }
-  h1 { font-size: 46px; letter-spacing: -2.5px; margin: 17px 0; }
+  h1 { font-size: 36px; letter-spacing: -1.8px; margin: 17px 0; }
   .hero-copy { display: none; }
   .garage-stage { grid-column: 2; grid-row: 2; height: 155px; margin: 0 -10px 0 0; }
   .garage-caption { font-size: 7px; left: 8px; bottom: 8px; }

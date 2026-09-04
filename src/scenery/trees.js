@@ -1046,7 +1046,7 @@ export function scatterTrees(scene, frames, opts = {}) {
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     inst.computeBoundingSphere();
     const distant = buildFarGeometry(cells, [1, 1, 1], 7);
-    distant.scale(species[i].wf, species[i].hf, species[i].wf);
+    distant.scale(species[i].wf * NOM_W / 7.2, species[i].hf * NOM_H / 10, species[i].wf * NOM_W / 7.2);
     addTreeBatches(scene, inst, distant, leafMat);
   }
 

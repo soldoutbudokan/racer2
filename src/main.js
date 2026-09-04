@@ -266,7 +266,7 @@ function hideMenu() {
 // Build the circuit picker cards in the menu. Selecting a card rebuilds the
 // track immediately so the minimap (and the next race) use it.
 function buildTrackSelector(container, ctx, rebuildTrack) {
-  const descriptions = { gp: 'Interlagos · Brazil', oval: 'Sunset Speedway · Oval',
+  const descriptions = { gp: 'Interlagos · Brazil', sprint: 'Sunset Speedway · Oval',
     downtown: 'Marina Bay · Singapore', alpine: 'Spa-Francorchamps · Belgium',
     dunes: 'Sakhir · Bahrain', parco: 'Monza · Italy' };
   container.innerHTML = '';

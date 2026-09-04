@@ -8,6 +8,11 @@ jobs:
   gameplay-and-rendering:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    name: ${{ matrix.check }}
+    strategy:
+      fail-fast: false
+      matrix:
+        check: [physics, visual]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,14 +35,15 @@ jobs:
           (cd ../racer2-base && npm run dev -- --host 127.0.0.1 --port 5174 > /tmp/racer2-base.log 2>&1) &
           node --input-type=module -e 'import {chromium} from "playwright-core"; console.log("CHROME_EXE=" + chromium.executablePath())' >> "$GITHUB_ENV"
       - name: Driving and circuit regression suite
+        if: matrix.check == 'physics'
         run: node scripts/physics-test.mjs
       - name: Visual and performance comparison
-        if: always()
+        if: matrix.check == 'visual'
         env:
           BASELINE_URL: http://localhost:5174/
         run: node scripts/browser-check.mjs
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && matrix.check == 'visual'
         with:
           name: racer2-visual-and-performance-checks
           path: qa/
