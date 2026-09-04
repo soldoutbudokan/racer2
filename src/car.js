@@ -609,6 +609,9 @@ export function createCar(world, materials, options = {}) {
     const q = new CANNON.Quaternion();
     q.setFromAxisAngle(new CANNON.Vec3(0, 1, 0), yaw);
     chassisBody.quaternion.copy(q);
+    chassisBody.aabbNeedsUpdate = true;
+    world.broadphase.dirty = true;
+    chassisBody.wakeUp();
     drive.gear = 1;
     drive.mode = 'D';
     drive.shiftT = 0;
@@ -631,6 +634,7 @@ export function createCar(world, materials, options = {}) {
   }
 
   function dispose() {
+    visual.dispose();
     world.removeEventListener('preStep', preStepForces);
     vehicle.removeFromWorld(world);
     world.removeBody(chassisBody);

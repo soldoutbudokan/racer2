@@ -5,7 +5,8 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { GRAPHICS, renderPixelRatio, createGraphicsController } from './graphics.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 import { makeRandom } from './scenery/rng.js';
@@ -44,15 +45,15 @@ function makeDenoiseNoise(size = 64) {
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: true,
+    antialias: false,
     powerPreference: 'high-performance',
     stencil: false,
   });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(1);
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.08;
+  renderer.toneMappingExposure = 1.0;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -79,16 +80,16 @@ export function createScene(canvas) {
   skyU.mieCoefficient.value = 0.006; // slightly more haze near the horizon
   skyU.mieDirectionalG.value = 0.80; // broader sun glow
   // Low golden-hour sun — long dramatic shadows and warm light.
-  const sunElev = THREE.MathUtils.degToRad(11);
+  const sunElev = THREE.MathUtils.degToRad(23);
   const sunAzim = THREE.MathUtils.degToRad(128);
   sunPos.setFromSphericalCoords(1, Math.PI / 2 - sunElev, sunAzim);
   skyU.sunPosition.value.copy(sunPos);
 
   // Sun — warm peach-orange at very low elevation
-  const sun = new THREE.DirectionalLight(0xffd5a0, 3.4);
+  const sun = new THREE.DirectionalLight(0xffe4c4, 2.7);
   sun.position.copy(sunPos).multiplyScalar(800);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(4096, 4096);
+  sun.shadow.mapSize.set(1024, 1024);
   sun.shadow.camera.near = 50;
   sun.shadow.camera.far = 1600;
   // Tight frustum for crisp contact shadows — it FOLLOWS the player car via
@@ -106,7 +107,7 @@ export function createScene(canvas) {
   scene.add(sun.target);
 
   const sunDir = sunPos.clone().normalize();
-  const shadowTexel = (2 * s) / 4096;
+  let shadowTexel = (2 * s) / 1024;
   function updateShadowTarget(focus) {
     // Quantise the target to shadow-texel-sized steps so the shadow edges
     // don't shimmer as the camera glides.
@@ -121,7 +122,7 @@ export function createScene(canvas) {
   }
 
   // Sky-tinted hemisphere fill — keeps shadows from being pure black
-  const hemi = new THREE.HemisphereLight(0x92b8e0, 0x3e3520, 0.6);
+  const hemi = new THREE.HemisphereLight(0xa6c7e8, 0x44432f, 0.85);
   scene.add(hemi);
 
   // Subtle cool fill from the opposite azimuth — gives shaded car panels
@@ -144,86 +145,69 @@ export function createScene(canvas) {
   // Warm atmospheric haze — pushed back so the circuit stays crisp.
   scene.fog = new THREE.Fog(0xc8bba6, 900, 4200);
 
-  // ---- Post-processing ----
+  // Balanced uses only anti-aliasing and the output transform. AO and bloom
+  // are allocated lazily for High, then released when leaving it.
   const composer = new EffectComposer(renderer);
-  composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  composer.setSize(window.innerWidth, window.innerHeight);
-
   const renderPass = new RenderPass(scene, camera);
+  const fxaa = new ShaderPass(FXAAShader);
+  const output = new OutputPass();
   composer.addPass(renderPass);
+  composer.addPass(fxaa);
+  composer.addPass(output);
+  let gtao = null, bloom = null;
+  let activePreset = 'balanced', activeScale = 1;
 
-  // Ground-truth ambient occlusion (GTAO): darkens the crevices light can't
-  // reach — wheel arches, the seam where a tyre meets the road, panel gaps,
-  // between kerb ripples, under the splitter/wing, beneath grandstands. This
-  // contact shading is the single biggest cue that separates a "real" render
-  // from a flat game look, and it touches the car, the track and the scenery
-  // all at once. Radius is kept tight (world units) so it only shades genuine
-  // contact and never muddies the open grass or asphalt.
-  // Run AO at half resolution — the poisson-denoise pass softens it anyway, so
-  // contact occlusion looks the same while costing ~a quarter of the fill rate.
-  // That keeps the driving framerate intact on modest GPUs.
-  const AO_SCALE = 0.5;
-  const gtao = new GTAOPass(
-    scene, camera,
-    Math.round(window.innerWidth * AO_SCALE),
-    Math.round(window.innerHeight * AO_SCALE),
-  );
-  gtao.output = GTAOPass.OUTPUT.Default;
-  gtao.blendIntensity = 0.9;
-  gtao.updateGtaoMaterial({
-    radius: 0.6,            // metres — contact-scale occlusion only
-    distanceExponent: 1.0,
-    thickness: 1.0,
-    scale: 1.0,
-    samples: 16,
-  });
-  // GTAO's poisson-denoise pass samples a 64x64 noise texture that the pass
-  // builds in its own constructor from `new SimplexNoise()` — and SimplexNoise
-  // defaults to `Math.random` for its permutation table. So the AO denoise
-  // pattern was re-rolled on every page load, putting a faint but full-frame
-  // speckle over the entire render: two screenshots of identical code differed
-  // on more than half the frame because of this alone. Rebuild the texture
-  // from a seeded stream so a given frame renders the same way twice. The
-  // pass takes it from `pdMaterial.uniforms.tNoise`, wired in its constructor,
-  // so both references have to be replaced.
-  gtao.pdNoiseTexture.dispose();
-  gtao.pdNoiseTexture = makeDenoiseNoise();
-  gtao.pdMaterial.uniforms.tNoise.value = gtao.pdNoiseTexture;
-  composer.addPass(gtao);
-
-  const bloom = new UnrealBloomPass(
-    new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.22,  // strength — just enough for headlights/sun to pop
-    0.65,  // radius
-    0.91   // threshold (only bright highlights bloom)
-  );
-  composer.addPass(bloom);
-
-  // Subtle vignette + chromatic aberration for cinematic feel
-  const cinematicPass = new ShaderPass(CinematicShader);
-  composer.addPass(cinematicPass);
-
-  const smaa = new SMAAPass(
-    window.innerWidth * renderer.getPixelRatio(),
-    window.innerHeight * renderer.getPixelRatio()
-  );
-  composer.addPass(smaa);
-
-  composer.addPass(new OutputPass());
-
-  // Resize handling
-  window.addEventListener('resize', () => {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+  function resize() {
+    const w = Math.max(1, window.innerWidth), h = Math.max(1, window.innerHeight);
+    const ratio = renderPixelRatio(w, h, window.devicePixelRatio || 1, activePreset, activeScale);
+    renderer.setPixelRatio(ratio);
     renderer.setSize(w, h);
-    composer.setSize(w, h);
-    gtao.setSize(Math.round(w * AO_SCALE), Math.round(h * AO_SCALE));
+    // Performance renders directly; its unused composer stays tiny.
+    composer.setPixelRatio(activePreset === 'performance' ? 1 : ratio);
+    composer.setSize(activePreset === 'performance' ? 1 : w, activePreset === 'performance' ? 1 : h);
+    if (gtao) gtao.setSize(Math.max(1, Math.round(w * ratio * 0.5)), Math.max(1, Math.round(h * ratio * 0.5)));
+    fxaa.uniforms.resolution.value.set(1 / (w * ratio), 1 / (h * ratio));
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
-    bloom.resolution.set(w, h);
-  });
+  }
 
-  return { renderer, scene, camera, composer, sun, updateShadowTarget };
+  function applyGraphics(preset, scale) {
+    activePreset = preset; activeScale = scale;
+    if (preset === 'high' && !gtao) {
+      gtao = new GTAOPass(scene, camera, 1, 1);
+      gtao.blendIntensity = 0.65;
+      gtao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1, thickness: 1, scale: 1, samples: 8 });
+      gtao.pdNoiseTexture.dispose();
+      gtao.pdNoiseTexture = makeDenoiseNoise();
+      gtao.pdMaterial.uniforms.tNoise.value = gtao.pdNoiseTexture;
+      bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.12, 0.5, 1.05);
+      composer.insertPass(gtao, 1);
+      composer.insertPass(bloom, 2);
+    } else if (preset !== 'high' && gtao) {
+      composer.removePass(gtao); composer.removePass(bloom);
+      gtao.dispose(); bloom.dispose();
+      gtao = null; bloom = null;
+    }
+    const shadowSize = GRAPHICS[preset].shadow;
+    if (sun.shadow.mapSize.x !== shadowSize) {
+      sun.shadow.map?.dispose(); sun.shadow.map = null;
+      sun.shadow.mapSize.set(shadowSize, shadowSize);
+      shadowTexel = (2 * s) / shadowSize;
+    }
+    resize();
+  }
+  let saved = 'auto';
+  try { saved = localStorage.getItem('racer2.graphics') || 'auto'; } catch { /* Private browsing. */ }
+  const graphics = createGraphicsController(applyGraphics, saved);
+  const renderComposer = composer.render.bind(composer);
+  composer.render = (dt) => {
+    if (activePreset === 'performance') renderer.render(scene, camera);
+    else renderComposer(dt);
+  };
+  window.addEventListener('resize', resize);
+
+  return { renderer, scene, camera, composer, sun, updateShadowTarget, graphics };
+
 }
 
 // --- Cinematic post shader: vignette + tiny chromatic aberration + grain ---

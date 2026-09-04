@@ -4,8 +4,10 @@ export function createPhysicsWorld() {
   const world = new CANNON.World({
     gravity: new CANNON.Vec3(0, -9.82, 0),
   });
-  // NaiveBroadphase O(n²) but reliable for raycasts; we have <1k bodies so it's fine.
-  world.broadphase = new CANNON.NaiveBroadphase();
+  // Sweep-and-prune rejects separated bodies before pair testing. Cannon's
+  // SAP also supports the wheel raycasts through its AABB query.
+  world.broadphase = new CANNON.SAPBroadphase(world);
+  world.broadphase.axisIndex = 0;
   world.allowSleep = true;
   world.defaultContactMaterial.friction = 0.4;
 

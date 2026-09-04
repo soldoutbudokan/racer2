@@ -53,16 +53,15 @@
  *    copse reads as one wood, and instances vary in yaw, lean, and separate
  *    width/height scale.
  *
- * Bucketing is by distance to the CENTRELINE, computed once at build time.
- * The camera never leaves the ribbon, so a build-time bucket is as good as a
- * per-frame LOD switch and costs nothing per frame.
- *
- * Draw calls: 5 near species + 1 mid trunk + 1 mid card set + 1 far card set
- * = 8 instanced meshes per call.
+ * Shape tiers start with distance to the centreline. Spatial batches then
+ * let the renderer cull off-screen stands and switch detailed trees to canopy
+ * cards beyond 190 m from the camera. A forest no longer submits all its
+ * near-track geometry simply because one tree is in the viewing frustum.
  */
 import * as THREE from 'three';
 import { hashFn, hideFromOverridePasses } from './noise.js';
 import { rand } from './rng.js';
+import { addTreeBatches } from './treeBatches.js';
 
 // Distance from the centreline at which each tier takes over.
 const NEAR_D = 90;
@@ -1046,7 +1045,9 @@ export function scatterTrees(scene, frames, opts = {}) {
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     inst.computeBoundingSphere();
-    scene.add(inst);
+    const distant = buildFarGeometry(cells, [1, 1, 1], 7);
+    distant.scale(species[i].wf * NOM_W / 7.2, species[i].hf * NOM_H / 10, species[i].wf * NOM_W / 7.2);
+    addTreeBatches(scene, inst, distant, leafMat);
   }
 
   // ---- MID: crossed/tilted cards over a simple trunk ----
@@ -1099,8 +1100,8 @@ export function scatterTrees(scene, frames, opts = {}) {
     if (trunkInst.instanceColor) trunkInst.instanceColor.needsUpdate = true;
     cardInst.computeBoundingSphere();
     trunkInst.computeBoundingSphere();
-    scene.add(trunkInst);
-    scene.add(cardInst);
+    addTreeBatches(scene, trunkInst);
+    addTreeBatches(scene, cardInst);
   }
 
   // ---- FAR: one crossed card pair, graded into the haze ----
@@ -1136,7 +1137,7 @@ export function scatterTrees(scene, frames, opts = {}) {
     inst.instanceMatrix.needsUpdate = true;
     if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
     inst.computeBoundingSphere();
-    scene.add(inst);
+    addTreeBatches(scene, inst);
   }
 
   // Unused species geometries would leak on a track switch — dispose() only

@@ -61,6 +61,12 @@ export function createInput(bindings) {
   return {
     update, consumeToggle, consumeReset, consumeRescue, consumeLineToggle,
     consumeSoundToggle, state,
+    dispose() {
+      window.removeEventListener('keydown', onDown);
+      window.removeEventListener('keyup', onUp);
+      window.removeEventListener('blur', onBlur);
+      keys.clear();
+    },
   };
 }
 

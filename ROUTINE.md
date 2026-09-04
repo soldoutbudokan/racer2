@@ -96,6 +96,25 @@ helper. See the 2026-08-06 Backlog entry.
 6. Only push to `main` after the owner replies "go".
 7. Append what you did to the Changelog, and add/clear Backlog items.
 
+## Owner-requested preview — 2026-09-04
+
+Branch `claude/racer2-visual-performance`: broad visual and performance update
+requested by the owner. Pending review; not accepted to main.
+
+- Circuit Series menu, actual circuit silhouettes, static rendered GT garage,
+  responsive layout, clearer race HUD and remembered graphics choices.
+- Auto/Balanced/Performance/High with physical-pixel budgets; lazy High-only AO
+  and bloom, correctly sized AO after composer resize, smaller shadow maps.
+- Reflective glazing removes the full-scene transmission pass. Brighter paint,
+  endurance stripes, afternoon lighting and painted runoff improve readability.
+- Forest spatial culling and distance LOD; sweep-and-prune physics; restart
+  geometry/listener cleanup and hidden-tab simulation pause.
+- New PR workflow runs the existing physics suite plus graphics, browser,
+  restart-memory and before/after rendering checks. Browser screenshots and
+  measurements are kept as Actions artifacts. Local build, graphics tests and
+  car geometry pass; Chromium requires a full Linux runtime, unavailable in
+  the restricted editing workspace, so browser verification runs in CI.
+
 ## Changelog (accepted to `main`)
 
 - **2026-09-02** (accepted → `main` 2026-09-02, owner: "push to main when

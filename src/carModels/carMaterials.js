@@ -23,7 +23,7 @@ function tunePaint(hex) {
   // golden-hour sky), but not so dark the car reads as a black blob in the
   // shadowed three-quarter views.
   hsl.s = Math.min(1, hsl.s * 1.12);
-  hsl.l = hsl.l * 0.44;
+  hsl.l = hsl.l * 0.55;
   c.setHSL(hsl.h, hsl.s, hsl.l);
   return c;
 }
@@ -45,7 +45,7 @@ export function makePaint(colorHex) {
     metalness: 0.16,
     roughness: 0.85,            // × map → effective ~0.17..0.31 base highlight
     roughnessMap: paintRoughness(),
-    clearcoat: 1.0,
+    clearcoat: 0.7,
     // Real clear coat is glossy but not a perfect mirror: a touch of roughness
     // spreads the sky reflection into a soft gradient that wraps the panel,
     // instead of a razor-sharp mirror band that clips the bright sky straight
@@ -56,7 +56,7 @@ export function makePaint(colorHex) {
     // under ACES. Spreading the reflection keeps the sky gradient without the
     // clip — check the hood from the front-3/4 and the deck from trackside
     // after touching either this or envMapIntensity below.
-    clearcoatRoughness: 0.135,
+    clearcoatRoughness: 0.19,
     clearcoatNormalMap: orangePeelNormal(),
     clearcoatNormalScale: new THREE.Vector2(0.05, 0.05),
     normalMap: flake,
@@ -66,7 +66,7 @@ export function makePaint(colorHex) {
     // than a flat tone — but pulled back from 1.55 so the up-facing panels keep
     // the car's colour under the bright golden-hour sky + ACES instead of
     // blowing out to a white cap that erases the paint entirely.
-    envMapIntensity: 0.82,
+    envMapIntensity: 0.58,
   });
   paintCache.set(colorHex, m);
   return m;
@@ -120,20 +120,20 @@ export function makeGlass() {
   _glass = new THREE.MeshPhysicalMaterial({
     color: 0x0a1622,            // cool blue-grey smoked tint — reads as glass, not a void
     metalness: 0.0,
-    roughness: 0.03,
-    transmission: 0.25,         // dark tint, but enough to read as a glazed surface
+    roughness: 0.08,
+    transmission: 0,         // Reflective tint avoids re-rendering the entire scene for refraction.
     thickness: 0.35,
     ior: 1.52,
     // A strong, crisp sky reflection on the glazing is what separates the cabin
     // from the bodywork: the canopy catches the bright sky and sun streak while
     // the painted shell below carries the car's colour, so the greenhouse reads
     // as a distinct glassy volume instead of melting into one red mass.
-    envMapIntensity: 1.6,
+    envMapIntensity: 0.85,
     clearcoat: 1.0,
-    clearcoatRoughness: 0.02,
+    clearcoatRoughness: 0.08,
     transparent: true,
     opacity: 0.86,
-    side: THREE.DoubleSide,
+    side: THREE.FrontSide,
     polygonOffset: true,
     // Light offset only: the greenhouse geometry now sits physically proud of
     // the paint (see buildGreenhouseShell), so it already draws in front. A
@@ -240,7 +240,7 @@ export function makeLens() {
   if (_lens) return _lens;
   _lens = new THREE.MeshPhysicalMaterial({
     color: 0xffffff, metalness: 0.0, roughness: 0.06,
-    transmission: 0.9, thickness: 0.05, ior: 1.45,
+    transmission: 0, thickness: 0.05, ior: 1.45,
     transparent: true, opacity: 0.4, envMapIntensity: 1.2,
   });
   return _lens;

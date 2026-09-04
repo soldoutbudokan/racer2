@@ -4,6 +4,7 @@ import { makePaint } from './carMaterials.js';
 import { buildWheel } from './wheels.js';
 import { buildContactShadow } from './parts.js';
 import { mergeByMaterial } from './merge.js';
+import { addLivery } from './livery.js';
 import { HUB_LOCAL_Y } from '../stance.js';
 
 import * as gtCoupe from './gtCoupe.js';
@@ -69,6 +70,7 @@ export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d) {
   }
 
   const deco = def.decorate(body, { color: bodyColor });
+  addLivery(body, def.keys, archetypeKey);
 
   // Collapse the many small decoration meshes into one mesh per material.
   // Hull (shared geo), glass/lenses (transparent) and the brake light are
@@ -100,6 +102,15 @@ export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d) {
     shadow,
     brakeLights: deco.brakeLights,
     _brakeLevel: 0,
+    dispose() {
+      // Hulls, wheel templates, paint and trim are cached across cars. Body
+      // decorations and the contact-shadow plane belong to this instance.
+      const geometries = new Set();
+      root.traverse(o => { if (o.geometry && o.geometry !== hullGeo) geometries.add(o.geometry); });
+      for (const geometry of geometries) geometry.dispose();
+      deco.brakeLights?.material.dispose();
+      shadow.material.dispose();
+    },
   };
 }
 

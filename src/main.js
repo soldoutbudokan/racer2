@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import { createScene } from './scene.js';
+import { createGarage } from './garage.js';
 import { createPhysicsWorld } from './physics.js';
 import { createTrack } from './track.js';
 import { TRACKS, DEFAULT_TRACK_ID, getTrackById } from './tracks.js';
@@ -86,7 +87,7 @@ async function bootstrap() {
   await frame();
 
   const canvas = document.getElementById('game');
-  const { renderer, scene, camera, composer, updateShadowTarget } = createScene(canvas);
+  const { renderer, scene, camera, composer, updateShadowTarget, graphics } = createScene(canvas);
 
   setProgress(0.25, 'Building physics world');
   await frame();
@@ -115,7 +116,7 @@ async function bootstrap() {
   // ---- Mode selection ----
   const ctx = {
     renderer, scene, camera, camera2, composer, world, materials, track, hud,
-    racingLine,
+    racingLine, graphics,
     selectedTrackId: DEFAULT_TRACK_ID,
     lineAid: false,
     updateShadowTarget,
@@ -156,7 +157,7 @@ async function bootstrap() {
     window.__createAudio = createAudio;
   }
 
-  document.querySelectorAll('button.mode').forEach((btn) => {
+  document.querySelectorAll('button.mode[data-mode]').forEach((btn) => {
     btn.addEventListener('click', () => {
       const mode = btn.dataset.mode;
       startMode(ctx, mode);
@@ -193,53 +194,121 @@ async function bootstrap() {
   }
   buildTrackSelector(document.getElementById('track-list'), ctx, rebuildTrack);
 
-  showMenu();
+  ctx.renderGarage = createGarage(renderer, scene.environment);
+  const qualitySelect = document.getElementById('graphics-quality');
+  qualitySelect.value = graphics.choice;
+  const descriptions = {
+    auto: 'Adapts to keep your race smooth.',
+    performance: 'Lighter rendering for everyday laptops.',
+    balanced: 'Clear detail with a modest graphics budget.',
+    high: 'Richer shadows and effects for faster GPUs.',
+  };
+  function qualityDescription() {
+    document.getElementById('graphics-description').textContent = descriptions[graphics.choice];
+  }
+  qualityDescription();
+  qualitySelect.addEventListener('change', () => {
+    graphics.select(qualitySelect.value);
+    try { localStorage.setItem('racer2.graphics', graphics.choice); } catch { /* Optional preference. */ }
+    qualityDescription();
+    ctx.renderGarage();
+  });
+  window.addEventListener('resize', () => { if (!ctx.mode) ctx.renderGarage(); });
+  let hiddenAt = null;
+  document.addEventListener('visibilitychange', () => {
+    const now = performance.now();
+    last = now;
+    graphics.resetSamples();
+    if (document.hidden) {
+      hiddenAt = now;
+      ctx.audio?.context?.suspend?.().catch(() => {});
+    } else {
+      if (hiddenAt !== null) {
+        const pause = now - hiddenAt;
+        for (const entry of ctx.cars) {
+          entry.state.lapStart += pause;
+          entry.state.raceStart += pause;
+        }
+        hiddenAt = null;
+      }
+      if (ctx.mode) ctx.audio?.resume();
+    }
+  });
+  showMenu(ctx);
 
   // Start the loop now — it idles until a mode is active.
   let last = performance.now();
   function loop(now) {
     requestAnimationFrame(loop);
-    const dt = Math.min(0.05, (now - last) / 1000);
+    const frameMs = now - last;
+    const dt = Math.min(0.05, frameMs / 1000);
     last = now;
-    if (ctx.mode) tick(ctx, dt, now);
+    if (ctx.mode && !document.hidden) {
+      graphics.sample(frameMs);
+      tick(ctx, dt, now);
+    }
   }
   requestAnimationFrame(loop);
 }
 
-function showMenu() {
-  document.getElementById('menu').classList.remove('hidden');
+function showMenu(ctx) {
+  const menu = document.getElementById('menu');
+  menu.classList.remove('hidden'); menu.inert = false;
+  document.getElementById('ui').inert = true;
+  ctx?.renderGarage?.();
 }
 function hideMenu() {
   document.getElementById('menu').classList.add('hidden');
+  document.getElementById('menu').inert = true;
+  document.getElementById('ui').inert = false;
 }
 
 // Build the circuit picker cards in the menu. Selecting a card rebuilds the
 // track immediately so the minimap (and the next race) use it.
 function buildTrackSelector(container, ctx, rebuildTrack) {
-  if (!container) return;
+  const descriptions = { gp: 'Interlagos · Brazil', sprint: 'Sunset Speedway · Oval',
+    downtown: 'Marina Bay · Singapore', alpine: 'Spa-Francorchamps · Belgium',
+    dunes: 'Sakhir · Bahrain', parco: 'Monza · Italy' };
   container.innerHTML = '';
-  const cards = [];
-  for (const def of TRACKS) {
-    const btn = document.createElement('button');
-    btn.className = 'track-card' + (def.id === ctx.selectedTrackId ? ' selected' : '');
-    btn.dataset.track = def.id;
-    const diffClass = def.difficulty.toLowerCase().replace(/[^a-z]/g, '');
-    btn.innerHTML =
-      `<div class="track-head">` +
-        `<span class="track-name">${def.name}</span>` +
-        `<span class="track-diff diff-${diffClass}">${def.difficulty}</span>` +
-      `</div>` +
-      `<div class="track-sub">${def.subtitle}</div>` +
-      `<div class="track-blurb">${def.blurb}</div>`;
-    btn.addEventListener('click', () => {
-      if (ctx.selectedTrackId === def.id) return;
-      cards.forEach((c) => c.classList.remove('selected'));
-      btn.classList.add('selected');
-      rebuildTrack(def);
-    });
-    container.appendChild(btn);
-    cards.push(btn);
+  function updateDetail() {
+    document.getElementById('circuit-description').textContent = descriptions[ctx.selectedTrackId] || ctx.track.name;
+    document.getElementById('circuit-length').textContent = `${(ctx.track.length / 1000).toFixed(2)} KM`;
   }
+  const cards = [];
+  for (const [index, def] of TRACKS.entries()) {
+    const btn = document.createElement('button');
+    const selected = def.id === ctx.selectedTrackId;
+    btn.className = 'track-card' + (selected ? ' selected' : '');
+    btn.dataset.track = def.id;
+    btn.setAttribute('aria-pressed', String(selected));
+    const curve = new THREE.CatmullRomCurve3(def.controlPoints.map(([x, z]) => new THREE.Vector3(x, 0, z)),
+      true, def.curveType ?? 'catmullrom', def.tension ?? 0.5);
+    const points = curve.getPoints(180);
+    const box = new THREE.Box3().setFromPoints(points);
+    const scale = Math.min(106 / (box.max.x - box.min.x), 62 / (box.max.z - box.min.z));
+    const centre = box.getCenter(new THREE.Vector3());
+    const path = points.map((p, i) => `${i ? 'L' : 'M'}${(60 + (p.x - centre.x) * scale).toFixed(1)},${(38 + (p.z - centre.z) * scale).toFixed(1)}`).join(' ') + ' Z';
+    btn.innerHTML = `<span class="track-number">0${index + 1}</span><span class="track-check" aria-hidden="true">↗</span>
+      <svg viewBox="0 0 120 76" aria-hidden="true"><path d="${path}"/></svg>
+      <span class="track-name">${def.name}</span><span class="track-sub">${def.difficulty}</span>`;
+    btn.addEventListener('click', async () => {
+      if (ctx.selectedTrackId === def.id || container.getAttribute('aria-busy') === 'true') return;
+      container.setAttribute('aria-busy', 'true');
+      document.querySelectorAll('button.mode[data-mode]').forEach(b => b.disabled = true);
+      document.getElementById('circuit-description').textContent = 'Preparing circuit…';
+      await frame(); await frame();
+      try {
+        rebuildTrack(def);
+        cards.forEach(c => { const on = c === btn; c.classList.toggle('selected', on); c.setAttribute('aria-pressed', String(on)); });
+        updateDetail();
+      } finally {
+        container.setAttribute('aria-busy', 'false');
+        document.querySelectorAll('button.mode[data-mode]').forEach(b => b.disabled = false);
+      }
+    });
+    container.appendChild(btn); cards.push(btn);
+  }
+  updateDetail();
 }
 
 function startMode(ctx, mode) {
@@ -247,6 +316,10 @@ function startMode(ctx, mode) {
   destroyCars(ctx);
 
   ctx.mode = mode;
+  ctx.graphics.resetSamples();
+  ctx.camera.aspect = window.innerWidth / window.innerHeight;
+  ctx.camera.updateProjectionMatrix();
+  document.getElementById('race-circuit-name').textContent = ctx.track.name;
   ctx.primaryPlayerIdx = 0;
   ctx.state = createGameState(mode);
 
@@ -299,7 +372,7 @@ function stopMode(ctx) {
   ctx.hud.clearAnnouncements();
   hideFinish();
   ctx.track.startLights.set(0);
-  showMenu();
+  showMenu(ctx);
 }
 
 // ---------- Finish screen ----------
@@ -443,6 +516,7 @@ function gridSpawn(track, idx) {
 
 function destroyCars(ctx) {
   for (const c of ctx.cars) {
+    c.input?.dispose();
     c.car.dispose();
     ctx.scene.remove(c.car.visual.root);
     c.car.visual.wheels.forEach((w) => ctx.scene.remove(w));
@@ -646,6 +720,10 @@ function tick(ctx, dt, now) {
       if (p.uniforms && p.uniforms.uTime) p.uniforms.uTime.value = now * 0.001;
     });
   }
+
+  const graphicsLabel = `${ctx.graphics.choice === 'auto' ? 'AUTO · ' : ''}${ctx.graphics.preset.toUpperCase()}`;
+  const graphicsStatus = document.getElementById('graphics-status');
+  if (graphicsStatus.textContent !== graphicsLabel) graphicsStatus.textContent = graphicsLabel;
 
   // Render
   if (ctx.mode === 'two-player') {

@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Racer2 — Hyperreal GT</title>
+    <title>Racer2 — Circuit Series</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2305060a'/%3E%3Ctext x='8' y='12' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='800' fill='%2327d2ff'%3ER%3C/text%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
@@ -18,25 +18,35 @@
     </div>
 
     <div id="menu" class="hidden">
-      <div class="menu-inner">
-        <div class="title">RACER<span>2</span></div>
-        <div class="subtitle">SELECT CIRCUIT</div>
-        <div id="track-list" class="track-list"></div>
-        <div class="subtitle subtitle-modes">SELECT MODE</div>
-        <div class="mode-list">
-          <button class="mode" data-mode="time-trial">
-            <div class="mode-name">TIME TRIAL</div>
-            <div class="mode-desc">Empty track. One flying lap against the clock.</div>
-          </button>
-          <button class="mode" data-mode="quick-race">
-            <div class="mode-name">QUICK RACE</div>
-            <div class="mode-desc">You vs. 3 AI opponents over 3 laps.</div>
-          </button>
-          <button class="mode" data-mode="two-player">
-            <div class="mode-name">TWO PLAYER</div>
-            <div class="mode-desc">Split-screen. WASD vs. Arrows.</div>
-          </button>
-        </div>
+      <div class="race-menu">
+        <header class="menu-header">
+          <a class="wordmark" href="./" aria-label="Racer2 home">RACER<span>2</span><i></i></a>
+          <span class="header-caption">THE CIRCUIT IS YOURS.</span>
+          <span class="edition">CIRCUIT SERIES <b>06</b></span>
+        </header>
+        <main class="menu-layout">
+          <section class="garage-panel" aria-label="Your car">
+            <div class="eyebrow"><span class="status-dot"></span> READY TO RACE</div>
+            <h1>Find your<br><em>next limit.</em></h1>
+            <p class="hero-copy">Six circuits. Three ways to race.<br>One more lap.</p>
+            <div class="garage-stage"><canvas id="garage" aria-label="Red GT coupe with endurance racing stripes"></canvas><span class="garage-caption">01 / GT COUPE</span></div>
+            <div class="car-specs"><div><strong>480</strong><span>HORSEPOWER</span></div><div><strong>6</strong><span>SPEED AUTO</span></div><div><strong>RWD</strong><span>DRIVETRAIN</span></div></div>
+            <div class="garage-footer"><span>DRIVE WITH <kbd>W A S D</kbd> OR <kbd>↑ ← ↓ →</kbd></span><span>CHASE / HOOD / CINEMATIC</span></div>
+          </section>
+          <section class="race-setup" aria-label="Race setup">
+            <div class="section-heading"><h2><span>01</span> Choose your circuit</h2><span>6 LOCATIONS</span></div>
+            <div id="track-list" class="track-list"></div>
+            <div class="selected-circuit"><span id="circuit-description"></span><strong id="circuit-length"></strong></div>
+            <div class="section-heading mode-heading"><h2><span>02</span> Take the grid</h2></div>
+            <div class="mode-list">
+              <button class="mode featured" data-mode="quick-race"><span class="mode-icon" aria-hidden="true">01</span><span><span class="mode-name">Quick race</span><span class="mode-desc">3 rivals · 3 laps · All in.</span></span><span class="mode-arrow" aria-hidden="true">↗</span></button>
+              <button class="mode" data-mode="time-trial"><span class="mode-icon" aria-hidden="true">02</span><span><span class="mode-name">Time trial</span><span class="mode-desc">An open track. Your fastest lap.</span></span><span class="mode-arrow" aria-hidden="true">↗</span></button>
+              <button class="mode" data-mode="two-player"><span class="mode-icon" aria-hidden="true">03</span><span><span class="mode-name">Two player</span><span class="mode-desc">Split screen · WASD vs. arrows</span></span><span class="mode-arrow" aria-hidden="true">↗</span></button>
+            </div>
+            <div class="graphics-settings"><div><label for="graphics-quality">GRAPHICS</label><p id="graphics-description">Adapts to keep your race smooth.</p></div><select id="graphics-quality"><option value="auto">Auto (recommended)</option><option value="performance">Performance</option><option value="balanced">Balanced</option><option value="high">High</option></select></div>
+          </section>
+        </main>
+        <footer class="menu-footer"><span>BUILT FOR THE NEXT LAP.</span><span>KEYBOARD CONTROLS <span aria-hidden="true">/</span> SOUND ON AT START</span></footer>
       </div>
     </div>
 
@@ -56,6 +66,8 @@
     </div>
 
     <div id="ui" class="hidden">
+      <div id="race-identity"><b>RACER<span>2</span></b><span id="race-circuit-name"></span></div>
+      <div id="graphics-status"></div>
       <div id="race-banner" class="hidden"></div>
       <div id="wrong-way" class="hidden">WRONG WAY</div>
       <div id="hud-top">

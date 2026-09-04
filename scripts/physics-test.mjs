@@ -38,7 +38,7 @@ let pass = 0, fail = 0;
 const ck = (n, ok, d = '') => { console.log(`${ok ? 'PASS' : 'FAIL'}  ${n}${d ? '  — ' + d : ''}`); ok ? pass++ : fail++; };
 
 async function startMode(mode) {
-  await page.waitForSelector(`button.mode[data-mode="${mode}"]`);
+  await page.waitForSelector(`button.mode[data-mode="${mode}"]`, { state: 'attached' });
   await page.evaluate((m) => document.querySelector(`button.mode[data-mode="${m}"]`).click(), mode);
   await page.waitForTimeout(600);
   await page.evaluate(() => { window.__ctx.mode = null; }); // stop rAF from stepping
