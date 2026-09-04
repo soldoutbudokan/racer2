@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {
   makeTire, makeSidewall, makeRimDark, makeDisc, makeCaliper,
 } from './carMaterials.js';
+import { alloyMaps } from './texgen.js';
 import { mergeByMaterial } from './merge.js';
 
 // Local wheel materials (carMaterials' shared rim was near-chrome and bloomed
@@ -10,10 +11,15 @@ import { mergeByMaterial } from './merge.js';
 let _alloy = null; // satin machined alloy — deliberately mid-grey so the face
 export function makeAlloy() { // reads as metal spokes, not a blown-out halo
   if (_alloy) return _alloy;
+  const maps = alloyMaps();
   _alloy = new THREE.MeshPhysicalMaterial({
-    color: 0x84898f, metalness: 1.0, roughness: 0.34,
+    color: 0xb8bdc5,
+    map: maps.map,
+    metalness: 1.0,
+    roughness: 0.78,
+    roughnessMap: maps.roughnessMap,
     clearcoat: 0.3, clearcoatRoughness: 0.12,
-    envMapIntensity: 0.65,
+    envMapIntensity: 0.68,
   });
   return _alloy;
 }
@@ -59,13 +65,13 @@ const STYLES = {
 };
 
 // Lathe segments for everything that shows a round SILHOUETTE (tread,
-// sidewalls, rim lip). 24 puts a 15 deg facet on a 0.36 m radius — about
-// 3 mm of sagitta, i.e. a pixel at the distance a rival car is ever seen from —
+// sidewalls, rim lip). 32 puts an 11.25 deg facet on a 0.36 m radius — about
+// 1.7 mm of sagitta, i.e. below a pixel at normal chase-camera distance —
 // and it has to be the SAME number for the tread and the sidewalls or the
 // shoulder seam they share splits open. Four wheels per car x five cars makes
 // this the single most multiplied number in the whole model, which is why it is
-// 24 and not 30.
-const TYRE_SEG = 24;
+// 32 rather than an automotive-visualiser count such as 64.
+const TYRE_SEG = 32;
 
 // Tyre cross-section, positive-x half, ordered tread → bead (increasing axial
 // keeps LatheGeometry normals outward): rounded shoulder, bulged sidewall
@@ -87,9 +93,21 @@ const SIDEWALL_PROFILE = [
   [0.2430, 0.1010],  // bead, tucked under the rim lip
 ];
 
-// Tread band with a gentle crown; max radius exactly RADIUS.
-const TREAD_PROFILE = [
+// Slick tread band with a gentle crown; max radius exactly RADIUS.
+const SLICK_TREAD_PROFILE = [
   [0.3595, -0.086], [RADIUS, -0.045], [RADIUS, 0.045], [0.3595, 0.086],
+];
+
+// Road tread with four 6 mm-deep circumferential channels. These grooves
+// affect the silhouette and shade themselves; the normal map supplies the
+// smaller chevron cuts and sipes between them.
+const ROAD_TREAD_PROFILE = [
+  [0.3595, -0.086], [RADIUS, -0.074],
+  [RADIUS, -0.063], [0.3540, -0.059], [0.3540, -0.054], [RADIUS, -0.050],
+  [RADIUS, -0.027], [0.3535, -0.023], [0.3535, -0.018], [RADIUS, -0.014],
+  [RADIUS, 0.014], [0.3535, 0.018], [0.3535, 0.023], [RADIUS, 0.027],
+  [RADIUS, 0.050], [0.3540, 0.054], [0.3540, 0.059], [RADIUS, 0.063],
+  [RADIUS, 0.074], [0.3595, 0.086],
 ];
 
 // Revolve a [radius, axial] profile about the wheel spin axis (X).
@@ -103,17 +121,113 @@ function latheX(pts, segments) {
 // hub and leaning inboard so the assembled face reads as a concave dish.
 function spokeGeo(style, dir) {
   const len = SPOKE_R1 - SPOKE_R0;
-  const g = new THREE.BoxGeometry(0.030, len, style.spokeW);
+  const hubHalf = style.spokeW * 0.30;
+  const rimHalf = style.spokeW * 0.50;
+  const outline = new THREE.Shape();
+  outline.moveTo(-hubHalf, 0);
+  outline.lineTo(hubHalf, 0);
+  outline.lineTo(rimHalf, len);
+  outline.lineTo(-rimHalf, len);
+  outline.closePath();
+  // A bevel catches a narrow highlight along the spoke edge. The old sheared
+  // box had perfectly sharp 90-degree edges, which reads as low-poly even when
+  // the wheel silhouette itself is round.
+  const g = new THREE.ExtrudeGeometry(outline, {
+    depth: 0.024,
+    steps: 1,
+    curveSegments: 1,
+    bevelEnabled: true,
+    bevelSegments: 1,
+    bevelSize: 0.004,
+    bevelThickness: 0.003,
+  });
+  g.translate(0, 0, -0.012);
+  g.rotateY(Math.PI / 2); // extrude Z → wheel X; outline X → wheel tangent Z
   const pos = g.getAttribute('position');
   const lean = SPOKE_HUB_X - SPOKE_RIM_X; // negative → deeper at the hub
   for (let i = 0; i < pos.count; i++) {
-    const t = (pos.getY(i) + len / 2) / len;    // 0 = hub end, 1 = rim end
-    const k = THREE.MathUtils.lerp(0.60, 1, t); // taper toward the hub
-    pos.setZ(i, pos.getZ(i) * k);
-    pos.setX(i, pos.getX(i) * k + dir * (SPOKE_RIM_X + (1 - t) * lean));
+    const t = THREE.MathUtils.clamp(pos.getY(i) / len, 0, 1);
+    pos.setX(i, pos.getX(i) + dir * (SPOKE_HUB_X + t * -lean));
   }
-  g.translate(0, SPOKE_R0 + len / 2, 0);
-  g.computeVertexNormals(); // re-flatten after the taper/lean shear
+  g.translate(0, SPOKE_R0, 0);
+  g.computeVertexNormals();
+  return g;
+}
+
+// The alloy textures are authored radially: v=0 at the hub and v=1 at the
+// flange. Preserve each primitive's useful circumferential u coordinate while
+// replacing v, so lips, dishes and spokes all share one continuous dust falloff.
+function setRadialV(g, maxRadius = RIM_R) {
+  const pos = g.getAttribute('position');
+  const uv = g.getAttribute('uv');
+  if (!pos || !uv) return g;
+  for (let i = 0; i < pos.count; i++) {
+    uv.setY(i, THREE.MathUtils.clamp(Math.hypot(pos.getY(i), pos.getZ(i)) / maxRadius, 0, 1));
+  }
+  uv.needsUpdate = true;
+  return g;
+}
+
+// Ventilated rotor shell with UVs that match discMaps: u around the disc and
+// v from the hat to the swept outer edge. A true annulus also stops the brake
+// disc reading as a solid silver coin behind the wheel.
+function brakeRotorGeo(innerR = 0.087, outerR = 0.185, thickness = 0.032,
+  segments = 40, rings = 3) {
+  const positions = [], normals = [], uvs = [], indices = [];
+  const half = thickness / 2;
+
+  for (const side of [-1, 1]) {
+    const base = positions.length / 3;
+    for (let j = 0; j <= rings; j++) {
+      const v = j / rings;
+      const r = THREE.MathUtils.lerp(innerR, outerR, v);
+      for (let i = 0; i <= segments; i++) {
+        const u = i / segments;
+        const a = u * Math.PI * 2;
+        positions.push(side * half, Math.cos(a) * r, Math.sin(a) * r);
+        normals.push(side, 0, 0);
+        uvs.push(u, v);
+      }
+    }
+    const row = segments + 1;
+    for (let j = 0; j < rings; j++) {
+      for (let i = 0; i < segments; i++) {
+        const a = base + j * row + i;
+        const b = a + row;
+        if (side > 0) indices.push(a, b, b + 1, a, b + 1, a + 1);
+        else indices.push(a, b + 1, b, a, a + 1, b + 1);
+      }
+    }
+  }
+
+  for (const edge of [
+    { r: innerR, v: 0, normalSign: -1 },
+    { r: outerR, v: 1, normalSign: 1 },
+  ]) {
+    const base = positions.length / 3;
+    for (let i = 0; i <= segments; i++) {
+      const u = i / segments;
+      const a = u * Math.PI * 2;
+      const cy = Math.cos(a), sz = Math.sin(a);
+      for (const side of [-1, 1]) {
+        positions.push(side * half, cy * edge.r, sz * edge.r);
+        normals.push(0, cy * edge.normalSign, sz * edge.normalSign);
+        uvs.push(u, edge.v);
+      }
+    }
+    for (let i = 0; i < segments; i++) {
+      const a = base + i * 2;
+      if (edge.normalSign > 0) indices.push(a, a + 2, a + 3, a, a + 3, a + 1);
+      else indices.push(a, a + 3, a + 2, a, a + 1, a + 3);
+    }
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  g.setIndex(indices);
+  g.computeBoundingSphere();
   return g;
 }
 
@@ -124,21 +238,23 @@ function buildFace(style, dir) {
   const rimMat = style.rim === 'dark' ? makeRimDark() : makeAlloy();
 
   // Outer rim lip — the bright ring that defines the wheel diameter.
-  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.238, 0.013, 4, TYRE_SEG), rimMat);
+  const lipGeo = setRadialV(new THREE.TorusGeometry(0.238, 0.013, 6, TYRE_SEG));
+  const lip = new THREE.Mesh(lipGeo, rimMat);
   lip.rotation.y = Math.PI / 2;
   lip.position.x = dir * LIP_X;
   face.add(lip);
 
   // Dish: conical band dropping from the lip back to the recessed spoke
   // plane. This is what gives the wheel its barrel depth.
-  const dishGeo = new THREE.CylinderGeometry(DISH_OUT_R, DISH_IN_R, DISH_DEPTH, 22, 1, true);
+  const dishGeo = new THREE.CylinderGeometry(DISH_OUT_R, DISH_IN_R, DISH_DEPTH, 28, 1, true);
   dishGeo.rotateZ(-dir * (Math.PI / 2)); // wide end toward the lip
+  setRadialV(dishGeo);
   const dish = new THREE.Mesh(dishGeo, rimMat);
   dish.position.x = dir * (LIP_X - 0.002 - DISH_DEPTH / 2);
   face.add(dish);
 
   // Spokes radiate in the YZ plane, recessed behind the lip.
-  const sGeo = spokeGeo(style, dir);
+  const sGeo = setRadialV(spokeGeo(style, dir));
   const n = style.spokes;
   for (let i = 0; i < n; i++) {
     const ang = (i / n) * Math.PI * 2;
@@ -157,8 +273,10 @@ function buildFace(style, dir) {
   }
 
   // Hub, recessed with the spokes.
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.055, 12), rimMat);
-  hub.rotation.z = Math.PI / 2;
+  const hubGeo = new THREE.CylinderGeometry(0.078, 0.078, 0.055, 18);
+  hubGeo.rotateZ(Math.PI / 2);
+  setRadialV(hubGeo);
+  const hub = new THREE.Mesh(hubGeo, rimMat);
   hub.position.x = dir * SPOKE_HUB_X;
   face.add(hub);
 
@@ -204,14 +322,25 @@ function buildTemplateRaw(styleKey, style) {
   const group = new THREE.Group();
 
   // Tyre: lathed profile — crowned tread band + two bulged sidewalls.
-  const tread = new THREE.Mesh(latheX(TREAD_PROFILE, TYRE_SEG), makeTire());
+  const slick = styleKey === 'openWheel';
+  const treadProfile = slick ? SLICK_TREAD_PROFILE : ROAD_TREAD_PROFILE;
+  const tread = new THREE.Mesh(latheX(treadProfile, TYRE_SEG), makeTire(slick));
   tread.castShadow = true;
   group.add(tread);
   for (const dir of [1, -1]) {
     const pts = dir > 0
       ? SIDEWALL_PROFILE
       : [...SIDEWALL_PROFILE].reverse().map((p) => [p[0], -p[1]]);
-    const sw = new THREE.Mesh(latheX(pts, TYRE_SEG), makeSidewall());
+    const swGeo = latheX(pts, TYRE_SEG);
+    // Reversing the profile fixes the inner face's winding but also reverses
+    // its v coordinate; flip v back so shoulder lettering and bead dust remain
+    // in the same physical place on both sides.
+    if (dir < 0) {
+      const uv = swGeo.getAttribute('uv');
+      for (let i = 0; i < uv.count; i++) uv.setY(i, 1 - uv.getY(i));
+      uv.needsUpdate = true;
+    }
+    const sw = new THREE.Mesh(swGeo, makeSidewall());
     sw.castShadow = true;
     group.add(sw);
   }
@@ -243,11 +372,7 @@ function buildTemplateRaw(styleKey, style) {
   group.add(plug);
 
   // Brakes: dark hat + inset rotor, distinct radii/materials.
-  const rotor = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.185, 0.185, 0.032, 22),
-    makeDisc(),
-  );
-  rotor.rotateZ(Math.PI / 2);
+  const rotor = new THREE.Mesh(brakeRotorGeo(), makeDisc());
   group.add(rotor);
   const hat = new THREE.Mesh(
     new THREE.CylinderGeometry(0.085, 0.085, 0.044, 12),

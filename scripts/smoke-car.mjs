@@ -36,7 +36,8 @@ const { buildVisualCar, ARCHETYPE_KEYS } = await import('../src/carModels/index.
 function checkGeom(label, geo) {
   const pos = geo.getAttribute('position');
   const nor = geo.getAttribute('normal');
-  let nan = 0, badNormal = 0;
+  const uv = geo.getAttribute('uv');
+  let nan = 0, badNormal = 0, badUv = 0;
   for (let i = 0; i < pos.count; i++) {
     if (!Number.isFinite(pos.getX(i)) || !Number.isFinite(pos.getY(i)) || !Number.isFinite(pos.getZ(i))) nan++;
     if (nor) {
@@ -44,12 +45,32 @@ function checkGeom(label, geo) {
       const len = Math.hypot(nx, ny, nz);
       if (!Number.isFinite(len) || len < 0.5) badNormal++;
     }
+    if (uv && (!Number.isFinite(uv.getX(i)) || !Number.isFinite(uv.getY(i)))) badUv++;
   }
   geo.computeBoundingBox();
   const b = geo.boundingBox;
-  console.log(`  [${label}] verts=${pos.count} tris=${geo.index ? geo.index.count / 3 : '?'} nan=${nan} badNormal=${badNormal}`);
+  console.log(`  [${label}] verts=${pos.count} tris=${geo.index ? geo.index.count / 3 : '?'} nan=${nan} badNormal=${badNormal} badUv=${badUv}`);
   console.log(`     bbox x[${b.min.x.toFixed(2)},${b.max.x.toFixed(2)}] y[${b.min.y.toFixed(2)},${b.max.y.toFixed(2)}] z[${b.min.z.toFixed(2)},${b.max.z.toFixed(2)}]`);
-  return nan === 0;
+  return nan === 0 && badNormal === 0 && badUv === 0;
+}
+
+function checkObjectGeometry(label, root) {
+  let meshes = 0, invalid = 0;
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry?.getAttribute('position')) return;
+    meshes++;
+    const pos = o.geometry.getAttribute('position');
+    const nor = o.geometry.getAttribute('normal');
+    const uv = o.geometry.getAttribute('uv');
+    for (let i = 0; i < pos.count; i++) {
+      const values = [pos.getX(i), pos.getY(i), pos.getZ(i)];
+      if (nor) values.push(nor.getX(i), nor.getY(i), nor.getZ(i));
+      if (uv) values.push(uv.getX(i), uv.getY(i));
+      if (values.some((n) => !Number.isFinite(n))) invalid++;
+    }
+  });
+  console.log(`  [${label}] meshes=${meshes} invalid attributes=${invalid}`);
+  return invalid === 0;
 }
 
 function countMeshes(obj) {
@@ -92,6 +113,7 @@ for (const key of ARCHETYPE_KEYS) {
   const wheelStats = v.wheels.reduce((a, w) => {
     const s = countMeshes(w); return { n: a.n + s.n, tris: a.tris + s.tris };
   }, { n: 0, tris: 0 });
+  ok = checkObjectGeometry('wheel geometry', v.wheels[0]) && ok;
   console.log(`  root meshes=${rootStats.n} tris=${rootStats.tris} | 4 wheels meshes=${wheelStats.n} tris=${wheelStats.tris}`);
   console.log(`  TOTAL tris/car ≈ ${rootStats.tris + wheelStats.tris}`);
   // contract check

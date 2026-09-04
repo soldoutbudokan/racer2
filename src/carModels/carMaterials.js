@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {
-  flakeNormal, orangePeelNormal, carbonNormal, treadNormal,
-  paintRoughness, grilleNormal,
+  flakeNormal, orangePeelNormal, carbonNormal, treadMaps, slickTreadMaps,
+  sidewallMaps, discMaps, paintRoughness, grilleNormal,
 } from './texgen.js';
 
 // ---------------------------------------------------------------------------
@@ -163,24 +163,48 @@ export function makeSatin() {
   return _satin;
 }
 
-let _tire = null;
-export function makeTire() {
-  if (_tire) return _tire;
-  const n = treadNormal();
-  n.repeat.set(8, 1);
-  _tire = new THREE.MeshPhysicalMaterial({
-    color: 0x080809, roughness: 0.90, metalness: 0.0,
-    sheen: 0.40, sheenRoughness: 0.45,  // rubber sheen gives the characteristic highlight
-    normalMap: n, normalScale: new THREE.Vector2(0.75, 0.75),
+const tireCache = new Map();
+export function makeTire(slick = false) {
+  const key = slick ? 'slick' : 'road';
+  if (tireCache.has(key)) return tireCache.get(key);
+  const maps = slick ? slickTreadMaps() : treadMaps();
+  const tire = new THREE.MeshPhysicalMaterial({
+    // The colour lives in the map: road grime, worn crowns and groove floors
+    // need different albedos. Multiplying that map by the old 0x080809 base
+    // crushed all of it back to black.
+    color: 0xffffff,
+    map: maps.map,
+    roughness: 1.0,
+    roughnessMap: maps.roughnessMap,
+    metalness: 0.0,
+    sheen: 0.40,
+    sheenRoughness: 0.45,
+    normalMap: maps.normalMap,
+    normalScale: slick
+      ? new THREE.Vector2(0.22, 0.22)
+      : new THREE.Vector2(0.82, 0.82),
+    envMapIntensity: 0.32,
   });
-  return _tire;
+  tireCache.set(key, tire);
+  return tire;
 }
 
 let _sidewall = null;
 export function makeSidewall() {
   if (_sidewall) return _sidewall;
+  const maps = sidewallMaps();
   _sidewall = new THREE.MeshPhysicalMaterial({
-    color: 0x0d0d0f, roughness: 0.78, metalness: 0.0, sheen: 0.3,
+    // Raised moulding, tyre-size stamps and brake-dust staining are all
+    // procedural and shared by every wheel.
+    color: 0xffffff,
+    map: maps.map,
+    roughness: 0.86,
+    metalness: 0.0,
+    sheen: 0.32,
+    sheenRoughness: 0.52,
+    normalMap: maps.normalMap,
+    normalScale: new THREE.Vector2(0.78, 0.92),
+    envMapIntensity: 0.28,
   });
   return _sidewall;
 }
@@ -208,8 +232,16 @@ export function makeRimDark() {
 let _disc = null;
 export function makeDisc() {
   if (_disc) return _disc;
+  const maps = discMaps();
   _disc = new THREE.MeshStandardMaterial({
-    color: 0x3a3e44, metalness: 1.0, roughness: 0.45,
+    color: 0xffffff,
+    map: maps.map,
+    metalness: 1.0,
+    roughness: 1.0,
+    roughnessMap: maps.roughnessMap,
+    normalMap: maps.normalMap,
+    normalScale: new THREE.Vector2(0.60, 0.82),
+    envMapIntensity: 0.72,
   });
   return _disc;
 }

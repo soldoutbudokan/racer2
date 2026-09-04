@@ -237,26 +237,19 @@ export function grilleNormal() {
 }
 
 // ---------------------------------------------------------------------------
-// TYRE TREAD. The circumferential grooves are real geometry now (wheels.js
+// ROAD-TYRE TREAD. The circumferential grooves are real geometry (wheels.js
 // lathes them into the tread band), so the map carries what geometry cannot
-// afford: the LATERAL groove pitch, the sipes inside each block, and the
-// rubber/dust colouring. Chevron-shaped, because a straight lateral groove
-// across the whole width reads as a stack of hoops at speed.
+// afford: lateral groove pitch, sipes, scrub marks and rubber/dust colouring.
+// Slicks use slickTreadMaps below instead of hiding in one edge of this map.
 // ---------------------------------------------------------------------------
 
-const TREAD_SLICK_V = 0.94;   // v above this is the plain slick band
-
 // s = 0 at the tread centre line, 1 at the shoulder.
-function treadShoulder(v) { return clamp01(Math.abs(v - 0.45) / 0.45); }
+function treadShoulder(v) { return clamp01(Math.abs(v - 0.5) / 0.5); }
 
 function treadHeight(u, v) {
-  if (v > TREAD_SLICK_V) {
-    // Slick band: no pattern, just faint scuffing so it is not glassy.
-    return 0.62 + fractalNoise(u * 40, v * 40, 2) * 0.08;
-  }
   const s = treadShoulder(v);
   const blocks = 3;                       // lateral grooves per texture tile
-  const phase = u + (v - 0.45) * 0.30;    // chevron sweep
+  const phase = u + (v - 0.5) * 0.30;     // chevron sweep
   let g = (phase * blocks) % 1; if (g < 0) g += 1;
   // Groove: 15% of the pitch, with a slightly softened wall so the normal map
   // does not fight the real geometry grooves crossing it.
@@ -296,6 +289,47 @@ export function treadMaps() {
   }, { clampV: true });
   _treadMaps = { map, normalMap, roughnessMap };
   return _treadMaps;
+}
+
+// Racing slicks need a separate finish. Reusing the road-tyre map put chevron
+// blocks and sipes on the open-wheeler, which made its exposed tyres look like
+// road-car wheels. The slick keeps only scrubbed rubber, a faint centre wear
+// band and picked-up dust toward the shoulders.
+let _slickTreadMaps = null;
+export function slickTreadMaps() {
+  if (_slickTreadMaps) return _slickTreadMaps;
+  const W = 256, H = 128;
+  const wearNoise = (u, v) => {
+    const a = u * Math.PI * 2;
+    // Sample value noise around a closed loop so the circumferential seam is
+    // genuinely tileable instead of joining two unrelated noise values.
+    return fractalNoise(
+      Math.cos(a) * 3.2 + v * 1.7 + 11,
+      Math.sin(a) * 3.2 - v * 1.3 + 7,
+      3,
+    );
+  };
+  const normalMap = normalFromHeight(W, (u, v) => {
+    const scrub = wearNoise(u, v);
+    const circumferential = Math.sin((u * 74 + v * 2.5) * Math.PI * 2) * 0.08;
+    return 0.50 + scrub * 0.18 + circumferential;
+  }, 0.24, H, { wrapV: false, texOpts: { clampV: true } });
+  const map = pixelTexture(W, H, (u, v, out) => {
+    const shoulder = clamp01((Math.abs(v - 0.5) - 0.30) / 0.20);
+    const centreWear = Math.exp(-(((v - 0.5) / 0.19) ** 2));
+    const grime = clamp01(wearNoise(u, v) * 0.75 + shoulder * 0.55 - 0.18);
+    const base = 0.105 + centreWear * 0.025;
+    out[0] = lerp(base, 0.21, grime * 0.55) * 255;
+    out[1] = lerp(base, 0.19, grime * 0.55) * 255;
+    out[2] = lerp(base * 1.03, 0.16, grime * 0.55) * 255;
+  }, { srgb: true, clampV: true });
+  const roughnessMap = pixelTexture(128, 64, (u, v, out) => {
+    const shoulder = clamp01((Math.abs(v - 0.5) - 0.30) / 0.20);
+    const g = clamp01(0.72 + wearNoise(u, v) * 0.15 + shoulder * 0.12) * 255;
+    out[0] = out[1] = out[2] = g;
+  }, { clampV: true });
+  _slickTreadMaps = { map, normalMap, roughnessMap };
+  return _slickTreadMaps;
 }
 
 // Back-compat: this used to be the tyre's only map.
