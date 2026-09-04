@@ -25,15 +25,18 @@ jobs:
       - run: npm run build
       - run: node scripts/graphics-test.mjs && node scripts/smoke-car.mjs
       - run: npx playwright-core install --with-deps chromium
-      - name: Start game and base revision
+      - name: Start game
+        run: |
+          npm run dev -- --host 127.0.0.1 > /tmp/racer2-vite.log 2>&1 &
+          node --input-type=module -e 'import {chromium} from "playwright-core"; console.log("CHROME_EXE=" + chromium.executablePath())' >> "$GITHUB_ENV"
+      - name: Start base revision for before/after rendering
+        if: matrix.check == 'visual'
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           git worktree add ../racer2-base "$BASE_SHA"
           ln -s "$PWD/node_modules" ../racer2-base/node_modules
-          npm run dev -- --host 127.0.0.1 > /tmp/racer2-vite.log 2>&1 &
           (cd ../racer2-base && npm run dev -- --host 127.0.0.1 --port 5174 > /tmp/racer2-base.log 2>&1) &
-          node --input-type=module -e 'import {chromium} from "playwright-core"; console.log("CHROME_EXE=" + chromium.executablePath())' >> "$GITHUB_ENV"
       - name: Driving and circuit regression suite
         if: matrix.check == 'physics'
         run: node scripts/physics-test.mjs

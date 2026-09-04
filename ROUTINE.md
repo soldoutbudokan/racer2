@@ -73,17 +73,15 @@ The visuals render through SwiftShader here, which is representative of the
 deployed build but not pixel-identical to a real GPU — judge gross issues
 (blow-outs, black voids, z-fighting, floating geometry), not subtle tone.
 
-**Whole-frame PNG comparison works now, but only for `viewshot.mjs`.** The
+**Whole-frame PNG comparison should now work for every shooter.** The
 scenery seed was pinned on 2026-08-06 (`src/scenery/rng.js`, plus GTAO's noise
-texture and the shooter's film-grain phase — see that Changelog entry), so two
-`viewshot` runs of identical code are **byte-identical** where they used to
-differ on 56–81 % of the frame. Diff those whole-frame and believe the answer.
-**Every other shooter still carries the wall-clock film grain**
-(`startlights`, `bodyshot`, `wheelshot`, `lineshot`, `launchshot`,
-`audit-shots`, …): their scenery is stable but a `pngdiff` of two of their runs
-reads a few percent of grain that means nothing, so keep using `pngdiff --box`
-on the region you changed for those until the pin is lifted into a shared
-helper. See the 2026-08-06 Backlog entry.
+texture), and the cinematic pass that added wall-clock film grain was removed
+with the 2026-09-04 graphics update, so the grain that made `startlights`,
+`bodyshot`, `wheelshot`, `lineshot`, `launchshot` and `audit-shots` diffs read
+a few percent of noise is gone. `viewshot` runs of identical code were already
+byte-identical. Confirm a shooter once by diffing two runs of unchanged code;
+if it still reads a difference, look for another time-dependent input rather
+than grain, and fall back to `pngdiff --box` on the region you changed.
 
 ## Workflow each run
 
@@ -96,27 +94,33 @@ helper. See the 2026-08-06 Backlog entry.
 6. Only push to `main` after the owner replies "go".
 7. Append what you did to the Changelog, and add/clear Backlog items.
 
-## Owner-requested preview — 2026-09-04
-
-Branch `claude/racer2-visual-performance`: broad visual and performance update
-requested by the owner. Pending review; not accepted to main.
-
-- Circuit Series menu, actual circuit silhouettes, static rendered GT garage,
-  responsive layout, clearer race HUD and remembered graphics choices.
-- Auto/Balanced/Performance/High with physical-pixel budgets; lazy High-only AO
-  and bloom, correctly sized AO after composer resize, smaller shadow maps.
-- Reflective glazing removes the full-scene transmission pass. Brighter paint,
-  endurance stripes, afternoon lighting and painted runoff improve readability.
-- Forest spatial culling and distance LOD; sweep-and-prune physics; restart
-  geometry/listener cleanup and hidden-tab simulation pause.
-- New PR workflow runs the existing physics suite plus graphics, browser,
-  restart-memory and before/after rendering checks. Browser screenshots and
-  measurements are kept as Actions artifacts. Local build, graphics tests and
-  car geometry pass; Chromium requires a full Linux runtime, unavailable in
-  the restricted editing workspace, so browser verification runs in CI.
-
 ## Changelog (accepted to `main`)
 
+- **2026-09-04** (accepted → `main` 2026-09-04 as PR #5, owner: "make your
+  best judgement and merge"; was branch `claude/racer2-visual-performance`;
+  owner-directed run, so the one-change rule did not apply)
+  — **Adaptive graphics, the Circuit Series menu and spatially culled forests.**
+  - Circuit Series menu: real circuit silhouettes, a static rendered GT
+    garage, responsive layout, clearer race HUD, remembered graphics choice.
+  - Auto/Balanced/Performance/High with physical-pixel budgets; High-only AO
+    and bloom allocated on demand; 1024/2048 shadow maps. SMAA and the
+    cinematic vignette/grain pass are gone; Balanced uses FXAA.
+  - Reflective glazing drops the full-scene transmission pass. Brighter paint,
+    endurance stripes, afternoon lighting (sun 23°), painted runoff.
+  - Forest spatial batches with distance LOD; sweep-and-prune broadphase;
+    restarts release geometry and key listeners; hidden tabs pause the
+    simulation, lap clocks and audio.
+  - `verify-game` PR workflow: physics suite, graphics tests, browser checks,
+    restart-memory and before/after render accounting, screenshots kept as
+    Actions artifacts.
+  Review measured 844 → 356 draw calls and 4.82 M → 1.06 M triangles at the
+  Interlagos start line (Balanced, 1280×720); physics suite 55/55. Follow-up
+  from the review (branch `claude/pr-5-review-eptx5c`): the workflow's
+  triangle assertion compared against the PR base and would have failed every
+  later PR, so it now uses absolute budgets; MSAA is back on the canvas for the
+  paths that render directly (Performance, split-screen); Auto clamps a single
+  frame's contribution to 100 ms so one shader-compile hitch cannot lower
+  quality for the session; the unused cinematic shader was deleted.
 - **2026-09-02** (accepted → `main` 2026-09-02, owner: "push to main when
   done"; was branch `claude/game-visuals-track-modeling-wz4n8f`; owner-directed
   run — the scheduled routine's one-change rule did not apply, the owner
@@ -1644,17 +1648,14 @@ New findings from the 2026-08-05 run (not acted on — one change per run):
 
 New findings from the 2026-08-06 run (not acted on — one change per run):
 
-- **Only `viewshot.mjs` pins the film grain** (harness, medium — new
-  2026-08-06): the grain phase fix is four lines in the shooter's freeze block,
-  and every other shooter that renders through the composer still has the
-  wall-clock phase — `startlights.mjs`, `bodyshot.mjs`, `wheelshot.mjs`,
-  `scene-shot.mjs`, `skyshot.mjs`, `lineshot.mjs`, `launchshot.mjs`,
-  `shoot.mjs`, `audit-shots.mjs`. Their output is *scenery*-stable now, but
-  still carries a full-frame grain difference between runs, so a `pngdiff` of
-  two of their PNGs will read a few percent that means nothing. Lift the pin
-  into a shared helper — which is overdue anyway, since `findChrome()` is
-  copy-pasted into nine shooters with three different bodies (that is how
-  `audit-shots.mjs` ended up macOS-only, fixed this run).
+- ~~**Only `viewshot.mjs` pins the film grain**~~ (harness, medium — new
+  2026-08-06; **moot 2026-09-04**: the cinematic grain pass was removed with
+  the graphics update, so no shooter carries a wall-clock phase any more; the
+  `uTime` lines in the shooters' freeze blocks are now no-ops and can go
+  whenever a shooter is next touched). Still open from the same note: lift
+  `findChrome()` into a shared helper — it is copy-pasted into nine shooters
+  with three different bodies (that is how `audit-shots.mjs` ended up
+  macOS-only, fixed 2026-08-06).
 - **`facing-check.mjs` should be re-tested as a gate** (harness, medium —
   updated 2026-08-06): the 2026-07-27 note parked it because "mesh counts swing
   ±30 per circuit between runs on an unchanged tree" and blamed the unpinned

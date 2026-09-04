@@ -45,7 +45,10 @@ function makeDenoiseNoise(size = 64) {
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({
     canvas,
-    antialias: false,
+    // MSAA on the default framebuffer serves the paths that render directly:
+    // Performance and split-screen. Balanced and High draw into the composer's
+    // own targets and only pay a resolve on the final blit.
+    antialias: true,
     powerPreference: 'high-performance',
     stencil: false,
   });
@@ -79,13 +82,13 @@ export function createScene(canvas) {
   skyU.rayleigh.value = 2.2;        // rich blue away from the sun
   skyU.mieCoefficient.value = 0.006; // slightly more haze near the horizon
   skyU.mieDirectionalG.value = 0.80; // broader sun glow
-  // Low golden-hour sun — long dramatic shadows and warm light.
+  // Mid-afternoon sun: warm light, shadows long but not raking.
   const sunElev = THREE.MathUtils.degToRad(23);
   const sunAzim = THREE.MathUtils.degToRad(128);
   sunPos.setFromSphericalCoords(1, Math.PI / 2 - sunElev, sunAzim);
   skyU.sunPosition.value.copy(sunPos);
 
-  // Sun — warm peach-orange at very low elevation
+  // Sun — warm afternoon tint
   const sun = new THREE.DirectionalLight(0xffe4c4, 2.7);
   sun.position.copy(sunPos).multiplyScalar(800);
   sun.castShadow = true;
@@ -207,58 +210,4 @@ export function createScene(canvas) {
   window.addEventListener('resize', resize);
 
   return { renderer, scene, camera, composer, sun, updateShadowTarget, graphics };
-
 }
-
-// --- Cinematic post shader: vignette + tiny chromatic aberration + grain ---
-const CinematicShader = {
-  uniforms: {
-    tDiffuse: { value: null },
-    uTime: { value: 0 },
-    uVignette: { value: 1.0 },
-    uCA: { value: 0.0009 },
-    uGrain: { value: 0.018 },
-  },
-  vertexShader: /* glsl */ `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: /* glsl */ `
-    precision highp float;
-    uniform sampler2D tDiffuse;
-    uniform float uTime;
-    uniform float uVignette;
-    uniform float uCA;
-    uniform float uGrain;
-    varying vec2 vUv;
-
-    float hash(vec2 p) {
-      return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
-    }
-
-    void main() {
-      vec2 uv = vUv;
-      vec2 d = uv - 0.5;
-      // Chromatic aberration scaled by distance from centre
-      float r = texture2D(tDiffuse, uv + d * uCA).r;
-      float g = texture2D(tDiffuse, uv).g;
-      float b = texture2D(tDiffuse, uv - d * uCA).b;
-      vec3 col = vec3(r, g, b);
-
-      // Vignette
-      float v = smoothstep(0.95, 0.35, length(d) * 1.25);
-      col *= mix(1.0, v, uVignette * 0.55);
-
-      // Grain
-      float n = hash(uv * vec2(1920.0, 1080.0) + uTime) - 0.5;
-      col += n * uGrain;
-
-      gl_FragColor = vec4(col, 1.0);
-    }
-  `,
-};
-
-export { CinematicShader };

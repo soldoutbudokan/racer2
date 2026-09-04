@@ -98,10 +98,12 @@ try {
   });
   await page.screenshot({ path: `${out}/after-driving-view.png` });
   await measure('after-gp-high', 'high');
-  if (baseline) {
-    assert(performance.triangles < baseline.triangles * 0.7, 'Performance cuts rendered triangle work by at least 30%');
-    assert(balanced.triangles < baseline.triangles * 0.8, 'Balanced cuts rendered triangle work by at least 20%');
-  }
+  // Absolute budgets at the start-line camera. Asserting against BASELINE_URL
+  // would ratchet: once the base branch carries this renderer, every later
+  // change would have to cut another 30%. The before/after rows stay logged.
+  assert(performance.triangles < 1.6e6 && performance.calls < 500, 'Performance stays inside the triangle and draw-call budget');
+  assert(balanced.triangles < 1.6e6 && balanced.calls < 500, 'Balanced stays inside the triangle and draw-call budget');
+  if (baseline) console.log('COMPARE', JSON.stringify({ baseline, balanced }));
 
   // Exercise every track via the actual asynchronous picker, then race it.
   const ids = await page.evaluate(() => window.__trackIds);
