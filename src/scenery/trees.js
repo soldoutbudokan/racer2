@@ -53,12 +53,10 @@
  *    copse reads as one wood, and instances vary in yaw, lean, and separate
  *    width/height scale.
  *
- * Bucketing is by distance to the CENTRELINE, computed once at build time.
- * The camera never leaves the ribbon, so a build-time bucket is as good as a
- * per-frame LOD switch and costs nothing per frame.
- *
- * Draw calls: 5 near species + 1 mid trunk + 1 mid card set + 1 far card set
- * = 8 instanced meshes per call.
+ * Shape tiers start with distance to the centreline. Spatial batches then
+ * let the renderer cull off-screen stands and switch detailed trees to canopy
+ * cards beyond 190 m from the camera. A forest no longer submits all its
+ * near-track geometry simply because one tree is in the viewing frustum.
  */
 import * as THREE from 'three';
 import { hashFn, hideFromOverridePasses } from './noise.js';

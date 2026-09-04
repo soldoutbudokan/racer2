@@ -17,6 +17,7 @@ page.setDefaultTimeout(120000);
 async function load(url) {
   await page.goto(url, { waitUntil: 'load' });
   await page.waitForFunction(() => window.__ctx && !document.getElementById('menu').classList.contains('hidden'));
+  await page.waitForFunction(() => getComputedStyle(document.getElementById('loading')).opacity === '0');
 }
 async function start(mode = 'quick-race') {
   await page.evaluate(mode => {

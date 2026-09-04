@@ -214,10 +214,25 @@ async function bootstrap() {
     ctx.renderGarage();
   });
   window.addEventListener('resize', () => { if (!ctx.mode) ctx.renderGarage(); });
+  let hiddenAt = null;
   document.addEventListener('visibilitychange', () => {
-    last = performance.now();
+    const now = performance.now();
+    last = now;
     graphics.resetSamples();
-
+    if (document.hidden) {
+      hiddenAt = now;
+      ctx.audio?.context?.suspend?.().catch(() => {});
+    } else {
+      if (hiddenAt !== null) {
+        const pause = now - hiddenAt;
+        for (const entry of ctx.cars) {
+          entry.state.lapStart += pause;
+          entry.state.raceStart += pause;
+        }
+        hiddenAt = null;
+      }
+      if (ctx.mode) ctx.audio?.resume();
+    }
   });
   showMenu(ctx);
 
