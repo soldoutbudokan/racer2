@@ -214,6 +214,8 @@ async function bootstrap() {
     ctx.renderGarage();
   });
   window.addEventListener('resize', () => { if (!ctx.mode) ctx.renderGarage(); });
+  // Frame clock for the loop below; the visibility handler resets it too.
+  let last = performance.now();
   let hiddenAt = null;
   document.addEventListener('visibilitychange', () => {
     const now = performance.now();
@@ -237,7 +239,6 @@ async function bootstrap() {
   showMenu(ctx);
 
   // Start the loop now — it idles until a mode is active.
-  let last = performance.now();
   function loop(now) {
     requestAnimationFrame(loop);
     const frameMs = now - last;
@@ -713,13 +714,6 @@ function tick(ctx, dt, now) {
     color: c.color,
     isPlayer: c.isPlayer,
   })));
-
-  // Post effect time uniform
-  if (ctx.mode !== 'two-player') {
-    ctx.composer.passes.forEach((p) => {
-      if (p.uniforms && p.uniforms.uTime) p.uniforms.uTime.value = now * 0.001;
-    });
-  }
 
   const graphicsLabel = `${ctx.graphics.choice === 'auto' ? 'AUTO · ' : ''}${ctx.graphics.preset.toUpperCase()}`;
   const graphicsStatus = document.getElementById('graphics-status');

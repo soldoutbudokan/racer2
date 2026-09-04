@@ -2,7 +2,7 @@
 
 A 3D racing game built with Three.js + Cannon-es, aiming for the most realistic
 look and drive achievable in a browser without external asset downloads.
-Inspired by the look of GT Racing 2: golden-hour light, rubbered-in racing
+Inspired by the look of GT Racing 2: warm afternoon light, rubbered-in racing
 groove, kerbs and gravel traps, a pit complex and grandstands, glossy
 clear-coated bodywork.
 
@@ -29,7 +29,8 @@ quality after sustained slow frames. Performance, Balanced and High can also
 be selected in the menu; the choice is remembered. All modes retain the same
 cars, track layouts, collision surfaces and driving physics.
 
-Performance skips post-processing and caps the scene at 0.92 million pixels.
+Performance skips post-processing and caps the scene at 0.92 million pixels;
+it and split-screen rely on the canvas's hardware MSAA for edges.
 Balanced adds FXAA and caps at 1.44 million; High adds half-resolution ambient
 occlusion and subtle bloom, with a 2.07 million pixel budget. Shadow maps are
 1024 pixels (Performance/Balanced) or 2048 (High). These are physical-pixel
@@ -200,7 +201,8 @@ the local Playwright install, and need `npm run dev` running first.
 batch transforms. `scripts/browser-check.mjs` exercises all circuits, quality
 presets, menu sizes, split-screen and restart memory in Chromium. Set
 `BASELINE_URL` to another served revision to compare completed render time,
-draw calls and triangles from an identical 1280×720 start-line camera.
+draw calls and triangles from an identical 1280×720 start-line camera. The
+pass/fail budgets are absolute; the baseline comparison is logged for reference.
 Timing uses software rendering in CI and is not a hardware FPS promise.
 
 The **Verify game** pull-request workflow runs these checks, the driving-model

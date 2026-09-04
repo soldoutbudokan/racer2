@@ -25,7 +25,9 @@ export function createGraphicsController(apply, saved = 'auto') {
   function sample(ms) {
     if (choice !== 'auto' || !Number.isFinite(ms) || ms <= 0 || ms > 1000) return;
     if (warmup > 0) { warmup -= ms; return; }
-    elapsed += ms; samples++;
+    // One shader compile or GC pause is not a slow machine: a single frame
+    // counts for at most 100 ms, so only a run of slow frames moves the average.
+    elapsed += Math.min(ms, 100); samples++;
     if (elapsed < 1800 || samples < 12) return;
     if (elapsed / samples > 23) {
       const previous = `${preset}:${scale}`;
