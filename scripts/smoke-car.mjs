@@ -55,7 +55,10 @@ function checkGeom(label, geo) {
 }
 
 function checkObjectGeometry(label, root) {
-  let meshes = 0, invalid = 0;
+  let meshes = 0, invalid = 0, reversed = 0;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const ab = new THREE.Vector3(), ac = new THREE.Vector3(), face = new THREE.Vector3();
+  const vertexNormal = new THREE.Vector3();
   root.traverse((o) => {
     if (!o.isMesh || !o.geometry?.getAttribute('position')) return;
     meshes++;
@@ -68,9 +71,27 @@ function checkObjectGeometry(label, root) {
       if (uv) values.push(uv.getX(i), uv.getY(i));
       if (values.some((n) => !Number.isFinite(n))) invalid++;
     }
+    // Wheels are merged to non-indexed triangles. Confirm custom rotor faces
+    // and bevelled spoke faces use the same winding as their supplied normals;
+    // a reversed face passes finite-value checks but disappears under culling.
+    if (!o.geometry.index && nor) {
+      for (let i = 0; i + 2 < pos.count; i += 3) {
+        a.fromBufferAttribute(pos, i);
+        b.fromBufferAttribute(pos, i + 1);
+        c.fromBufferAttribute(pos, i + 2);
+        face.copy(ab.subVectors(b, a)).cross(ac.subVectors(c, a));
+        if (face.lengthSq() < 1e-14) continue;
+        vertexNormal.set(
+          nor.getX(i) + nor.getX(i + 1) + nor.getX(i + 2),
+          nor.getY(i) + nor.getY(i + 1) + nor.getY(i + 2),
+          nor.getZ(i) + nor.getZ(i + 1) + nor.getZ(i + 2),
+        );
+        if (face.dot(vertexNormal) < 0) reversed++;
+      }
+    }
   });
-  console.log(`  [${label}] meshes=${meshes} invalid attributes=${invalid}`);
-  return invalid === 0;
+  console.log(`  [${label}] meshes=${meshes} invalid attributes=${invalid} reversed faces=${reversed}`);
+  return invalid === 0 && reversed === 0;
 }
 
 function countMeshes(obj) {
