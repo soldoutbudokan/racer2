@@ -187,7 +187,7 @@ export function createTrack(scene, world, materials, def) {
   // One merged ribbon, no extra physics or per-frame work; gravel stays clear.
   if (theme.kerbs !== false && theme.ground !== 'city') {
     const pos = [];
-    const tint = theme.ground === 'sand' ? 0x276d7d : 0x267d71;
+    const tint = theme.ground === 'sand' ? 0x27596a : 0x255a52;
     const offset = ROAD_WIDTH / 2 + KERB_WIDTH + 0.08;
     const width = theme.ground === 'pine' ? 0.65 : 1.1;
     for (let i = 0; i < frames.length; i++) {
@@ -206,7 +206,7 @@ export function createTrack(scene, world, materials, def) {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
     geo.computeVertexNormals();
     const runoff = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-      color: tint, roughness: 0.94, side: THREE.DoubleSide,
+      color: tint, roughness: 0.94, side: THREE.DoubleSide, envMapIntensity: 0.6,
       polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
     }));
     runoff.name = 'painted-runoff'; runoff.receiveShadow = true;
@@ -299,6 +299,8 @@ export function createTrack(scene, world, materials, def) {
 
   // ---- Atmosphere: per-circuit fog tint/depth ----
   if (theme.fog) scene.fog = new THREE.Fog(theme.fog[0], theme.fog[1], theme.fog[2]);
+  // The sky's horizon IS the fog colour, so far terrain melts into it.
+  scene.userData.sky?.setAtmosphere({ horizon: theme.fog?.[0], ...theme.sky });
 
   const spawn = {
     position: new THREE.Vector3()
@@ -562,8 +564,8 @@ function makeGrassMaterial() {
     // isn't a single flat green from the cockpit. Stronger dry-yellow patches
     // and more macro contrast break up the uniform "video-game green".
     let g = (0.205 + blades * 0.15 + patch * 0.15 + lush * 0.11 + dry * 0.05) * mow;
-    let r = g * (0.52 + dry * 0.42);
-    let b = g * (0.35 + lush * 0.11);
+    let r = g * (0.56 + dry * 0.40);
+    let b = g * (0.37 + lush * 0.10);
     return [r, g, b];
   }));
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
@@ -837,7 +839,7 @@ function distToTrack(frames, x, z) {
 // One facade tile = 6 window bays × 8 floors. Buildings scale their UVs so a
 // repeat spans ~13 m × 24 m (3 m floors) — the old mapping tiled a repeat
 // every 4 m of height, which gave every tower doll's-house 0.5 m windows.
-//   curtain — dark curtain wall, glass grid, a scatter of lit rooms
+//   curtain — dark curtain wall, glass grid, a few lit rooms
 //   masonry — warm plaster, punched window rows, string courses
 //   glass   — full-height mirrored glazing strips, no lit rooms
 function makeFacadeTexture(kind, base, litFrac = 0.10) {
@@ -866,19 +868,32 @@ function makeFacadeTexture(kind, base, litFrac = 0.10) {
     const mx = w / 6, my = h / 8;
     for (let r = 0; r < 8; r++) {
       for (let q = 0; q < 6; q++) {
+        // Daylight glazing: most panes carry a reflection of the sky, paler
+        // at the top of the pane; the rest look into unlit rooms, which by
+        // day are a dark slate rather than black. Lit rooms barely register
+        // against the afternoon sun, so only a few show at all. (Near-black
+        // panes with warm lit ones read as a city at night.)
         const roll = rand();
-        let col;
-        if (roll < litFrac) col = `rgb(255,${(208 + rand() * 35) | 0},${(150 + rand() * 55) | 0})`;
-        else if (roll < litFrac + 0.30) col = `rgb(${(88 + rand() * 34) | 0},${(108 + rand() * 36) | 0},${(132 + rand() * 44) | 0})`;
-        else col = `rgb(${(18 + rand() * 10) | 0},${(22 + rand() * 10) | 0},${(28 + rand() * 10) | 0})`;
-        ctx.fillStyle = col;
+        const x0 = kind === 'masonry' ? q * mx + mx * 0.20 : q * mx + mx * 0.12;
+        const y0 = kind === 'masonry' ? r * my + my * 0.22 : r * my + my * 0.14;
+        const pw = kind === 'masonry' ? mx * 0.60 : mx * 0.76;
+        const ph = kind === 'masonry' ? my * 0.52 : my * 0.64;
+        if (roll < litFrac * 0.35) {
+          ctx.fillStyle = `rgb(${(222 + rand() * 20) | 0},${(198 + rand() * 24) | 0},${(150 + rand() * 30) | 0})`;
+        } else if (roll < 0.62) {
+          const k = rand();
+          const g = ctx.createLinearGradient(0, y0, 0, y0 + ph);
+          g.addColorStop(0, `rgb(${(128 + k * 30) | 0},${(146 + k * 28) | 0},${(166 + k * 26) | 0})`);
+          g.addColorStop(1, `rgb(${(66 + k * 22) | 0},${(80 + k * 22) | 0},${(98 + k * 22) | 0})`);
+          ctx.fillStyle = g;
+        } else {
+          ctx.fillStyle = `rgb(${(36 + rand() * 14) | 0},${(44 + rand() * 14) | 0},${(54 + rand() * 14) | 0})`;
+        }
+        ctx.fillRect(x0, y0, pw, ph);
         if (kind === 'masonry') {
-          ctx.fillRect(q * mx + mx * 0.20, r * my + my * 0.22, mx * 0.60, my * 0.52);
           // sill under each window
           ctx.fillStyle = 'rgba(255,255,255,0.16)';
           ctx.fillRect(q * mx + mx * 0.16, r * my + my * 0.76, mx * 0.68, 2);
-        } else {
-          ctx.fillRect(q * mx + mx * 0.12, r * my + my * 0.14, mx * 0.76, my * 0.64);
         }
       }
       if (kind === 'masonry') {
@@ -1698,7 +1713,7 @@ function addCityBuildings(scene, frames, D) {
       });
     }
     return new THREE.MeshStandardMaterial({
-      map: tex, emissive: 0xffe6c4, emissiveMap: tex, emissiveIntensity: 0.13,
+      map: tex, emissive: 0xffe6c4, emissiveMap: tex, emissiveIntensity: 0.06,
       roughness: 0.62, metalness: 0.12, envMapIntensity: 0.5,
     });
   });
@@ -1825,7 +1840,7 @@ function addCitySkyline(scene, frames) {
     [ext + 1150, 380, 38, 85, 210, 0.48],
     [ext + 1600, 460, 40, 110, 250, 0.64],
   ];
-  // Lit-window curtain wall so the towers read as buildings, not slabs; the
+  // Glazed curtain wall so the towers read as buildings, not slabs; the
   // vertex tint carries the haze so the far band still melts into the sky.
   const tex = makeFacadeTexture('curtain', '#2a3038', 0.12);
   const geos = [];
@@ -1874,7 +1889,7 @@ function addCitySkyline(scene, frames) {
   }
   if (!geos.length) return;
   const mesh = new THREE.Mesh(mergeGeometries(geos), new THREE.MeshStandardMaterial({
-    map: tex, vertexColors: true, emissive: 0xffe6c4, emissiveMap: tex, emissiveIntensity: 0.10,
+    map: tex, vertexColors: true, emissive: 0xffe6c4, emissiveMap: tex, emissiveIntensity: 0.05,
     roughness: 0.9, metalness: 0.05, envMapIntensity: 0.18, fog: true,
   }));
   mesh.name = 'city-skyline';

@@ -1051,8 +1051,9 @@ export function makeAsphaltMaterial() {
     if (speck > 0.70) v += 0.085;     // limestone chip catching light
     if (speck < 0.15) v -= 0.038;     // bitumen void
     v -= crack * 0.045;
-    // Asphalt aggregate is slate — a touch blue, never neutral grey.
-    return [v * 0.96, v * 0.98, v * 1.05];
+    // Asphalt aggregate is slate, a hair blue of neutral. The sky fill adds
+    // its own blue in shade, so any more than this reads as a navy road.
+    return [v * 0.985, v * 0.99, v * 1.015];
   }, 0.12));
   colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping;
   colorTex.anisotropy = 16;
