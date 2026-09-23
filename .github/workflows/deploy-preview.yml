@@ -22,7 +22,28 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      # The preview and production workflows both push to gh-pages, and when
+      # they run at the same moment the second push is rejected. The action
+      # clones gh-pages afresh on every attempt, so one retry picks up the
+      # other deploy's commit. (A shared concurrency group would serialise
+      # them, but GitHub cancels the older of two pending runs in a group, so
+      # a later preview push could cancel a queued production deploy.)
       - name: Deploy to gh-pages (preview/ subfolder)
+        id: deploy
+        continue-on-error: true
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          destination_dir: preview
+          keep_files: true
+
+      - name: Wait before retrying
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 20
+
+      - name: Deploy to gh-pages (preview/ subfolder), retry
+        if: steps.deploy.outcome == 'failure'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
