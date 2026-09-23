@@ -100,6 +100,11 @@ function loadMu(baseMu, load, avgLoad) {
   return baseMu * Math.min(hi, Math.max(lo, f));
 }
 
+// The rev band the HUD tachometer is drawn against.
+export const ENGINE_BAND = {
+  idleRpm: SPEC.idleRpm, redlineRpm: SPEC.redlineRpm, shiftUpRpm: SPEC.shiftUpRpm,
+};
+
 /**
  * Builds a GT car: lofted PBR visual + Cannon RaycastVehicle, with a
  * realistic longitudinal model (engine/gears/aero) layered on top.

@@ -5,7 +5,7 @@ import { createGarage } from './garage.js';
 import { createPhysicsWorld } from './physics.js';
 import { createTrack } from './track.js';
 import { TRACKS, DEFAULT_TRACK_ID, getTrackById } from './tracks.js';
-import { createCar } from './car.js';
+import { createCar, ENGINE_BAND } from './car.js';
 import {
   createInput,
   SINGLE_PLAYER_BINDINGS,
@@ -13,7 +13,7 @@ import {
   ARROW_BINDINGS,
 } from './controls.js';
 import { createChaseCamera } from './camera.js';
-import { createHud } from './hud.js';
+import { createHud, formatMs } from './hud.js';
 import { createAIDriver } from './ai.js';
 import { createRacingLine } from './racingLine.js';
 import { createAudio } from './audio.js';
@@ -72,6 +72,12 @@ const AI_COLORS = [0xfacc15, 0x059669, 0xea580c];
 const PLAYER1_ARCH = 'gt';
 const PLAYER2_ARCH = 'muscle';
 const AI_ARCHETYPES = ['open-wheel', 'gt', 'muscle'];
+// Who the rivals are, for the timing tower and the results.
+const AI_DRIVERS = [
+  { code: 'MOR', name: 'R. Moreau' },
+  { code: 'OKA', name: 'T. Okafor' },
+  { code: 'LIN', name: 'S. Lindqvist' },
+];
 
 bootstrap();
 
@@ -99,7 +105,7 @@ async function bootstrap() {
 
   setProgress(0.7, 'Calibrating telemetry');
   await frame();
-  const hud = createHud(MAX_KMH);
+  const hud = createHud(MAX_KMH, ENGINE_BAND);
   hud.buildMinimap(track);
   const racingLine = createRacingLine(scene, track);
 
@@ -264,6 +270,8 @@ function hideMenu() {
   document.getElementById('ui').inert = false;
 }
 
+const DIFFICULTY_PIPS = { EASY: 1, MEDIUM: 2, 'MEDIUM-HARD': 3, HARD: 4 };
+
 // Build the circuit picker cards in the menu. Selecting a card rebuilds the
 // track immediately so the minimap (and the next race) use it.
 function buildTrackSelector(container, ctx, rebuildTrack) {
@@ -288,10 +296,14 @@ function buildTrackSelector(container, ctx, rebuildTrack) {
     const box = new THREE.Box3().setFromPoints(points);
     const scale = Math.min(106 / (box.max.x - box.min.x), 62 / (box.max.z - box.min.z));
     const centre = box.getCenter(new THREE.Vector3());
-    const path = points.map((p, i) => `${i ? 'L' : 'M'}${(60 + (p.x - centre.x) * scale).toFixed(1)},${(38 + (p.z - centre.z) * scale).toFixed(1)}`).join(' ') + ' Z';
+    const px = (p) => (60 + (p.x - centre.x) * scale).toFixed(1);
+    const py = (p) => (38 + (p.z - centre.z) * scale).toFixed(1);
+    const path = points.map((p, i) => `${i ? 'L' : 'M'}${px(p)},${py(p)}`).join(' ') + ' Z';
+    const level = DIFFICULTY_PIPS[def.difficulty] ?? 2;
+    const pips = [1, 2, 3, 4].map((k) => `<b${k <= level ? ' class="on"' : ''}></b>`).join('');
     btn.innerHTML = `<span class="track-number">0${index + 1}</span><span class="track-check" aria-hidden="true">↗</span>
-      <svg viewBox="0 0 120 76" aria-hidden="true"><path d="${path}"/></svg>
-      <span class="track-name">${def.name}</span><span class="track-sub">${def.difficulty}</span>`;
+      <svg viewBox="0 0 120 76" aria-hidden="true"><path class="under" d="${path}"/><path d="${path}"/><circle cx="${px(points[0])}" cy="${py(points[0])}" r="3.2"/></svg>
+      <span class="track-name">${def.name}</span><span class="track-sub"><i aria-hidden="true">${pips}</i>${def.difficulty}</span>`;
     btn.addEventListener('click', async () => {
       if (ctx.selectedTrackId === def.id || container.getAttribute('aria-busy') === 'true') return;
       container.setAttribute('aria-busy', 'true');
@@ -330,7 +342,7 @@ function startMode(ctx, mode) {
   } else if (mode === 'quick-race') {
     addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, PLAYER1_COLOR, 0, PLAYER1_ARCH);
     for (let i = 0; i < 3; i++) {
-      addAICar(ctx, AI_COLORS[i], i + 1, 0.78 + i * 0.04, AI_ARCHETYPES[i]);
+      addAICar(ctx, AI_COLORS[i], i + 1, 0.78 + i * 0.04, AI_ARCHETYPES[i], AI_DRIVERS[i]);
     }
     ctx.hud.setPosition(1, ctx.cars.length);
   } else if (mode === 'two-player') {
@@ -349,6 +361,7 @@ function startMode(ctx, mode) {
   ctx.hud.setBest(null);
   ctx.hud.setLapTime(0);
   ctx.hud.clearAnnouncements();
+  ctx.hud.setHint(true);
   hideFinish();
   ctx.track.startLights.set(0);
 
@@ -386,36 +399,73 @@ function racePlace(ctx, car) {
 function showFinish(ctx) {
   const primary = ctx.cars[ctx.primaryPlayerIdx];
   const st = primary.state;
+  const modeNames = { 'time-trial': 'TIME TRIAL', 'quick-race': 'QUICK RACE', 'two-player': 'TWO PLAYER' };
   let title = 'FINISHED';
   let detail = '';
+  let stats = [];
+  let winner = false;
   if (ctx.mode === 'time-trial') {
-    detail = `LAP TIME   ${formatTime(st.bestMs)}`;
+    title = 'LAP COMPLETE';
+    detail = 'Flying lap, empty track.';
+    stats = [['LAP TIME', formatMs(st.bestMs)]];
+    winner = true;
   } else if (ctx.mode === 'quick-race') {
     const place = racePlace(ctx, primary);
-    title = place === 1 ? 'YOU WIN' : `FINISHED  P${place}/${ctx.cars.length}`;
-    detail = `RACE TIME   ${formatTime(st.finishMs)}`;
+    winner = place === 1;
+    title = winner ? 'YOU WIN' : `P${place}`;
+    detail = winner ? 'Chequered flag. Nobody got past.' : `Finished P${place} of ${ctx.cars.length}.`;
+    stats = [['POSITION', `${place}/${ctx.cars.length}`], ['RACE TIME', formatMs(st.finishMs)], ['BEST LAP', formatMs(st.bestMs)]];
   } else if (ctx.mode === 'two-player') {
-    const winner = ctx.state.finishOrder[0];
-    title = winner && winner.label === 'P2' ? 'PLAYER 2 WINS' : 'PLAYER 1 WINS';
-    detail = `TIME   ${formatTime(winner ? winner.state.finishMs : st.finishMs)}`;
+    const first = ctx.state.finishOrder[0] || primary;
+    title = first.label === 'P2' ? 'PLAYER 2 WINS' : 'PLAYER 1 WINS';
+    detail = 'Split screen settled.';
+    stats = [['WINNING TIME', formatMs(first.state.finishMs)], ['BEST LAP', formatMs(first.state.bestMs)]];
+    winner = true;
   }
-  document.getElementById('finish-title').textContent = title;
+  document.getElementById('finish-mode').textContent = modeNames[ctx.mode] || 'RACE';
+  document.getElementById('finish-circuit').textContent = ctx.track.name;
+  const titleEl = document.getElementById('finish-title');
+  titleEl.textContent = title;
+  titleEl.classList.toggle('winner', winner);
   document.getElementById('finish-detail').textContent = detail;
+  document.getElementById('finish-stats').replaceChildren(...stats.map(([label, value]) => {
+    const div = document.createElement('div');
+    div.innerHTML = '<span></span><strong></strong>';
+    div.querySelector('span').textContent = label;
+    div.querySelector('strong').textContent = value;
+    return div;
+  }));
+  // Classification: finishers in crossing order, then everyone still running
+  // by how far round they are.
+  const results = document.getElementById('finish-results');
+  if (ctx.cars.length > 1) {
+    const order = [...ctx.cars].sort((a, b) => b.state.progress - a.state.progress);
+    const leader = ctx.state.finishOrder[0]?.state.finishMs;
+    results.replaceChildren(...order.map((c, i) => {
+      const li = document.createElement('li');
+      if (c.isPlayer) li.className = 'me';
+      li.innerHTML = '<b></b><i></i><span></span><em></em>';
+      li.querySelector('b').textContent = i + 1;
+      li.querySelector('i').style.background = `#${c.color.toString(16).padStart(6, '0')}`;
+      li.querySelector('span').textContent = c.name;
+      let time = 'ON TRACK';
+      if (c.state.finished) {
+        time = i === 0 || leader == null ? formatMs(c.state.finishMs)
+          : `+${((c.state.finishMs - leader) / 1000).toFixed(3)}`;
+      }
+      li.querySelector('em').textContent = time;
+      return li;
+    }));
+    results.hidden = false;
+  } else {
+    results.replaceChildren();
+    results.hidden = true;
+  }
   document.getElementById('finish').classList.remove('hidden');
 }
 
 function hideFinish() {
   document.getElementById('finish').classList.add('hidden');
-}
-
-function formatTime(ms) {
-  if (ms == null || !isFinite(ms)) return '--:--.---';
-  const total = Math.max(0, Math.floor(ms));
-  const m = Math.floor(total / 60000);
-  const s = Math.floor((total % 60000) / 1000);
-  const mss = total % 1000;
-  const pad = (n, w) => n.toString().padStart(w, '0');
-  return `${pad(m, 2)}:${pad(s, 2)}.${pad(mss, 3)}`;
 }
 
 function createGameState(mode) {
@@ -463,11 +513,13 @@ function addPlayerCar(ctx, bindings, color, gridIdx, archetype = 'gt') {
     reactionS: 0,
     state: carState(),
     label: gridIdx === 0 ? 'P1' : 'P2',
+    code: ctx.mode === 'two-player' ? (gridIdx === 0 ? 'P1' : 'P2') : 'YOU',
+    name: ctx.mode === 'two-player' ? `Player ${gridIdx + 1}` : 'You',
   });
   ctx.state.perCar.push(ctx.cars[ctx.cars.length - 1]);
 }
 
-function addAICar(ctx, color, gridIdx, skill, archetype = 'gt') {
+function addAICar(ctx, color, gridIdx, skill, archetype = 'gt', driver = null) {
   const car = createCar(ctx.world, ctx.materials, { color, archetype });
   ctx.scene.add(car.visual.root);
   car.visual.wheels.forEach((w) => ctx.scene.add(w));
@@ -481,6 +533,8 @@ function addAICar(ctx, color, gridIdx, skill, archetype = 'gt') {
     reactionS: aiReactionS(gridIdx, skill),
     state: carState(),
     label: 'AI',
+    code: driver?.code ?? 'AI',
+    name: driver?.name ?? 'AI',
   });
   ctx.state.perCar.push(ctx.cars[ctx.cars.length - 1]);
 }
@@ -564,10 +618,12 @@ function tick(ctx, dt, now) {
       ctx.state.started = true;
       ctx.state.lightsLit = 0;
       ctx.track.startLights.set(0);
+      ctx.hud.setStartLights(0, true);
       ctx.hud.flashBanner('GO', 1100);
     } else if (lit !== ctx.state.lightsLit) {
       ctx.state.lightsLit = lit;
       ctx.track.startLights.set(lit);
+      ctx.hud.setStartLights(lit);
     }
     // The frame's OWN timestamp, not a fresh reading. `updateLapTiming` below
     // displays `now - lapStart`, and a second `performance.now()` here would
@@ -677,7 +733,7 @@ function tick(ctx, dt, now) {
     if (ctx.lineAid) {
       const v = primary.car.body.velocity;
       const speedMs = Math.hypot(v.x, v.z);
-      ctx.racingLine.update(speedMs);
+      ctx.racingLine.update(speedMs, primary.car.body.position, carHeading(primary.car.body.quaternion));
       const target = ctx.racingLine.profile[
         nearestFrameIndex(ctx.track, primary.car.body.position)];
       ctx.hud.setPace(target * 3.6, (speedMs - target) * 3.6);
@@ -695,7 +751,9 @@ function tick(ctx, dt, now) {
     const sorted = [...ctx.cars].sort((a, b) => b.state.progress - a.state.progress);
     const playerPos = sorted.indexOf(primary) + 1;
     ctx.hud.setPosition(playerPos, ctx.cars.length);
+    ctx.hud.setStandings(sorted.map((c) => ({ name: c.code, color: c.color, isPlayer: c.isPlayer })));
   }
+  ctx.hud.setHint(ctx.state.startT < START_SEQUENCE_S + 6);
 
   // Finish — show the results overlay once the race is over. Two-player ends as
   // soon as anyone crosses the final line; solo modes end when the player does.
@@ -713,6 +771,7 @@ function tick(ctx, dt, now) {
     pos: c.car.body.position,
     color: c.color,
     isPlayer: c.isPlayer,
+    heading: c.isPlayer ? carHeading(c.car.body.quaternion) : null,
   })));
 
   const graphicsLabel = `${ctx.graphics.choice === 'auto' ? 'AUTO · ' : ''}${ctx.graphics.preset.toUpperCase()}`;
@@ -752,6 +811,15 @@ function renderSplitScreen(ctx) {
   ctx.renderer.setScissorTest(false);
   ctx.renderer.setViewport(0, 0, w, h);
   ctx.renderer.setScissor(0, 0, w, h);
+}
+
+// Forward direction of a chassis in the ground plane, for the minimap arrow
+// and the racing line's fade behind the car.
+function carHeading(q) {
+  const fx = 2 * (q.x * q.z + q.w * q.y);
+  const fz = 1 - 2 * (q.x * q.x + q.y * q.y);
+  const len = Math.hypot(fx, fz) || 1;
+  return { x: fx / len, z: fz / len };
 }
 
 function frame() {

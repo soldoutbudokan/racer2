@@ -128,7 +128,7 @@ export const TRACKS = [
     ],
     theme: {
       ground: 'grass',
-      fog: [0xc8bba6, 900, 4200],
+      fog: [0xc6ced0, 900, 4200],
       barrier: 'armco',
       kerbs: true, gravel: true, skid: true,
       pit: true, catchFence: true, grandstands: true, sponsors: true,
@@ -169,7 +169,7 @@ export const TRACKS = [
     ],
     theme: {
       ground: 'grass',
-      fog: [0xc8bba6, 1000, 4400],
+      fog: [0xd2cdbd, 1000, 4400],
       barrier: 'armco',
       kerbs: true, gravel: false, skid: true,
       pit: true, catchFence: false, grandstands: true, sponsors: true,
@@ -528,7 +528,7 @@ export const TRACKS = [
     ],
     theme: {
       ground: 'grass',
-      fog: [0xbfc7b2, 800, 4000],
+      fog: [0xc4cdc6, 800, 4000],
       barrier: 'armco',
       kerbs: true, gravel: true, skid: true,
       pit: true, catchFence: true, grandstands: true, sponsors: true,

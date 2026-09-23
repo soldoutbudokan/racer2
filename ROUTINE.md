@@ -96,6 +96,46 @@ than grain, and fall back to `pngdiff --box` on the region you changed.
 
 ## Changelog (accepted to `main`)
 
+- **2026-09-22** (accepted → `main` 2026-09-23, owner: "this looks incredible
+  - push to main"; was branch `claude/vibrant-volta-i7333f`; owner-directed
+  run, "spend a lot more time making this look nicer", so the one-change rule
+  did not apply)
+  — **A blue sky, a graded image, and a new HUD, menu and results screen.**
+  - The Preetham `Sky` rendered near-white on every circuit: it is tuned for
+    exposure ~0.5 and the game's lights are tuned for 1.0. `src/sky.js` is an
+    art-directed dome (zenith / mid / horizon gradient, sun glow and disc,
+    warm horizon under the sun) whose horizon is set from each circuit's fog
+    colour by `track.js`, so distant terrain melts into it. The PMREM capture
+    uses the same dome at 3.2× intensity, 0.45 saturation and with a dark
+    ground hemisphere below the horizon, so IBL fill stays near the old level
+    and car paint reflects a horizon line. The visible dome keeps the haze
+    colour below the horizon (a ground colour there showed as an olive band
+    from high cameras over the city).
+  - Colour grade folded into `ACESFilmicToneMapping` via `ShaderChunk`
+    (scene.js), so Performance (per-material tone mapping) and Balanced/High
+    (OutputPass) get the identical grade at no cost: saturation 1.05, cool
+    shadows / warm highlights, a 14 % S-curve.
+  - Asphalt tint near-neutral, hemisphere fill less blue, runoff paint darker
+    and less cyan, grass slightly more olive, parkland fog cooler; city
+    facades show daylight glazing instead of night-time lit windows.
+  - Racing-line aid: translucent chevrons (ShaderMaterial) pointing down the
+    lap, drawn only ahead of the car and faded within 11 m of it, kept out of
+    GTAO's prepass (High drew the chevrons dark otherwise).
+  - HUD: segmented tachometer with rpm numerals and a shift light, timing
+    bar, live race-order tower, HUD start lights mirroring the gantry (pace
+    pill hidden during the countdown), controls card that fades 6 s after the
+    green, 2× minimap with a heading arrow. Finish: a results card with stats
+    and the full classification. Menu: showroom-lit garage render, circuit
+    cards with start markers and difficulty pips; loading screen restyled.
+  - Tried and reverted: darker alpine rock / higher snowline / thinner alpine
+    fog. They moved under 2 % of the pixels; the pale front range is sunlit
+    rock under ACES, not its vertex colours.
+  **Verified:** `physics-test.mjs` 55/55; `browser-check.mjs` PASS (Balanced
+  start line 356 calls / 1.059 M triangles vs 356 / 1.057 M on main);
+  `graphics-test.mjs` and `smoke-car.mjs` pass; `npm run build` clean.
+  New harness: `scripts/uishots.mjs` (menu at three sizes, race HUD, all
+  cameras, a real results screen, phone landscape, split screen).
+
 - **2026-09-04** (accepted → `main` 2026-09-04 as PR #5, owner: "make your
   best judgement and merge"; was branch `claude/racer2-visual-performance`;
   owner-directed run, so the one-change rule did not apply)

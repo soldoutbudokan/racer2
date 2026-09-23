@@ -61,8 +61,9 @@ keyboard listeners. Hidden tabs stop advancing the simulation.
 - **Quick race** — you vs. three AI over 3 laps.
 - **Two player** — split-screen, WASD vs. arrows.
 
-Single-screen modes show the **perfect-line aid** (toggle with `L`): a ribbon
-along the ideal racing line, recoloured live against your current speed —
+Single-screen modes show the **perfect-line aid** (toggle with `L`): painted
+chevrons along the ideal racing line, drawn only ahead of your car and
+recoloured live against your current speed —
 red where the ideal lap is slower than you're going (brake!), white where
 you're on pace, green where it carries more speed than you have (push on).
 The HUD pill shows the ideal speed for where you are plus a verdict
@@ -141,14 +142,20 @@ pass. `M` mutes; the choice is remembered.
 
 ## What's under the hood
 
-- **Renderer**: adaptive resolution, ACES tone mapping, sRGB output and
-  texel-snapped 1024/2048 shadow maps following the player.
-- **Lighting**: a warm afternoon sky and PMREM environment reflections, cool
-  fill light and per-circuit atmospheric fog.
+- **Renderer**: adaptive resolution, ACES tone mapping with a light colour
+  grade folded into it (so every quality preset gets it for free), sRGB
+  output and texel-snapped 1024/2048 shadow maps following the player.
+- **Lighting**: a clear afternoon sky dome whose horizon is each circuit's
+  haze colour, PMREM environment reflections with a ground horizon for the
+  car paint to pick up, cool fill light and per-circuit atmospheric fog.
 - **Post-processing**: none in Performance; FXAA and output conversion in
   Balanced; optional half-resolution GTAO and restrained bloom in High.
-- **Menu**: responsive circuit maps, a rendered GT showroom, clear race modes
-  and saved graphics choices. No running 3D animation while choosing a race.
+- **Menu**: responsive circuit maps with start markers and difficulty
+  ratings, a showroom-lit GT render, clear race modes and saved graphics
+  choices. No running 3D animation while choosing a race.
+- **HUD**: segmented tachometer with a shift light, timing bar, live race
+  order, start lights mirroring the gantry, pace readout, a sharp minimap
+  with a heading arrow, and a results card with the full classification.
 - **Tracks**: Catmull-Rom circuits with a vertex-coloured racing groove that
   weaves with the racing line, 3D profiled rumble kerbs, dirt verges, skid
   marks, gravel traps wired into the physics, armco with posts, debris
@@ -170,7 +177,9 @@ pass. `M` mutes; the choice is remembered.
 ```
 src/
   main.js       game loop, lap timing, per-wheel surface detection
-  scene.js      renderer, sky, IBL, shadow-follow, post-processing
+  scene.js      renderer, colour grade, IBL, shadow-follow, post-processing
+  sky.js        sky dome: gradient, sun glow, per-circuit horizon
+  garage.js     menu showroom render
   car.js        visual + physics car: engine, gearbox, aero, tyres
   ai.js         lap speed profile, pure pursuit, traffic, recovery
   tracks.js     circuit catalogue: centrelines + per-circuit themes
@@ -179,13 +188,14 @@ src/
   physics.js    Cannon world & contact materials
   controls.js   keyboard input with smoothing
   camera.js     chase / hood / cinematic cameras
-  hud.js        SVG tachometer + lap UI + pace pill + minimap
+  hud.js        tachometer, timing, race order, start lights, pace, minimap
   audio.js      procedural engine / tyre / surface / wind / impact sound
   carModels/    procedural car bodies, wheels, materials
 scripts/
   physics-test.mjs  deterministic driving-model assertions (23 checks)
   viewshot.mjs      deterministic drive + multi-angle screenshots
   trackshots.mjs    every circuit: chase / high / trackside / aerial / oblique
+  uishots.mjs       menu, HUD, cameras, split screen and results screen
   track-geometry.mjs layout validator + SVG plots (svg2png.mjs rasterises them)
   realtrack.mjs     traces a real circuit centreline into game-scale control points
   smoke-car.mjs     car-builder geometry sanity

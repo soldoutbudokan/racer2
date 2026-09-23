@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { hideFromOverridePasses } from './scenery/noise.js';
 
 /**
  * "Perfect line" driving aid: a ribbon drawn along the ideal racing line (the
@@ -29,12 +30,64 @@ const MASS = 1350;             // kg
 const HALF_RHO_CDA = 0.5 * 1.225 * 0.92;
 const ROLL_DRAG = 0.014 * MASS * 9.82;
 
-const LINE_WIDTH = 0.55;
+const LINE_WIDTH = 0.8;
 const LIFT = 0.045;            // above road (0.01) / edge lines (0.016) / skids (0.018)
+const CHEVRON_M = 3.4;         // target chevron pitch along the line
 
-const COL_RED = [1.0, 0.13, 0.10];
-const COL_WHITE = [0.93, 0.95, 0.97];
-const COL_GREEN = [0.10, 0.95, 0.32];
+// Linear, pre-tone-mapping. Kept below 1 so ACES does not bleach them to
+// pastel (the old 0.95 green came out mint).
+const COL_RED = [0.95, 0.07, 0.04];
+const COL_WHITE = [0.62, 0.66, 0.72];
+const COL_GREEN = [0.06, 0.62, 0.20];
+
+// Painted chevrons pointing down the lap. Translucent, soft-edged, and
+// faded out round the player's car so the part of the line under and just in
+// front of the bonnet never paints over the car's own shadow, then faded again
+// with distance so the far line does not read as a solid stroke.
+const vertexShader = /* glsl */`
+  attribute vec2 aLine;         // x: metres along the lap, y: -1..1 across
+  attribute vec3 color;
+  varying vec2 vLine;
+  varying vec3 vColor;
+  varying vec3 vWorld;
+  void main() {
+    vLine = aLine;
+    vColor = color;
+    vec4 world = modelMatrix * vec4(position, 1.0);
+    vWorld = world.xyz;
+    gl_Position = projectionMatrix * viewMatrix * world;
+  }
+`;
+const fragmentShader = /* glsl */`
+  uniform vec3 uFocus;
+  uniform vec2 uHeading;
+  uniform float uPitch;
+  uniform float uOpacity;
+  varying vec2 vLine;
+  varying vec3 vColor;
+  varying vec3 vWorld;
+  void main() {
+    float across = abs(vLine.y);
+    // Centre leads the edges, so each stripe is an arrowhead pointing forward.
+    float phase = fract((vLine.x + across * 0.55) / uPitch);
+    float aa = fwidth(phase) * 1.5;
+    float chevron = smoothstep(0.0, aa + 0.02, phase) * (1.0 - smoothstep(0.46, 0.48 + aa, phase));
+    float edge = 1.0 - smoothstep(0.62, 1.0, across);
+    float body = mix(0.22, 1.0, chevron) * edge;
+
+    vec2 rel = vWorld.xz - uFocus.xz;
+    float d = length(rel);
+    // Only the line ahead of the car: behind it, it would sit between the
+    // chase camera and the car and paint over the whole foreground.
+    float ahead = smoothstep(-2.0, 2.0, dot(rel, uHeading));
+    float fade = mix(1.0, ahead, 1.0 - smoothstep(30.0, 45.0, d));
+    fade *= smoothstep(4.0, 11.0, d) * mix(1.0, 0.45, smoothstep(60.0, 260.0, d));
+
+    gl_FragColor = vec4(vColor, body * fade * uOpacity);
+    #include <tonemapping_fragment>
+    #include <colorspace_fragment>
+  }
+`;
 
 export function createRacingLine(scene, track) {
   const frames = track.frames;
@@ -102,26 +155,38 @@ export function createRacingLine(scene, track) {
     }
   }
 
-  // --- Ribbon mesh: two vertices per frame, closed loop, dynamic colours ---
-  const positions = new Float32Array(n * 2 * 3);
-  const colors = new Float32Array(n * 2 * 3);
+  // --- Ribbon mesh: two vertices per frame, dynamic colours ---
+  // The first frame is repeated at the end with the full lap length, so the
+  // chevrons run straight through the start line instead of squeezing a whole
+  // lap of pattern into the closing segment.
+  const m = n + 1;
+  let lapLength = 0;
+  for (let i = 0; i < n; i++) lapLength += ds[i];
+  const pitch = lapLength / Math.max(1, Math.round(lapLength / CHEVRON_M));
+  const positions = new Float32Array(m * 2 * 3);
+  const colors = new Float32Array(m * 2 * 3);
+  const line = new Float32Array(m * 2 * 2);
   const half = LINE_WIDTH / 2;
-  for (let i = 0; i < n; i++) {
+  let along = 0;
+  for (let k = 0; k < m; k++) {
+    const i = k % n;
     const f = frames[i];
     const p = pts[i];
     positions.set(
-      [p.x + f.left.x * half, p.y + LIFT, p.z + f.left.z * half], i * 6);
+      [p.x + f.left.x * half, p.y + LIFT, p.z + f.left.z * half], k * 6);
     positions.set(
-      [p.x - f.left.x * half, p.y + LIFT, p.z - f.left.z * half], i * 6 + 3);
-    colors.set(COL_WHITE, i * 6);
-    colors.set(COL_WHITE, i * 6 + 3);
+      [p.x - f.left.x * half, p.y + LIFT, p.z - f.left.z * half], k * 6 + 3);
+    colors.set(COL_WHITE, k * 6);
+    colors.set(COL_WHITE, k * 6 + 3);
+    line.set([along, 1, along, -1], k * 4);
+    along += ds[i];
   }
   const indices = [];
-  for (let i = 0; i < n; i++) {
-    const a = i * 2;
-    const b = i * 2 + 1;
-    const c = ((i + 1) % n) * 2;
-    const d = ((i + 1) % n) * 2 + 1;
+  for (let k = 0; k < n; k++) {
+    const a = k * 2;
+    const b = k * 2 + 1;
+    const c = (k + 1) * 2;
+    const d = (k + 1) * 2 + 1;
     indices.push(a, c, b, b, c, d);
   }
   const geo = new THREE.BufferGeometry();
@@ -129,27 +194,43 @@ export function createRacingLine(scene, track) {
   const colorAttr = new THREE.BufferAttribute(colors, 3);
   colorAttr.setUsage(THREE.DynamicDrawUsage);
   geo.setAttribute('color', colorAttr);
+  geo.setAttribute('aLine', new THREE.BufferAttribute(line, 2));
   geo.setIndex(indices);
 
-  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
-    vertexColors: true,
+  const uniforms = {
+    uFocus: { value: new THREE.Vector3(1e6, 0, 1e6) },
+    uHeading: { value: new THREE.Vector2(0, 0) },
+    uPitch: { value: pitch },
+    uOpacity: { value: 0.78 },
+  };
+  const mesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({
+    name: 'racing-line',
+    uniforms, vertexShader, fragmentShader,
     transparent: true,
-    opacity: 0.85,
     depthWrite: false,
     polygonOffset: true,
     polygonOffsetFactor: -4,
     polygonOffsetUnits: -4,
+    extensions: { derivatives: true },
   }));
   mesh.renderOrder = 3;
   mesh.visible = false;
+  mesh.frustumCulled = false;
+  // A painted decal, not geometry: kept out of GTAO's depth prepass, which
+  // would otherwise shade the lifted ribbon's edges as creases in the road.
+  hideFromOverridePasses(mesh);
   scene.add(mesh);
 
   // Recolour the whole loop against the player's current speed. Piecewise
   // blend: red below −1 m/s of margin, white on pace, green above +3 m/s.
-  function update(speedMs) {
+  // `focus` is the player's position, round which the line fades out, and
+  // `heading` their forward direction in the ground plane.
+  function update(speedMs, focus, heading) {
+    if (focus) uniforms.uFocus.value.set(focus.x, focus.y, focus.z);
+    if (heading) uniforms.uHeading.value.set(heading.x, heading.z);
     const arr = colorAttr.array;
-    for (let i = 0; i < n; i++) {
-      const dv = profile[i] - speedMs;
+    for (let k = 0; k < m; k++) {
+      const dv = profile[k % n] - speedMs;
       let from, to, t;
       if (dv <= 1) {
         from = COL_RED; to = COL_WHITE;
@@ -161,7 +242,7 @@ export function createRacingLine(scene, track) {
       const r = from[0] + (to[0] - from[0]) * t;
       const g = from[1] + (to[1] - from[1]) * t;
       const b = from[2] + (to[2] - from[2]) * t;
-      const o = i * 6;
+      const o = k * 6;
       arr[o] = r; arr[o + 1] = g; arr[o + 2] = b;
       arr[o + 3] = r; arr[o + 4] = g; arr[o + 5] = b;
     }

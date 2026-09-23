@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { Sky } from 'three/addons/objects/Sky.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
@@ -10,6 +9,7 @@ import { GRAPHICS, renderPixelRatio, createGraphicsController } from './graphics
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 import { makeRandom } from './scenery/rng.js';
+import { createSky } from './sky.js';
 
 /**
  * The 64x64 RGBA noise GTAO's poisson-denoise pass samples, built exactly the
@@ -39,8 +39,33 @@ function makeDenoiseNoise(size = 64) {
 }
 
 /**
+ * Colour grade, folded into the tone-mapping function so every path gets it
+ * at no cost: Performance tone-maps in each material, Balanced and High in
+ * the OutputPass, and both call ACESFilmicToneMapping. Applied after ACES, in
+ * display-linear: a little saturation back (ACES greys out bright colour),
+ * cool shadows and warm highlights for the afternoon light, and a gentle
+ * S-curve so the frame has a black and a white in it.
+ */
+const GRADE_GLSL = /* glsl */`
+vec3 ACESFilmicToneMapping( vec3 color ) {
+  vec3 c = ACESFilmicToneMappingBase( color );
+  float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
+  c = max( vec3( 0.0 ), mix( vec3( l ), c, 1.05 ) );
+  c *= mix( vec3( 0.975, 1.0, 1.035 ), vec3( 1.025, 1.0, 0.965 ), smoothstep( 0.04, 0.55, l ) );
+  vec3 s = c * c * ( 3.0 - 2.0 * c );
+  c = mix( c, s, 0.14 );
+  return clamp( c, 0.0, 1.0 );
+}
+`;
+if (!THREE.ShaderChunk.tonemapping_pars_fragment.includes('ACESFilmicToneMappingBase')) {
+  THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment
+    .replace('vec3 ACESFilmicToneMapping( vec3 color ) {', 'vec3 ACESFilmicToneMappingBase( vec3 color ) {')
+    + GRADE_GLSL;
+}
+
+/**
  * Build a high-fidelity scene: physically-based renderer, ACES tone mapping,
- * Sky + sun, IBL from a PMREM of the sky, soft shadows, post FX (bloom, SMAA).
+ * sky dome + sun, IBL from a PMREM of the sky, soft shadows, post FX.
  */
 export function createScene(canvas) {
   const renderer = new THREE.WebGLRenderer({
@@ -72,21 +97,15 @@ export function createScene(canvas) {
     3000
   );
 
-  // Sky shader (Preetham/Hosek-Wilkie style atmosphere)
-  const sky = new Sky();
-  sky.scale.setScalar(8000);
-  scene.add(sky);
-  const sunPos = new THREE.Vector3();
-  const skyU = sky.material.uniforms;
-  skyU.turbidity.value = 4.5;       // cleaner, more vivid sky
-  skyU.rayleigh.value = 2.2;        // rich blue away from the sun
-  skyU.mieCoefficient.value = 0.006; // slightly more haze near the horizon
-  skyU.mieDirectionalG.value = 0.80; // broader sun glow
   // Mid-afternoon sun: warm light, shadows long but not raking.
+  const sunPos = new THREE.Vector3();
   const sunElev = THREE.MathUtils.degToRad(23);
   const sunAzim = THREE.MathUtils.degToRad(128);
   sunPos.setFromSphericalCoords(1, Math.PI / 2 - sunElev, sunAzim);
-  skyU.sunPosition.value.copy(sunPos);
+  const sky = createSky(sunPos);
+  scene.add(sky.mesh);
+  // track.js sets the horizon to each circuit's haze through this.
+  scene.userData.sky = sky;
 
   // Sun — warm afternoon tint
   const sun = new THREE.DirectionalLight(0xffe4c4, 2.7);
@@ -125,7 +144,7 @@ export function createScene(canvas) {
   }
 
   // Sky-tinted hemisphere fill — keeps shadows from being pure black
-  const hemi = new THREE.HemisphereLight(0xa6c7e8, 0x44432f, 0.85);
+  const hemi = new THREE.HemisphereLight(0xb3c6da, 0x4a4632, 0.85);
   scene.add(hemi);
 
   // Subtle cool fill from the opposite azimuth — gives shaded car panels
@@ -134,19 +153,26 @@ export function createScene(canvas) {
   fill.position.set(-sunPos.x * 300, 200, -sunPos.z * 300);
   scene.add(fill);
 
-  // IBL: render the (sky-only) scene through PMREM for crisp reflections.
-  // We do this before adding any other geometry so the env captures the sky/sun.
+  // IBL: the sky alone through PMREM, in its own scene so the capture never
+  // depends on what else has been added. Captured brighter than the visible
+  // dome, which keeps image-based fill near the level every material was
+  // tuned under, and with a small sun disc so the blur has no hot spot.
+  const envScene = new THREE.Scene();
+  envScene.add(new THREE.Mesh(sky.mesh.geometry, sky.mesh.material).copy(sky.mesh));
+  const ENV = { uIntensity: 3.2, uDisc: 6, uSaturation: 0.45, uGroundMix: 1 };
+  const shown = {};
+  for (const k in ENV) { shown[k] = sky.uniforms[k].value; sky.uniforms[k].value = ENV[k]; }
   const pmrem = new THREE.PMREMGenerator(renderer);
   pmrem.compileCubemapShader();
-  const env = pmrem.fromScene(scene, 0.04).texture;
+  const env = pmrem.fromScene(envScene, 0.04).texture;
   scene.environment = env;
   pmrem.dispose();
+  for (const k in ENV) sky.uniforms[k].value = shown[k];
 
-  // Now that the env map is captured, add atmospheric fog for depth. Warm
-  // golden haze, pushed far back so the circuit itself stays crisp and only
-  // the distant scenery melts into the light.
-  // Warm atmospheric haze — pushed back so the circuit stays crisp.
-  scene.fog = new THREE.Fog(0xc8bba6, 900, 4200);
+  // Atmospheric haze, pushed far back so the circuit itself stays crisp and
+  // only the distant scenery melts into the horizon. Each circuit replaces
+  // this with its own (track.js).
+  scene.fog = new THREE.Fog(0xc9d3d6, 900, 4200);
 
   // Balanced uses only anti-aliasing and the output transform. AO and bloom
   // are allocated lazily for High, then released when leaving it.
