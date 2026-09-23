@@ -96,9 +96,10 @@ than grain, and fall back to `pngdiff --box` on the region you changed.
 
 ## Changelog (accepted to `main`)
 
-- **2026-09-22** (PENDING review on branch `claude/vibrant-volta-i7333f`;
-  owner-directed run, "spend a lot more time making this look nicer", so the
-  one-change rule did not apply)
+- **2026-09-22** (accepted → `main` 2026-09-23, owner: "this looks incredible
+  - push to main"; was branch `claude/vibrant-volta-i7333f`; owner-directed
+  run, "spend a lot more time making this look nicer", so the one-change rule
+  did not apply)
   — **A blue sky, a graded image, and a new HUD, menu and results screen.**
   - The Preetham `Sky` rendered near-white on every circuit: it is tuned for
     exposure ~0.5 and the game's lights are tuned for 1.0. `src/sky.js` is an
