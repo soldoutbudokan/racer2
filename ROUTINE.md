@@ -60,6 +60,9 @@ export CHROME_EXE=$(find /opt/pw-browsers -maxdepth 3 -name chrome -type f | hea
 CHROME_EXE=$CHROME_EXE node scripts/viewshot.mjs 6 /tmp/shots/after
 # Deterministic no-regression suite (must stay green; includes "no console errors"):
 CHROME_EXE=$CHROME_EXE node scripts/physics-test.mjs
+# AI laps on every circuit + passing/queueing/four-car scenarios, in Node,
+# no browser needed (~50 s; must stay green; touch src/ai.js → run this first):
+node scripts/ai-test.mjs
 # Car geometry sanity (NaNs / winding):
 node scripts/smoke-car.mjs
 # Production build must be clean:
@@ -95,6 +98,37 @@ than grain, and fall back to `pngdiff --box` on the region you changed.
 7. Append what you did to the Changelog, and add/clear Backlog items.
 
 ## Changelog (accepted to `main`)
+
+- **2026-09-24** (accepted → `main` 2026-09-24, owner: "push to main and close
+  PR 7"; was PR #7 `codex/improve-ai-driving`, reviewed and merged through
+  `claude/peaceful-ramanujan-eahwts`; owner-directed, not a routine run)
+  — **AI passing lanes, traffic braking on the intended path, and a Node AI
+  suite.**
+  - `src/ai.js`: traffic is measured in track coordinates (arc length + lateral
+    offset, gaps wrapped across the start line). A driver behind a slower car
+    commits to a passing lane 3.3 m beside it, only if that lane is clear of
+    cars alongside or closing from behind and there is lateral grip to spare,
+    and holds it until 9 m ahead. Braking for traffic uses the lane the car is
+    moving into, not just where it is. Speed is also capped by the curvature
+    pure pursuit is actually asking for, so a lane change or a rejoin after
+    contact is slowed for. A stopped queue is held on the **handbrake**, never
+    the brake pedal, which the automatic box reads as reverse at a standstill;
+    the recovery state is the only path to reverse. Throttle eases by lateral
+    load rather than steer angle; brake gain up; `aLatMax` base 0.62 → 0.65,
+    `vMax` 46+14·skill → 52+18·skill. Clear-air laps change by < 1 %.
+  - Measured against `dd79e1d` with identical scenarios: pass a stopped car
+    4 contacts + 2.67 s of reverse → clean; both sides blocked 3.45 s of
+    reverse → holds, then goes; one side occupied 2 contacts, failed pass →
+    clean on the open side; car just across the seam 2 contacts → clean;
+    four-car race 110 s: 9.2 car-s off road, 9.8 s in reverse, 15 contacts →
+    none of the three, ~6 % more distance.
+  - `scripts/ai-test.mjs`: those scenarios plus a clear lap on all six
+    circuits, through the real car, tracks, surfaces and barriers in Node with
+    only canvas drawing stubbed. Wired into the `physics` CI job. `src/surfaces.js`
+    now holds `wheelSurfaces` / `nearestFrameIndex` (moved out of main.js) so
+    the suite runs the game's own per-wheel surface rules.
+  - Still open from the 2026-08-03 findings: a car boxed in from behind never
+    recovers (the handbrake hold does not touch that case).
 
 - **2026-09-22** (accepted → `main` 2026-09-23, owner: "this looks incredible
   - push to main"; was branch `claude/vibrant-volta-i7333f`; owner-directed
