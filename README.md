@@ -124,7 +124,15 @@ The car is a ~480 hp GT racer simulated on top of a Cannon `RaycastVehicle`:
 
 The AI runs the same physics through a pre-computed lap speed profile
 (corner speeds from curvature, anticipatory braking), pure-pursuit steering,
-traffic awareness, and stuck-recovery.
+and stuck-recovery. Drivers choose a clear passing lane, hold it until they
+are safely ahead, and account for cars alongside and across the start line.
+They slow down for the turning required by a pass or rejoin, and wait in
+blocked traffic without accidentally selecting reverse.
+
+`node scripts/ai-test.mjs` runs deterministic laps on all six circuits plus
+passing, queueing, and a full AI field through the actual physics. It needs no
+browser; only canvas drawing is stubbed. An optional circuit ID limits the run,
+for example `node scripts/ai-test.mjs gp`.
 
 ## Sound
 
