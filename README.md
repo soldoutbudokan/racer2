@@ -123,8 +123,14 @@ The car is a ~480 hp GT racer simulated on top of a Cannon `RaycastVehicle`:
   a magic pivot.
 
 The AI runs the same physics through a pre-computed lap speed profile
-(corner speeds from curvature, anticipatory braking), pure-pursuit steering,
-traffic awareness, and stuck-recovery.
+(corner speeds from curvature, anticipatory braking), pure-pursuit steering
+and stuck-recovery. In traffic a driver picks a clear lane past a slower car,
+checks it for cars alongside or closing from behind, and holds it until it is
+clear ahead. Gaps are measured along the track, so a car just over the start
+line is not mistaken for one a lap behind. The driver brakes for the path it
+is about to take, not only the centreline, and waits behind stopped traffic
+on the handbrake: the automatic gearbox reads the brake at a standstill as a
+request for reverse.
 
 ## Sound
 
@@ -176,7 +182,8 @@ pass. `M` mutes; the choice is remembered.
 
 ```
 src/
-  main.js       game loop, lap timing, per-wheel surface detection
+  main.js       game loop, lap timing, race state
+  surfaces.js   per-wheel road / kerb / grass / gravel detection
   scene.js      renderer, colour grade, IBL, shadow-follow, post-processing
   sky.js        sky dome: gradient, sun glow, per-circuit horizon
   garage.js     menu showroom render
@@ -193,6 +200,7 @@ src/
   carModels/    procedural car bodies, wheels, materials
 scripts/
   physics-test.mjs  deterministic driving-model assertions (23 checks)
+  ai-test.mjs       AI laps on every circuit plus traffic scenarios, in Node
   viewshot.mjs      deterministic drive + multi-angle screenshots
   trackshots.mjs    every circuit: chase / high / trackside / aerial / oblique
   uishots.mjs       menu, HUD, cameras, split screen and results screen
@@ -215,6 +223,11 @@ draw calls and triangles from an identical 1280×720 start-line camera. The
 pass/fail budgets are absolute; the baseline comparison is logged for reference.
 Timing uses software rendering in CI and is not a hardware FPS promise.
 
+`node scripts/ai-test.mjs` laps every circuit and runs the passing, queueing
+and four-car scenarios through the real car, tracks, surfaces and barriers in
+Node. Nothing is rendered; only canvas drawing is stubbed. Pass a circuit ID
+to run one, for example `node scripts/ai-test.mjs gp`.
+
 The **Verify game** pull-request workflow runs these checks, the driving-model
-suite, car geometry checks and a production build. Screenshots and render
-measurements are attached as a workflow artifact.
+suite, the AI traffic suite, car geometry checks and a production build.
+Screenshots and render measurements are attached as a workflow artifact.

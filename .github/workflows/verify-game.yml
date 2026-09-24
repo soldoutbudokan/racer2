@@ -24,6 +24,9 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: node scripts/graphics-test.mjs && node scripts/smoke-car.mjs
+      - name: AI laps and traffic regression suite
+        if: matrix.check == 'physics'
+        run: node scripts/ai-test.mjs
       - run: npx playwright-core install --with-deps chromium
       - name: Start game
         run: |

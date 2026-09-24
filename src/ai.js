@@ -12,10 +12,10 @@ import * as THREE from 'three';
  * traction-limited steering map the player has.
  */
 export function createAIDriver(track, options = {}) {
-  const skill = options.skill ?? 0.85;                  // 0..1
-  const aLatMax = 9.82 * 1.45 * (0.62 + 0.3 * skill);   // usable lateral g
+  const skill = THREE.MathUtils.clamp(options.skill ?? 0.85, 0, 1);
+  const aLatMax = 9.82 * 1.45 * (0.65 + 0.3 * skill);   // usable lateral g
   const aBrake = 8.5;                                   // planning decel m/s²
-  const vMax = (46 + 14 * skill);                       // m/s straight-line cap
+  const vMax = 52 + 18 * skill;                         // m/s straight-line cap
 
   const ctrl = {
     throttle: 0,
@@ -29,9 +29,12 @@ export function createAIDriver(track, options = {}) {
 
   // --- arc length per frame and curvature κ (1/m) ---
   const ds = new Float32Array(n);
+  const arc = new Float64Array(n + 1);
   for (let i = 0; i < n; i++) {
     ds[i] = frames[i].pos.distanceTo(frames[(i + 1) % n].pos);
+    arc[i + 1] = arc[i] + ds[i];
   }
+  const lapLength = arc[n];
   const kappa = new Float32Array(n);
   for (let i = 0; i < n; i++) {
     const t1 = frames[i].tan;
@@ -64,6 +67,23 @@ export function createAIDriver(track, options = {}) {
 
   const tmpV = new THREE.Vector3();
   const tmpFwd = new THREE.Vector3();
+  const roadLimit = Math.max(0, (track.width ?? 14) / 2 - 2);
+  const PASS_CLEARANCE = 3.3;  // car width plus space between the mirrors
+  let passCar = null, passOffset = 0, laneOffset = null;
+
+  // Continuous track coordinates keep traffic checks valid through corners
+  // and across the start line, without confusing a neighbouring straight.
+  function locate(pos, i = nearestFrameIndex(frames, pos)) {
+    const f = frames[i], dx = pos.x - f.pos.x, dz = pos.z - f.pos.z;
+    return {
+      s: arc[i] + dx * f.tan.x + dz * f.tan.z,
+      lat: dx * f.left.x + dz * f.left.z,
+      frame: f,
+    };
+  }
+  function gapTo(s, from) {
+    return ((s - from + lapLength * 1.5) % lapLength) - lapLength / 2;
+  }
 
   // ---- Stuck recovery -------------------------------------------------
   // Racing incidents happen: a car noses into the armco, or spins and beaches
@@ -117,6 +137,32 @@ export function createAIDriver(track, options = {}) {
     const pos = car.body.position;
     const nearest = nearestFrameIndex(frames, pos);
     const speed = Math.hypot(car.body.velocity.x, car.body.velocity.z);
+    const here = locate(pos, nearest);
+    if (laneOffset === null) laneOffset = THREE.MathUtils.clamp(here.lat, -roadLimit, roadLimit);
+    ctrl.handbrake = false;
+
+    const q = car.body.quaternion;
+    const fx = 2 * (q.x * q.z + q.w * q.y);
+    const fz = 1 - 2 * (q.x * q.x + q.y * q.y);
+    tmpFwd.set(fx, 0, fz).normalize();
+
+    let carBehind = false;
+    const traffic = [];
+    for (const other of others ?? []) {
+      if (!other || other === car) continue;
+      const p = other.body.position;
+      const dx = p.x - pos.x, dz = p.z - pos.z;
+      const ahead = dx * tmpFwd.x + dz * tmpFwd.z;
+      const lateral = -dx * tmpFwd.z + dz * tmpFwd.x;
+      if (ahead < 0 && ahead > -BEHIND_M && Math.abs(lateral) < 3) carBehind = true;
+      if (dx * dx + dz * dz > 140 * 140) continue;
+      const location = locate(p);
+      const gap = gapTo(location.s, here.s);
+      if (Math.abs(gap) > 140) continue;
+      const v = other.body.velocity;
+      traffic.push({ car: other, gap, lat: location.lat,
+        speed: v.x * location.frame.tan.x + v.z * location.frame.tan.z });
+    }
 
     // Target speed: look slightly ahead in the profile so we brake in time
     // even between samples, and anticipate by current speed.
@@ -126,21 +172,75 @@ export function createAIDriver(track, options = {}) {
       target = Math.min(target, profile[(nearest + k) % n]);
     }
 
+    // Commit to a clear passing lane until the entire car is ahead. Repeated
+    // steering nudges used to oscillate behind a slower car, or aim at grass.
+    const laneClear = (offset, ignore) => traffic.every((t) => {
+      if (t.car === ignore) return true;
+      const rearRoom = 9 + Math.max(0, t.speed - speed) * 1.2;
+      const frontRoom = 10 + Math.max(0, speed - t.speed) * 1.2;
+      const inSweep = t.lat > Math.min(here.lat, offset) - 2.7
+        && t.lat < Math.max(here.lat, offset) + 2.7;
+      return t.gap < -rearRoom || t.gap > frontRoom || !inSweep;
+    });
+    const passing = traffic.find((t) => t.car === passCar);
+    if (!passing || passing.gap < -9 || !laneClear(passOffset, passCar)) passCar = null;
+    if (!passCar) {
+      const leader = traffic.filter((t) => t.gap > 0
+        && t.gap < Math.max(25, speed * 1.6)
+        && Math.abs(t.lat - here.lat) < 2.7
+        && t.speed < target - 2).sort((a, b) => a.gap - b.gap)[0];
+      // Leave the available grip for the corner rather than start a lane
+      // change at the limit. Slow queues can still be passed in a bend.
+      let bend = 0, distance = 0;
+      for (let k = 0; k < n && distance < Math.max(25, speed * 1.5); k++) {
+        const i = (nearest + k) % n;
+        bend = Math.max(bend, kSmooth[i]);
+        distance += ds[i];
+      }
+      if (leader && speed * speed * bend < aLatMax * 0.7) {
+        const lanes = [leader.lat + PASS_CLEARANCE, leader.lat - PASS_CLEARANCE]
+          .filter((offset) => Math.abs(offset) <= roadLimit && laneClear(offset, leader.car))
+          .sort((a, b) => Math.abs(a - here.lat) - Math.abs(b - here.lat));
+        if (lanes.length) { passCar = leader.car; passOffset = lanes[0]; }
+      }
+    }
+    // Keep a lane beside another car instead of cutting back across its nose.
+    let desiredOffset = passCar ? passOffset : 0;
+    if (!laneClear(desiredOffset, passCar)) desiredOffset = laneOffset;
+    laneOffset += THREE.MathUtils.clamp(desiredOffset - laneOffset, -2.5 * dt, 2.5 * dt);
+    laneOffset = THREE.MathUtils.clamp(laneOffset, -roadLimit, roadLimit);
+    target *= Math.sqrt(Math.max(0.65, 1 - Math.abs(laneOffset) * kSmooth[nearest]));
+
+    for (const t of traffic) {
+      if (t.gap <= 0 || t.gap > Math.max(30, speed * 2)) continue;
+      // Until the actual car has moved clear, it still needs braking room.
+      if (Math.abs(t.lat - here.lat) >= 2.4 && Math.abs(t.lat - laneOffset) >= 2.4) continue;
+      const leaderSpeed = Math.max(0, t.speed);
+      // While pulling around a stopped car, leave enough forward travel to
+      // finish steering into the open lane. Five metres still clears both
+      // 4.36 m chassis; the normal following gap remains more generous.
+      const standOff = t.car === passCar && leaderSpeed < 3 ? 5 : 6.5;
+      const room = Math.max(0, t.gap - standOff - speed * 0.2);
+      target = Math.min(target, Math.sqrt(leaderSpeed * leaderSpeed + 2 * aBrake * room));
+      if (t.gap < standOff) target = Math.min(target, Math.max(0, leaderSpeed - 2));
+    }
+
+    // A spin or an excursion needs a controlled rejoin, not straight-line pace.
+    if (tmpFwd.dot(here.frame.tan) < 0.7) target = Math.min(target, 8);
+    if (Math.abs(here.lat) > roadLimit + 0.5) target = Math.min(target, 12);
+
     // --- Pure-pursuit steering ---
     const lookM = Math.max(7, speed * 0.55);
     let lookI = nearest;
     let acc = 0;
-    while (acc < lookM) {
+    while (acc < lookM && lookI < nearest + n) {
       acc += ds[lookI % n];
       lookI++;
     }
-    const tgt = frames[lookI % n].pos;
-
-    const q = car.body.quaternion;
-    const fx = 2 * (q.x * q.z + q.w * q.y);
-    const fz = 1 - 2 * (q.x * q.x + q.y * q.y);
-    tmpFwd.set(fx, 0, fz).normalize();
-    tmpV.set(tgt.x - pos.x, 0, tgt.z - pos.z);
+    const lookFrame = frames[lookI % n];
+    const tgt = lookFrame.pos;
+    tmpV.set(tgt.x + lookFrame.left.x * laneOffset - pos.x, 0,
+      tgt.z + lookFrame.left.z * laneOffset - pos.z);
     const Ld = Math.max(2, tmpV.length());
     tmpV.normalize();
 
@@ -151,6 +251,7 @@ export function createAIDriver(track, options = {}) {
     // AI had this inverted and steered away from its pursuit point).
     const cross = tmpFwd.x * tmpV.z - tmpFwd.z * tmpV.x;
     const signed = cross < 0 ? -ang : ang;
+    const needK = 2 * Math.sin(signed) / Ld;
 
     // Pure pursuit: κ = 2·sin(α)/Ld → needed steer angle δ = κ·wheelbase.
     // Same traction-limited cap the car itself applies, so |ctrl.steer| maps
@@ -165,61 +266,35 @@ export function createAIDriver(track, options = {}) {
       // A driver facing away from where they need to go uses all of it.
       ctrl.steer = signed < 0 ? -1 : 1;
     } else {
-      const needK = 2 * Math.sin(signed) / Ld;
       ctrl.steer = THREE.MathUtils.clamp(needK * 2.9 / cap, -1, 1);
     }
 
+    // A passing line or a correction after contact can turn more sharply
+    // than the centreline profile. Respect the grip needed by that path too.
+    target = Math.min(target, Math.sqrt(aLatMax / Math.max(1e-4, Math.abs(needK))));
+
     // --- Longitudinal ---
     if (speed < target - 0.5) {
-      // ease the throttle while still turning hard
-      const steerLoad = Math.min(1, Math.abs(ctrl.steer));
-      ctrl.throttle = THREE.MathUtils.lerp(1.0, 0.55, steerLoad * 0.7);
+      // Use full power on exit; ease only as the requested lateral force
+      // consumes the tyre budget, rather than penalising steering at any speed.
+      const lateralLoad = speed * speed * 2 * Math.sin(ang) / Ld / aLatMax;
+      ctrl.throttle = THREE.MathUtils.lerp(1, 0.82,
+        THREE.MathUtils.clamp((lateralLoad - 0.6) / 0.4, 0, 1));
       ctrl.brake = 0;
     } else if (speed > target + 1.0) {
       ctrl.throttle = 0;
-      ctrl.brake = THREE.MathUtils.clamp((speed - target) / 6, 0.2, 1);
+      ctrl.brake = THREE.MathUtils.clamp((speed - target) / 4, 0.2, 1);
     } else {
       ctrl.throttle = 0.35;
       ctrl.brake = 0;
     }
 
-    // --- Traffic awareness: don't pile into the car ahead ---
-    let carBehind = false;
-    if (others) {
-      for (const other of others) {
-        if (!other || other === car) continue;
-        const dx = other.body.position.x - pos.x;
-        const dz = other.body.position.z - pos.z;
-        const ahead = dx * tmpFwd.x + dz * tmpFwd.z;          // along our heading
-        const lateral = -dx * tmpFwd.z + dz * tmpFwd.x;       // signed side offset
-        // Anyone sitting in the space this car would back into. Checked before
-        // the forward filter below, which discards everything behind us.
-        if (ahead < 0 && ahead > -BEHIND_M && Math.abs(lateral) < 3.0) {
-          carBehind = true;
-        }
-        // look roughly one second up the road
-        const range = Math.max(12, speed * 0.95);
-        if (ahead < 1 || ahead > range || Math.abs(lateral) > 2.4) continue;
-        const ov = other.body.velocity;
-        const closing = speed - Math.hypot(ov.x, ov.z);
-        if (ahead < 6.5) {
-          ctrl.throttle = 0;
-          ctrl.brake = Math.max(ctrl.brake, closing > 1 ? 1 : 0.5);
-        } else if (closing > 0) {
-          // brake proportionally to the decel needed to not hit them
-          const needed = (closing * closing) / (2 * Math.max(1, ahead - 6));
-          ctrl.brake = Math.max(ctrl.brake, THREE.MathUtils.clamp(needed / 6, 0, 1));
-          if (ctrl.brake > 0.1 || ahead < speed * 0.45) {
-            ctrl.throttle = Math.min(ctrl.throttle, 0.35);
-          }
-        }
-        // Ease around the car ahead — but never while already cornering near
-        // the limit, where any extra steering means running wide.
-        if (Math.abs(ctrl.steer) < 0.5) {
-          ctrl.steer = THREE.MathUtils.clamp(
-            ctrl.steer + (lateral >= 0 ? -0.15 : 0.15), -1, 1);
-        }
-      }
+    // Brake is also the automatic gearbox's reverse pedal. Hold a stopped
+    // queue with the handbrake; only the recovery state may request reverse.
+    if (target < 0.5 && speed < 1.2) {
+      ctrl.throttle = 0;
+      ctrl.brake = 0;
+      ctrl.handbrake = true;
     }
 
     // --- Stuck recovery (see the constants above for the reasoning) ---
@@ -252,6 +327,7 @@ export function createAIDriver(track, options = {}) {
       } else {
         ctrl.throttle = 0;
         ctrl.brake = 1;               // reverse (automatic box: brake at standstill)
+        ctrl.handbrake = false;
         ctrl.steer = -ctrl.steer;     // rear-steer geometry points the nose back
       }
     } else {
