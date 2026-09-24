@@ -1,11 +1,13 @@
 // Deterministic AI laps through the actual car, track, tyre surfaces and barriers.
-// Only canvas drawing is stubbed; physics runs unchanged without a browser.
+// Only canvas drawing is stubbed; physics and the game's own per-wheel surface
+// detection (src/surfaces.js) run unchanged without a browser.
 // Run: node scripts/ai-test.mjs [track-id]
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createPhysicsWorld } from '../src/physics.js';
 import { createAIDriver } from '../src/ai.js';
 import { TRACKS } from '../src/tracks.js';
+import { wheelSurfaces, nearestFrameIndex } from '../src/surfaces.js';
 
 const context = new Proxy({}, {
   get(_target, key) {
@@ -23,33 +25,6 @@ const { createTrack } = await import('../src/track.js');
 const DT = 1 / 120;
 const HOLD = { throttle: 0, brake: 0, steer: 0, handbrake: true };
 
-function nearest(track, p) {
-  let index = 0, distance = Infinity;
-  track.frames.forEach((f, i) => {
-    const d = (p.x - f.pos.x) ** 2 + (p.z - f.pos.z) ** 2;
-    if (d < distance) { distance = d; index = i; }
-  });
-  return index;
-}
-
-function surfaces(track, car) {
-  const hint = nearest(track, car.body.position), n = track.frames.length;
-  return car.vehicle.wheelInfos.map((w) => {
-    const p = w.isInContact ? w.raycastResult.hitPointWorld : w.chassisConnectionPointWorld;
-    let index = hint, distance = Infinity;
-    for (let k = -4; k <= 4; k++) {
-      const i = (hint + k + n) % n, f = track.frames[i];
-      const d = (p.x - f.pos.x) ** 2 + (p.z - f.pos.z) ** 2;
-      if (d < distance) { distance = d; index = i; }
-    }
-    const f = track.frames[index];
-    const lat = Math.abs((p.x - f.pos.x) * f.left.x + (p.z - f.pos.z) * f.left.z);
-    if (lat <= track.width / 2) return 'road';
-    if (lat <= track.width / 2 + track.kerbWidth) return 'kerb';
-    return track.isGravel(index) ? 'gravel' : 'grass';
-  });
-}
-
 for (const def of TRACKS.filter((t) => !process.argv[2] || t.id === process.argv[2])) {
   const { world, materials } = createPhysicsWorld();
   const track = createTrack(new THREE.Scene(), world, materials, def);
@@ -58,14 +33,14 @@ for (const def of TRACKS.filter((t) => !process.argv[2] || t.id === process.argv
   car.reset({ x: f.pos.x, y: f.pos.y + 0.7, z: f.pos.z }, Math.atan2(f.tan.x, f.tan.z));
   for (let i = 0; i < 90; i++) { car.applyControls(HOLD, DT); world.step(DT); }
   const driver = createAIDriver(track, { skill: 0.85 });
-  let last = nearest(track, car.body.position), progress = 0, maxOffset = 0, offRoad = 0;
+  let last = nearestFrameIndex(track, car.body.position), progress = 0, maxOffset = 0, offRoad = 0;
   let lapTime = null, reverseTime = 0;
   for (let i = 0; i < 180 / DT; i++) {
-    car.applyControls(driver.update(car, [], DT), DT, surfaces(track, car));
+    car.applyControls(driver.update(car, [], DT), DT, wheelSurfaces(track, car));
     world.step(DT);
     if (car.telemetry.gearLabel === 'R') reverseTime += DT;
     if (i % 12 !== 0) continue;
-    const index = nearest(track, car.body.position), f = track.frames[index], p = car.body.position;
+    const index = nearestFrameIndex(track, car.body.position), f = track.frames[index], p = car.body.position;
     let advance = index - last;
     if (advance < -n / 2) advance += n;
     if (advance > n / 2) advance -= n;
@@ -98,11 +73,11 @@ for (const def of TRACKS.filter((t) => !process.argv[2] || t.id === process.argv
       let reverse = 0, maxLat = 0, firstSide = 0;
       for (let i = 0; i < seconds / DT; i++) {
         const ctrl = driver.update(car, active, DT);
-        car.applyControls(ctrl, DT, surfaces(track, car));
+        car.applyControls(ctrl, DT, wheelSurfaces(track, car));
         for (const c of blockers) c.applyControls(HOLD, DT);
         world.step(DT);
         if (car.telemetry.gearLabel === 'R') reverse += DT;
-        const p = car.body.position, f = track.frames[nearest(track, p)];
+        const p = car.body.position, f = track.frames[nearestFrameIndex(track, p)];
         maxLat = Math.max(maxLat, Math.abs((p.x - f.pos.x) * f.left.x + (p.z - f.pos.z) * f.left.z));
         if (!firstSide && Math.abs(car.body.position.x) > 0.5) firstSide = Math.sign(car.body.position.x);
       }
@@ -159,22 +134,23 @@ for (const def of TRACKS.filter((t) => !process.argv[2] || t.id === process.argv
     // Four drivers share the physical circuit for a complete lap. Update at
     // 60 Hz while physics runs at 120 Hz, as it does during normal gameplay.
     const field = [car, ...blockers];
-    field.forEach((c, i) => place(c, i % 2 ? 2.8 : -2.8, -6 - Math.floor(i / 2) * 8));
+    // Same grid as the game: alternating sides 2.5 m out, 7 m between cars.
+    field.forEach((c, i) => place(c, i % 2 ? 2.5 : -2.5, -2.8 - i * 7));
     settle(); contacts = 0;
     const drivers = field.map((_, i) => createAIDriver(track, { skill: 0.74 + i * 0.04 }));
-    const totals = field.map(() => 0), previous = field.map((c) => nearest(track, c.body.position));
+    const totals = field.map(() => 0), previous = field.map((c) => nearestFrameIndex(track, c.body.position));
     const commands = field.map(() => HOLD);
     let fieldOffRoad = 0, fieldReverse = 0;
     const maxOffsets = field.map(() => 0);
     for (let i = 0; i < 110 / DT; i++) {
       field.forEach((c, k) => {
         if (i % 2 === 0) commands[k] = { ...drivers[k].update(c, field, DT * 2) };
-        c.applyControls(commands[k], DT, surfaces(track, c));
+        c.applyControls(commands[k], DT, wheelSurfaces(track, c));
       });
       world.step(DT);
       if (i % 12) continue;
       field.forEach((c, k) => {
-        const idx = nearest(track, c.body.position), f = track.frames[idx], p = c.body.position;
+        const idx = nearestFrameIndex(track, c.body.position), f = track.frames[idx], p = c.body.position;
         let advance = idx - previous[k];
         if (advance < -n / 2) advance += n;
         if (advance > n / 2) advance -= n;
@@ -189,7 +165,7 @@ for (const def of TRACKS.filter((t) => !process.argv[2] || t.id === process.argv
     assert.ok(totals.every((t) => t >= n), 'every driver completes a lap in traffic');
     assert.equal(fieldReverse, 0, 'race field does not get stuck or select reverse');
     assert.equal(fieldOffRoad, 0, 'race field stays on the road');
-    assert.equal(contacts, 0, 'the lead car finishes its race without contact');
+    assert.equal(contacts, 0, 'the slowest driver, starting from pole, is never hit');
     blockers.forEach((c) => c.dispose());
   }
   car.dispose();
