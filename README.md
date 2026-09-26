@@ -57,6 +57,14 @@ keyboard listeners. Hidden tabs stop advancing the simulation.
 
 ## Modes & driving aids
 
+Choose a **GT Coupe**, **Muscle**, or **Open Wheel** car in the menu. Each has
+its own body shape, paint colour and engine sound, and the showroom previews
+your selection. The choice is remembered on this device and used for time
+trials, quick races, restarts and Player 1 in split screen. Player 2 keeps the
+blue muscle car. All three choices share the same driving performance.
+The muscle car has a tall rear-set cabin, a long flat hood, four round
+headlights and a separate boot, giving it a different silhouette from the GT.
+
 - **Time trial** — a single flying lap against the clock on an empty track.
 - **Quick race** — you vs. three AI over 3 laps.
 - **Two player** — split-screen, WASD vs. arrows.
@@ -222,6 +230,12 @@ presets, menu sizes, split-screen and restart memory in Chromium. Set
 draw calls and triangles from an identical 1280×720 start-line camera. The
 pass/fail budgets are absolute; the baseline comparison is logged for reference.
 Timing uses software rendering in CI and is not a hardware FPS promise.
+
+`node scripts/car-selection-test.mjs` checks car previews, saved choices,
+keyboard selection, all race modes and restarts in Chromium. Use `--unit`
+to check choice validation and storage fallbacks without a browser.
+`node scripts/car-shapes.mjs` renders the GT and muscle car in identical paint
+from the side, front and rear so shape differences can be reviewed directly.
 
 `node scripts/ai-test.mjs` laps every circuit and runs the passing, queueing
 and four-car scenarios through the real car, tracks, surfaces and barriers in

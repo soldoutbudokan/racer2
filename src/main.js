@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import { createScene } from './scene.js';
 import { createGarage } from './garage.js';
+import { initCarSelector } from './carSelection.js';
 import { createPhysicsWorld } from './physics.js';
 import { createTrack } from './track.js';
 import { TRACKS, DEFAULT_TRACK_ID, getTrackById } from './tracks.js';
@@ -65,12 +66,10 @@ function lapsFor(mode) {
   return mode === 'time-trial' ? 1 : RACE_LAPS;
 }
 
-const PLAYER1_COLOR = 0xc8161d;
 const PLAYER2_COLOR = 0x1f6cff;
 const AI_COLORS = [0xfacc15, 0x059669, 0xea580c];
 
 // Visually distinct body shapes across the grid.
-const PLAYER1_ARCH = 'gt';
 const PLAYER2_ARCH = 'muscle';
 const AI_ARCHETYPES = ['open-wheel', 'gt', 'muscle'];
 // Who the rivals are, for the timing tower and the results.
@@ -201,7 +200,12 @@ async function bootstrap() {
   }
   buildTrackSelector(document.getElementById('track-list'), ctx, rebuildTrack);
 
-  ctx.renderGarage = createGarage(renderer, scene.environment);
+  const renderGarage = createGarage(renderer, scene.environment);
+  ctx.renderGarage = () => renderGarage(ctx.selectedCar);
+  ctx.selectedCar = initCarSelector((choice) => {
+    ctx.selectedCar = choice;
+    ctx.renderGarage();
+  });
   const qualitySelect = document.getElementById('graphics-quality');
   qualitySelect.value = graphics.choice;
   const descriptions = {
@@ -336,18 +340,19 @@ function startMode(ctx, mode) {
   document.getElementById('race-circuit-name').textContent = ctx.track.name;
   ctx.primaryPlayerIdx = 0;
   ctx.state = createGameState(mode);
+  const playerCar = ctx.selectedCar;
 
   if (mode === 'time-trial') {
-    addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, PLAYER1_COLOR, 0, PLAYER1_ARCH);
+    addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, playerCar.color, 0, playerCar.id);
     ctx.hud.hidePosition();
   } else if (mode === 'quick-race') {
-    addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, PLAYER1_COLOR, 0, PLAYER1_ARCH);
+    addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, playerCar.color, 0, playerCar.id);
     for (let i = 0; i < 3; i++) {
       addAICar(ctx, AI_COLORS[i], i + 1, 0.78 + i * 0.04, AI_ARCHETYPES[i], AI_DRIVERS[i]);
     }
     ctx.hud.setPosition(1, ctx.cars.length);
   } else if (mode === 'two-player') {
-    addPlayerCar(ctx, WASD_BINDINGS, PLAYER1_COLOR, 0, PLAYER1_ARCH);
+    addPlayerCar(ctx, WASD_BINDINGS, playerCar.color, 0, playerCar.id);
     addPlayerCar(ctx, ARROW_BINDINGS, PLAYER2_COLOR, 1, PLAYER2_ARCH);
     ctx.hud.hidePosition();
   }

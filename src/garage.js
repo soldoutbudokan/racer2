@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildVisualCar } from './carModels/index.js';
+import { getCarChoice } from './carSelection.js';
 import { STATIC_CHASSIS_HEIGHT, WHEEL_RADIUS } from './stance.js';
 
 // A canvas texture, drawn once with the 2D API.
@@ -43,17 +44,30 @@ export function createGarage(renderer, environment) {
   const kicker = new THREE.DirectionalLight(0xe6ff9a, 0.5);
   kicker.position.set(-6, 1.2, 3); scene.add(kicker);
 
-  const car = buildVisualCar('gt', 0xc8161d);
-  car.root.position.y = STATIC_CHASSIS_HEIGHT;
-  car.shadow.position.y = -STATIC_CHASSIS_HEIGHT + 0.012;
-  car.root.rotation.y = -0.18;
-  scene.add(car.root);
-  for (let i = 0; i < 4; i++) {
-    const w = car.wheels[i];
-    w.position.set(i % 2 ? -0.88 : 0.88, WHEEL_RADIUS, i < 2 ? 1.45 : -1.45);
-    w.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), car.root.rotation.y);
-    w.rotation.y += car.root.rotation.y;
-    scene.add(w);
+  let car = null;
+  let currentChoice = getCarChoice();
+  const up = new THREE.Vector3(0, 1, 0);
+  function selectCar(choice) {
+    if (car && choice.id === currentChoice.id) return;
+    if (car) {
+      scene.remove(car.root, ...car.wheels);
+      // The car owns its body decorations. Its dispose method preserves the
+      // shared hull, wheel templates, paint and trim used by racing cars.
+      car.dispose();
+    }
+    currentChoice = choice;
+    car = buildVisualCar(choice.id, choice.color);
+    car.root.position.y = STATIC_CHASSIS_HEIGHT;
+    car.shadow.position.y = -STATIC_CHASSIS_HEIGHT + 0.012;
+    car.root.rotation.y = -0.18;
+    scene.add(car.root);
+    for (let i = 0; i < 4; i++) {
+      const w = car.wheels[i];
+      w.position.set(i % 2 ? -0.88 : 0.88, WHEEL_RADIUS, i < 2 ? 1.45 : -1.45);
+      w.position.applyAxisAngle(up, car.root.rotation.y);
+      w.rotation.y += car.root.rotation.y;
+      scene.add(w);
+    }
   }
 
   // Floor: a soft pool of light under the car, falling to the backdrop's
@@ -73,7 +87,8 @@ export function createGarage(renderer, environment) {
 
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 60);
   const target = new THREE.Vector3(0, 0.62, 0.1);
-  return function render() {
+  return function render(choice = currentChoice) {
+    selectCar(getCarChoice(choice?.id));
     const canvas = document.getElementById('garage');
     const { width, height } = canvas.getBoundingClientRect();
     if (!width || !height) return;

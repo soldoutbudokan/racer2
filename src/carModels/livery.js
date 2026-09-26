@@ -10,7 +10,9 @@ function stripeMaterial() {
 // Surface-following ribbons use the same sampled skin as panel seams. Each
 // livery merges into one draw call, rather than floating decals or extra FX.
 export function addLivery(body, keys, archetype) {
-  if (!keys) return;
+  // Keep the muscle car's broad hood and plain sides distinct from the GT's
+  // paired ivory bonnet stripes and rocker flash.
+  if (!keys || archetype === 'muscle') return;
   const f = profileFractions(keys);
   const gt = archetype === 'gt';
   const stripes = buildPanelSeams(keys, [
