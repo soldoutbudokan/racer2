@@ -149,12 +149,31 @@ export function decorate(body, ctx) {
     body.add(mesh);
   }
 
-  // The scoop's base sinks into the hood at both ends; its front mouth and
-  // raised black cap remain readable from the garage and chase cameras.
-  const scoop = box(0.66, 0.23, 1.02, makeTrim(), 0, 0.735, 1.04);
+  // The intake rises out of the hood at the rear and widens toward its front
+  // opening. A bevel keeps the raised cap from reading as a box on the bonnet.
+  const scoopProfile = new THREE.Shape();
+  scoopProfile.moveTo(-0.50, 0);
+  scoopProfile.lineTo(0.12, 0.145);
+  scoopProfile.lineTo(0.50, 0.145);
+  scoopProfile.lineTo(0.50, 0);
+  scoopProfile.closePath();
+  const scoopGeometry = new THREE.ExtrudeGeometry(scoopProfile, {
+    depth: 0.62, steps: 1, bevelEnabled: true,
+    bevelSize: 0.02, bevelThickness: 0.02, bevelSegments: 1,
+  });
+  scoopGeometry.translate(0, 0, -0.31);
+  scoopGeometry.rotateY(-Math.PI / 2);
+  const scoopVertices = scoopGeometry.attributes.position;
+  for (let i = 0; i < scoopVertices.count; i++) {
+    const taper = 0.72 + 0.28 * THREE.MathUtils.clamp(scoopVertices.getZ(i) + 0.5, 0, 1);
+    scoopVertices.setX(i, scoopVertices.getX(i) * taper);
+  }
+  scoopGeometry.computeVertexNormals();
+  const scoop = new THREE.Mesh(scoopGeometry, makeTrim());
+  scoop.position.set(0, 0.635, 1.04);
   scoop.castShadow = true;
   body.add(scoop);
-  body.add(box(0.53, 0.13, 0.018, makeCarbon(), 0, 0.745, 1.558));
+  body.add(box(0.50, 0.09, 0.012, makeCarbon(), 0, 0.705, 1.567));
 
   body.add(buildGrille({
     z: 2.322, y: 0.355, w: 1.78, h: 0.265, depth: 0.029, bar: false, ducts: false,
