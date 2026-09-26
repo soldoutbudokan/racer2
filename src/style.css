@@ -178,6 +178,22 @@ h1 em { font-style: italic; color: var(--accent); padding-right: 0.06em; }
   background: repeating-linear-gradient(90deg, var(--accent) 0 5px, transparent 5px 9px);
   opacity: 0.8;
 }
+.car-selector { min-width: 0; margin: 18px 0 0; padding: 0; border: 0; }
+.car-selector legend { padding: 0; margin-bottom: 10px; color: var(--text); font-size: 13px; font-weight: 700; }
+.car-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.car-option { position: relative; min-width: 0; cursor: pointer; }
+.car-option input { position: absolute; top: 10px; right: 10px; width: 14px; height: 14px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+.car-option-content { display: block; padding: 11px 11px 10px; border: 1px solid #2c3d45; border-radius: 6px; background: #101c23; transition: border-color 0.16s, background 0.16s; }
+.car-option:hover .car-option-content { border-color: #718791; }
+.car-option input:checked + .car-option-content { border-color: var(--accent); background: #1b291f; }
+.car-option input:focus-visible + .car-option-content { outline: 2px solid var(--accent); outline-offset: 3px; }
+.car-swatch { display: block; width: 30px; height: 5px; margin: 3px 0 10px; border-radius: 2px; }
+.car-swatch-gt { background: #c8161d; }
+.car-swatch-muscle { background: #2588d1; }
+.car-swatch-open-wheel { background: #f0b82f; }
+.car-option-name { display: block; color: var(--text); font-size: 11px; font-weight: 700; }
+.car-option-color { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }
+.car-selector p { margin: 9px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
 .car-specs { display: flex; padding: 24px 0; border-bottom: 1px solid var(--line); }
 .car-specs > div { flex: 1; padding-left: 22px; border-left: 1px solid var(--line); }
 .car-specs > div:first-child { padding-left: 0; border: 0; }
@@ -639,6 +655,8 @@ button:disabled { opacity: 0.45; cursor: wait; }
   .garage-stage { grid-column: 2; grid-row: 2; height: 155px; margin: 0 -10px 0 0; }
   .garage-stage::after { display: none; }
   .garage-caption { font-size: 7px; left: 8px; bottom: 8px; }
+  .car-selector { grid-column: 1 / -1; margin-top: 14px; }
+  .car-option-content { padding-left: 9px; padding-right: 9px; }
   .car-specs { grid-column: 1 / -1; padding: 12px 0; }
   .car-specs strong { font-size: 20px; }
   .car-specs span { font-size: 8px; }

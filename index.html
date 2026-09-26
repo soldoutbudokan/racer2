@@ -29,7 +29,16 @@
             <div class="eyebrow"><span class="status-dot"></span> READY TO RACE</div>
             <h1>Find your<br><em>next limit.</em></h1>
             <p class="hero-copy">Six circuits. Three ways to race.<br>One more lap.</p>
-            <div class="garage-stage"><canvas id="garage" aria-label="Red GT coupe with endurance racing stripes"></canvas><span class="garage-caption">01 / GT COUPE</span></div>
+            <div class="garage-stage"><canvas id="garage" aria-label="Red GT Coupe racing car"></canvas><span class="garage-caption" id="garage-caption">01 / GT COUPE</span></div>
+            <fieldset class="car-selector" aria-describedby="car-selection-note">
+              <legend>Choose your car</legend>
+              <div class="car-options">
+                <label class="car-option"><input type="radio" name="car" value="gt" checked><span class="car-option-content"><i class="car-swatch car-swatch-gt" aria-hidden="true"></i><span class="car-option-name">GT Coupe</span><span class="car-option-color">Red</span></span></label>
+                <label class="car-option"><input type="radio" name="car" value="muscle"><span class="car-option-content"><i class="car-swatch car-swatch-muscle" aria-hidden="true"></i><span class="car-option-name">Muscle</span><span class="car-option-color">Blue</span></span></label>
+                <label class="car-option"><input type="radio" name="car" value="open-wheel"><span class="car-option-content"><i class="car-swatch car-swatch-open-wheel" aria-hidden="true"></i><span class="car-option-name">Open Wheel</span><span class="car-option-color">Yellow</span></span></label>
+              </div>
+              <p id="car-selection-note">Equal performance. Your choice is Player 1 in split screen.</p>
+            </fieldset>
             <div class="car-specs"><div><strong>480</strong><span>HORSEPOWER</span></div><div><strong>6</strong><span>SPEED AUTO</span></div><div><strong>RWD</strong><span>DRIVETRAIN</span></div></div>
             <div class="garage-footer"><span>DRIVE WITH <kbd>W A S D</kbd> OR <kbd>↑ ← ↓ →</kbd></span><span>CHASE / HOOD / CINEMATIC</span></div>
           </section>

@@ -48,6 +48,9 @@ jobs:
         env:
           BASELINE_URL: http://localhost:5174/
         run: node scripts/browser-check.mjs
+      - name: Car selection regression suite
+        if: matrix.check == 'visual'
+        run: node scripts/car-selection-test.mjs
       - uses: actions/upload-artifact@v4
         if: always() && matrix.check == 'visual'
         with:
