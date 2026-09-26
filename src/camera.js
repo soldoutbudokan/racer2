@@ -8,7 +8,7 @@ import * as THREE from 'three';
  *
  * Smoothing uses critically-damped springs for both position and look-at.
  */
-export function createChaseCamera(camera) {
+export function createChaseCamera(camera, { hoodForward = 0.25 } = {}) {
   let mode = 0;
   const targetPos = new THREE.Vector3();
   const targetLook = new THREE.Vector3();
@@ -41,7 +41,7 @@ export function createChaseCamera(camera) {
     if (p.hood) {
       // Hood: sit on the chassis, look forward
       targetPos.set(body.position.x, body.position.y + p.height, body.position.z)
-        .add(fwd.clone().multiplyScalar(0.25));
+        .add(fwd.clone().multiplyScalar(hoodForward));
       targetLook.copy(targetPos).add(fwd.clone().multiplyScalar(8));
     } else {
       // Chase: distance grows slightly with speed (cinematic dolly-zoom feel)

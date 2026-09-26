@@ -57,6 +57,14 @@ keyboard listeners. Hidden tabs stop advancing the simulation.
 
 ## Modes & driving aids
 
+Choose a **GT Coupe**, **Rally Hatch**, or **Open Wheel** car in the menu. Each has
+its own body shape, paint colour and engine sound, and the showroom previews
+your selection. The choice is remembered on this device and used for time
+trials, quick races, restarts and Player 1 in split screen. Player 2 keeps the
+blue rally hatch. All three choices share the same driving performance.
+The rally hatch has a short hood, tall cabin, long roof, upright rear hatch
+and roof spoiler. Existing saved blue-car choices move to this new model.
+
 - **Time trial** — a single flying lap against the clock on an empty track.
 - **Quick race** — you vs. three AI over 3 laps.
 - **Two player** — split-screen, WASD vs. arrows.
@@ -139,8 +147,9 @@ samples to download. The engine note is the harmonic stack of a crankshaft
 turning at the flywheel's real RPM, so it flares with wheelspin, collapses
 through a shift cut and pops on the overrun; the throttle opens a filter the
 way a throttle opens an exhaust. Each body shape has its own character (a
-flat-plane V8 for the GT, a cross-plane burble for the muscle car, a V10 for
-the open-wheeler). Tyres squeal from the physics' own per-wheel slide, the
+flat-plane V8 for the GT, a four-cylinder for the rally hatch, a cross-plane
+burble for the AI muscle car, a V10 for the open-wheeler). Tyres squeal from
+the physics' own per-wheel slide, the
 surface under the car hisses (grass), crunches (gravel) or rumbles at the
 rib rate (kerbs), wind builds with speed, and the chassis thumps on contact.
 AI cars are positioned in 3D around the camera and Doppler-shifted as they
@@ -174,7 +183,7 @@ pass. `M` mutes; the choice is remembered.
   and hoodoos. Each circuit is a data
   definition; everything is parented to a disposable group so switching
   circuits tears down and rebuilds cleanly.
-- **Cars**: procedurally lofted bodies (GT coupe, muscle, open-wheeler) with
+- **Cars**: procedurally lofted bodies (GT coupe, rally hatch, AI muscle, open-wheeler) with
   clear-coated paint, wheel-arch liners, smoked-lens light clusters and
   detailed alloy wheels — merged down to a handful of draw calls per car.
 
@@ -222,6 +231,12 @@ presets, menu sizes, split-screen and restart memory in Chromium. Set
 draw calls and triangles from an identical 1280×720 start-line camera. The
 pass/fail budgets are absolute; the baseline comparison is logged for reference.
 Timing uses software rendering in CI and is not a hardware FPS promise.
+
+`node scripts/car-selection-test.mjs` checks car previews, saved choices,
+keyboard selection, all race modes and restarts in Chromium. Use `--unit`
+to check choice validation and storage fallbacks without a browser.
+`node scripts/car-shapes.mjs` renders the GT and rally hatch in identical paint
+from the side, front and rear so shape differences can be reviewed directly.
 
 `node scripts/ai-test.mjs` laps every circuit and runs the passing, queueing
 and four-car scenarios through the real car, tracks, surfaces and barriers in

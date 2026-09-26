@@ -49,6 +49,7 @@ const STORAGE_KEY = 'racer2.sound';
 const ENGINES = {
   gt:           { cylinders: 8,  halfOrder: 0.12, brightness: 1.00, level: 1.00, whine: 0.012 },
   muscle:       { cylinders: 8,  halfOrder: 0.55, brightness: 0.72, level: 1.05, whine: 0.0 },
+  hatch:        { cylinders: 4,  halfOrder: 0.16, brightness: 1.15, level: 0.95, whine: 0.016 },
   'open-wheel': { cylinders: 10, halfOrder: 0.05, brightness: 1.30, level: 0.90, whine: 0.020 },
 };
 
