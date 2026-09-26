@@ -189,7 +189,7 @@ h1 em { font-style: italic; color: var(--accent); padding-right: 0.06em; }
 .car-option input:focus-visible + .car-option-content { outline: 2px solid var(--accent); outline-offset: 3px; }
 .car-swatch { display: block; width: 30px; height: 5px; margin: 3px 0 10px; border-radius: 2px; }
 .car-swatch-gt { background: #c8161d; }
-.car-swatch-muscle { background: #2588d1; }
+.car-swatch-hatch { background: #2588d1; }
 .car-swatch-open-wheel { background: #f0b82f; }
 .car-option-name { display: block; color: var(--text); font-size: 11px; font-weight: 700; }
 .car-option-color { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }

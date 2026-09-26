@@ -70,7 +70,7 @@ const PLAYER2_COLOR = 0x1f6cff;
 const AI_COLORS = [0xfacc15, 0x059669, 0xea580c];
 
 // Visually distinct body shapes across the grid.
-const PLAYER2_ARCH = 'muscle';
+const PLAYER2_ARCH = 'hatch';
 const AI_ARCHETYPES = ['open-wheel', 'gt', 'muscle'];
 // Who the rivals are, for the timing tower and the results.
 const AI_DRIVERS = [
@@ -509,7 +509,9 @@ function addPlayerCar(ctx, bindings, color, gridIdx, archetype = 'gt') {
   const spawn = gridSpawn(ctx.track, gridIdx);
   car.reset(spawn.position, spawn.yaw);
   const input = createInput(bindings);
-  const chase = createChaseCamera(gridIdx === 0 ? ctx.camera : ctx.camera2);
+  const chase = createChaseCamera(gridIdx === 0 ? ctx.camera : ctx.camera2, {
+    hoodForward: archetype === 'hatch' ? 1.25 : 0.25,
+  });
   ctx.cars.push({
     car, color,
     isPlayer: true,

@@ -9,11 +9,13 @@ import { HUB_LOCAL_Y } from '../stance.js';
 
 import * as gtCoupe from './gtCoupe.js';
 import * as muscle from './muscle.js';
+import * as rallyHatch from './rallyHatch.js';
 import * as openWheel from './openWheel.js';
 
 const ARCHETYPES = {
   gt: gtCoupe,
   muscle,
+  hatch: rallyHatch,
   'open-wheel': openWheel,
 };
 

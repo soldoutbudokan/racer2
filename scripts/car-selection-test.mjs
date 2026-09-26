@@ -7,7 +7,7 @@ import { CAR_CHOICES, getCarChoice, loadCarChoice, saveCarChoice } from '../src/
 
 const expectedChoices = [
   { id: 'gt', color: 0xc8161d },
-  { id: 'muscle', color: 0x2588d1 },
+  { id: 'hatch', color: 0x2588d1 },
   { id: 'open-wheel', color: 0xf0b82f },
 ];
 assert.deepEqual(CAR_CHOICES.map(({ id, color }) => ({ id, color })), expectedChoices);
@@ -15,7 +15,7 @@ const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStor
 try {
   delete globalThis.localStorage;
   assert.equal(loadCarChoice().id, 'gt', 'missing storage keeps the default car');
-  assert.doesNotThrow(() => saveCarChoice('muscle'), 'selection works without storage');
+  assert.doesNotThrow(() => saveCarChoice('hatch'), 'selection works without storage');
 
   const values = new Map();
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: {
@@ -23,6 +23,11 @@ try {
     setItem: (key, value) => values.set(key, String(value)),
   } });
   assert.equal(loadCarChoice().id, 'gt', 'a new player starts with the red GT');
+  assert.equal(getCarChoice('muscle').id, 'hatch', 'the previous blue car id maps to the rally hatch');
+  values.set('racer2.car', 'muscle');
+  assert.equal(loadCarChoice().id, 'hatch', 'a saved blue muscle preference restores the rally hatch');
+  saveCarChoice('muscle');
+  assert.equal(values.get('racer2.car'), 'hatch', 'saving the previous blue car id stores the current hatch id');
   for (const id of [undefined, null, '', 'unknown-car', '__proto__']) {
     assert.equal(getCarChoice(id).id, 'gt', `unknown choice ${String(id)} falls back to GT`);
     values.set('racer2.car', id);
@@ -45,7 +50,7 @@ try {
   if (storageDescriptor) Object.defineProperty(globalThis, 'localStorage', storageDescriptor);
   else delete globalThis.localStorage;
 }
-console.log('PASS: car defaults, invalid preferences, persistence and unavailable storage');
+console.log('PASS: car defaults, blue car migration, invalid preferences, persistence and unavailable storage');
 
 if (!process.argv.includes('--unit')) await checkBrowser();
 
@@ -104,8 +109,8 @@ async function checkBrowser() {
       { archetype: 'muscle', color: 0xea580c, isPlayer: false },
     ], 'selecting a car preserves the rival grid');
     if (mode === 'two-player') assert.deepEqual(otherCars, [
-      { archetype: 'muscle', color: 0x1f6cff, isPlayer: true },
-    ], 'Player 2 keeps their blue muscle car');
+      { archetype: 'hatch', color: 0x1f6cff, isPlayer: true },
+    ], 'Player 2 uses the blue rally hatch');
     return state.cars[0].id;
   }
 
@@ -119,11 +124,15 @@ async function checkBrowser() {
     // Exercise the native radio keyboard behavior, then reload its preference.
     await page.locator('input[name="car"][value="gt"]').focus();
     await page.keyboard.press('ArrowRight');
-    await checkSelection('muscle');
-    assert.equal(await page.evaluate(() => localStorage.getItem('racer2.car')), 'muscle');
+    await checkSelection('hatch');
+    assert.equal(await page.evaluate(() => localStorage.getItem('racer2.car')), 'hatch');
     await page.reload({ waitUntil: 'load' });
     await ready();
-    await checkSelection('muscle');
+    await checkSelection('hatch');
+    await page.evaluate(() => localStorage.setItem('racer2.car', 'muscle'));
+    await page.reload({ waitUntil: 'load' });
+    await ready();
+    await checkSelection('hatch');
     await page.evaluate(() => localStorage.setItem('racer2.car', 'removed-car'));
     await page.reload({ waitUntil: 'load' });
     await ready();
@@ -148,7 +157,7 @@ async function checkBrowser() {
         }
         return { hash, red, blue, yellow };
       });
-      const channel = { gt: 'red', muscle: 'blue', 'open-wheel': 'yellow' }[choice.id];
+      const channel = { gt: 'red', hatch: 'blue', 'open-wheel': 'yellow' }[choice.id];
       assert(pixels[channel] > 100, `${choice.name} preview contains its selected paint`);
       previews.push(pixels.hash);
       await page.locator('#garage').screenshot({ path: `${out}/car-${choice.id}.png` });
@@ -176,6 +185,24 @@ async function checkBrowser() {
         await page.evaluate(() => document.getElementById('finish').classList.remove('hidden'));
         await page.locator('#finish-restart').click();
         assert.notEqual(await checkRace(choice, mode), firstId, 'restart builds a new selected car');
+        if (choice.id === 'hatch' && mode === 'time-trial') {
+          const hoodForward = await page.evaluate(() => {
+            const entry = window.__ctx.cars[0];
+            const { body } = entry.car;
+            entry.chase.cycle();
+            entry.chase.update(1 / 60, body, 0);
+            const THREE = window.__THREE;
+            const orientation = new THREE.Quaternion(
+              body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+            const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(orientation).normalize();
+            const offset = window.__ctx.camera.position.clone().sub(
+              new THREE.Vector3(body.position.x, body.position.y, body.position.z));
+            return { mode: entry.chase.getMode(), forward: offset.dot(forward) };
+          });
+          assert.equal(hoodForward.mode, 1, 'the hatch camera switches from chase to hood');
+          assert(hoodForward.forward > 1.0, 'the hatch hood camera sits ahead of its taller cabin');
+          await page.screenshot({ path: `${out}/car-hatch-hood.png` });
+        }
         if (mode === 'quick-race') {
           await page.evaluate(() => document.getElementById('finish').classList.remove('hidden'));
           await page.locator('#finish-menu').click();

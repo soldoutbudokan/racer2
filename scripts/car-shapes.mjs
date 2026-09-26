@@ -12,7 +12,7 @@ const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'],
 });
 try {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 1200 } });
+  const page = await browser.newPage({ viewport: { width: 1280, height: 1600 } });
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -38,10 +38,13 @@ try {
     sheet.id = 'car-shape-review';
     sheet.style.cssText = 'position:absolute;inset:0 auto auto 0;z-index:1000;width:1280px;display:grid;grid-template-columns:1fr 1fr;background:#101a20;color:#eef3f1;font:16px system-ui';
     document.body.appendChild(sheet);
-    const views = [['Side', [9, 1.0, 0]], ['Front quarter', [6, 2.8, 7]], ['Rear quarter', [6, 2.8, -7]]];
-    const cars = ['gt', 'muscle'].map(id => buildVisualCar(id, 0x71828b));
+    const silhouette = new THREE.MeshBasicMaterial({ color: 0xd9e1e6 });
+    const views = [['Silhouette', [9, 1.0, 0]], ['Side', [9, 1.0, 0]], ['Front quarter', [6, 2.8, 7]], ['Rear quarter', [6, 2.8, -7]]];
+    const cars = ['gt', 'hatch'].map(id => buildVisualCar(id, 0x71828b));
     for (const [label, position] of views) {
+      scene.overrideMaterial = label === 'Silhouette' ? silhouette : null;
       for (const [index, car] of cars.entries()) {
+        car.shadow.visible = label !== 'Silhouette';
         car.root.position.y = STATIC_CHASSIS_HEIGHT;
         car.shadow.position.y = -STATIC_CHASSIS_HEIGHT + 0.012;
         scene.add(car.root, ...car.wheels);
@@ -51,7 +54,7 @@ try {
         renderer.render(scene, camera);
         const cell = document.createElement('div');
         const title = document.createElement('div');
-        title.textContent = `${index ? 'MUSCLE' : 'GT COUPE'} · ${label} · Same paint`;
+        title.textContent = `${index ? 'RALLY HATCH' : 'GT COUPE'} · ${label} · ${label === 'Silhouette' ? 'Outline only' : 'Same paint'}`;
         title.style.cssText = 'padding:12px 20px 0';
         const canvas = document.createElement('canvas');
         canvas.width = 640; canvas.height = 360;
@@ -61,6 +64,7 @@ try {
       }
     }
     cars.forEach(car => car.dispose());
+    silhouette.dispose();
   });
   await page.locator('#car-shape-review').screenshot({ path: `${out}/car-shapes-same-paint.png` });
   assert.deepEqual(errors, [], 'shape comparison renders without browser errors');

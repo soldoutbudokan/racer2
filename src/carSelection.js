@@ -1,12 +1,14 @@
 export const CAR_CHOICES = Object.freeze([
   Object.freeze({ id: 'gt', name: 'GT Coupe', color: 0xc8161d, colorName: 'Red' }),
-  Object.freeze({ id: 'muscle', name: 'Muscle', color: 0x2588d1, colorName: 'Blue' }),
+  Object.freeze({ id: 'hatch', name: 'Rally Hatch', color: 0x2588d1, colorName: 'Blue' }),
   Object.freeze({ id: 'open-wheel', name: 'Open Wheel', color: 0xf0b82f, colorName: 'Yellow' }),
 ]);
 
 const STORAGE_KEY = 'racer2.car';
 
 export function getCarChoice(id) {
+  // Preserve a previously saved blue-car choice after replacing that model.
+  if (id === 'muscle') id = 'hatch';
   return CAR_CHOICES.find(choice => choice.id === id) || CAR_CHOICES[0];
 }
 
