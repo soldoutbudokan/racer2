@@ -43,6 +43,16 @@ jobs:
       - name: Driving and circuit regression suite
         if: matrix.check == 'physics'
         run: node scripts/physics-test.mjs
+      - name: Car shape comparison
+        if: matrix.check == 'visual'
+        run: node scripts/car-shapes.mjs
+      - name: Upload car shape comparison
+        if: matrix.check == 'visual'
+        uses: actions/upload-artifact@v4
+        with:
+          name: racer2-car-shapes
+          path: qa/car-shapes-same-paint.png
+          retention-days: 14
       - name: Visual and performance comparison
         if: matrix.check == 'visual'
         env:
