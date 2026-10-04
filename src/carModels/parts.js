@@ -130,8 +130,8 @@ function shellGeometry(build) {
 /**
  * A recessed rectangular opening facing +Z, added into `g`.
  *
- * The hull is a CLOSED loft — we cannot cut a hole in it — so a recess has to
- * be built the other way up: the rim stands proud of the skin and the floor
+ * The fascia stays solid (wheel and window apertures are cut elsewhere), so
+ * these small recesses put the rim proud of the skin and the floor
  * sits ON it. Visually that is the same read (a dark interior framed by a
  * catch-light edge) from every angle a driving camera ever sees, and it can
  * never expose the hollow inside of the body the way a real cut-out would.
@@ -960,9 +960,8 @@ export function buildArchLiners({
 }
 
 // ---- Cabin interior -------------------------------------------------------
-// The greenhouse used to be tinted glass over NOTHING, which is why the cabin
-// read as a void. This only has to survive being seen through 86 %-opaque
-// smoked glazing, so it is deliberately cheap and dark — but a steering wheel
+// The greenhouse has real openings in the painted shell. The interior is seen
+// through smoked glazing, so it is deliberately cheap and dark — but a steering wheel
 // and two seat backs behind the side glass is one of the biggest realism wins
 // per triangle on the whole car.
 //

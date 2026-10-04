@@ -4,6 +4,7 @@
 //   node audit-shots.mjs <outDir> [trackId ...]
 import { chromium } from 'playwright-core';
 import { existsSync, mkdirSync } from 'node:fs';
+import assert from 'node:assert/strict';
 
 // CHROME_EXE first, like every other shooter — this script had only the macOS
 // path, so it could not run on the routine's Linux container at all.
@@ -21,11 +22,19 @@ const ONLY = process.argv.slice(3);
 const browser = await chromium.launch({ executablePath: EXE, headless: true,
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-sandbox'] });
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+page.setDefaultTimeout(120000);
 const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push('PAGEERROR ' + e.message));
-await page.goto('http://localhost:5173/', { waitUntil: 'load' });
-await page.waitForSelector('.track-card');
+await page.goto(process.env.GAME_URL || 'http://localhost:5173/', { waitUntil: 'load' });
+await page.waitForFunction(() => window.__ctx?.track && document.querySelector('.track-card') &&
+  getComputedStyle(document.getElementById('loading')).opacity === '0');
+// Same fixed quality on both revisions; adaptive scaling would otherwise
+// compare software-renderer load rather than the authored scene.
+await page.evaluate(() => {
+  const select = document.getElementById('graphics-quality');
+  if (select) { select.value = 'high'; select.dispatchEvent(new Event('change', { bubbles: true })); }
+});
 
 const ids = await page.evaluate(() =>
   [...document.querySelectorAll('.track-card')].map((b) => b.dataset.track));
@@ -36,19 +45,35 @@ for (const id of ids) {
   // canvas can't intercept the pointer)
   await page.evaluate(() => {
     const ctx = window.__ctx;
-    if (ctx.mode) document.dispatchEvent(new KeyboardEvent('keydown', { code: 'Escape' }));
+    // The loop is deliberately frozen with mode=null after each capture;
+    // the finish-menu handler still performs the full car/track cleanup.
+    if (ctx.cars.length) document.getElementById('finish-menu').click();
     const ui = document.getElementById('ui');
     if (ui) ui.style.display = '';
   });
-  await page.waitForTimeout(300);
   await page.evaluate((id) =>
     document.querySelector(`.track-card[data-track="${id}"]`).click(), id);
-  await page.waitForTimeout(1200);            // rebuild track
+  await page.waitForFunction(id => {
+    const card = document.querySelector(`.track-card[data-track="${id}"]`);
+    return window.__ctx.track.id === id && card.classList.contains('selected') &&
+      card.parentElement.getAttribute('aria-busy') !== 'true' &&
+      !document.querySelector('button.mode[data-mode="time-trial"]').disabled;
+  }, id);
   await page.evaluate(() =>
     document.querySelector('button.mode[data-mode="time-trial"]').click());
-  await page.waitForTimeout(2000);
+  await page.waitForFunction(() => window.__ctx.mode === 'time-trial' && window.__ctx.cars.length === 1);
   await page.evaluate(() => {
-    window.__ctx.mode = null;                 // freeze game loop
+    const ctx = window.__ctx;
+    ctx.mode = null;                          // freeze game loop
+    const car = ctx.cars[0].car, spawn = window.__gridSpawn(ctx.track, 0);
+    car.reset(spawn.position, spawn.yaw);
+    for (let i = 0; i < 90; i++) {
+      car.applyControls({ throttle: 0, brake: 1, steer: 0, handbrake: true }, 1 / 120);
+      ctx.world.step(1 / 120);
+    }
+    car.update();
+    ctx.updateShadowTarget?.(car.body.position);
+    ctx.composer.passes.forEach(pass => { if (pass.uniforms?.uTime) pass.uniforms.uTime.value = 0; });
     const ui = document.getElementById('ui');
     if (ui) ui.style.display = 'none';
     const hud = document.getElementById('hud');
@@ -73,7 +98,6 @@ for (const id of ids) {
     cam.updateProjectionMatrix();
     ctx.composer.render();
   });
-  await page.waitForTimeout(150);
   await page.screenshot({ path: `${OUT}/${id}-overview.png` });
 
   // (b) oblique three-quarter aerial (shows building/stand heights vs road)
@@ -94,7 +118,6 @@ for (const id of ids) {
     cam.updateProjectionMatrix();
     ctx.composer.render();
   });
-  await page.waitForTimeout(150);
   await page.screenshot({ path: `${OUT}/${id}-oblique.png` });
 
   // (c) on-course chase views at lap fractions
@@ -111,9 +134,10 @@ for (const id of ids) {
       cam.updateProjectionMatrix();
       ctx.composer.render();
     }, frac);
-    await page.waitForTimeout(120);
     await page.screenshot({ path: `${OUT}/${id}-course${Math.round(frac * 100)}.png` });
   }
+  console.log('shot', id);
 }
 console.log('errors:', errors.length ? errors.slice(0, 8) : 'none');
 await browser.close();
+assert.deepEqual(errors, [], 'all circuits render without browser or WebGL errors');

@@ -26,11 +26,9 @@ import {
 //    one melted tumblehome — the "soap bar" read — and it also meant the
 //    greenhouse's belt fraction landed halfway down the door, which is why the
 //    old canopy swallowed the entire upper body.
-//  * At the axle stations the flank must stay INBOARD of the tyre face (1.00)
-//    up to about y 0.30, and only the arch lip may cross it. The hull is a
-//    closed loft with no cut-out, so anything outboard of 1.00 in the tyre's
-//    swept volume is paint drawn in FRONT of the wheel: flare too low and the
-//    fender simply eats the tyre.
+//  * Wheel openings are cut from the finished loft by wheelWells.js. The
+//    authored flank stays close to the tyre's outer face so the painted
+//    returns meet the liners without an oversized fender overhang.
 //  * The arch blister has to span the whole arch mouth (z +/-0.33 either side
 //    of the axle), not just the axle station, or the arch liner's rolled lip
 //    pokes outboard of the body and reads as a black crescent painted on the
@@ -96,7 +94,7 @@ const F = profileFractions(keys);
 // down to the sill would wrap the windshield back along the beltline and leave
 // no A-pillar to speak of. F.tumble puts their lower corners partway down the
 // tumblehome, exactly where a wrapped screen ends.
-const PANES = [
+export const PANES = [
   { zStart: 0.50, zEnd: 0.20, beltFrac: F.tumble, topFrac: 1.0, steps: 8 },   // windshield
   //                          z 0.20 -> 0.10 stays painted: the A-pillar/header
   { zStart: 0.10, zEnd: -1.00, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 18 },
@@ -253,9 +251,9 @@ export function decorate(body, ctx) {
     intakeZ: -0.95, intakeY: 0.385, intakeX: 0.968, intakeW: 0.18, intakeH: 0.11,
   })));
 
-  // ---- Cabin. Two seats, a wheel and a dash behind 86 %-opaque glazing: the
-  // greenhouse used to be glass over an empty shell, which is most of why the
-  // cabin read as a void. Head restraints deliberately clear the beltline
+  // ---- Cabin. Two seats, a wheel and a dash behind smoked glazing. The loft
+  // leaves each pane open so this interior can be seen through the glass.
+  // Head restraints deliberately clear the beltline
   // (y ~0.49) so something is visible through the side glass at eye level.
   body.add(buildInterior({
     floorY: -0.02, dashZ: 0.40, dashH: 0.16, seatZ: -0.44, bulkheadZ: -1.05,
@@ -268,7 +266,7 @@ export function decorate(body, ctx) {
   // Liner width/x chosen so its rolled lip (outer extent ~0.978) stays inboard
   // of the flank at the arch mouths (~0.984 front, ~0.99 rear). A lip outboard
   // of the body is the black-crescent-on-the-fender failure.
-  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.845, r: 0.41, width: 0.26 }));
+  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.845, r: 0.413, width: 0.26, lip: false }));
 
   return { brakeLights: tail.brakeMesh };
 }

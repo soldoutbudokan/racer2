@@ -36,6 +36,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { fractalNoise, smoothstep, hideFromOverridePasses } from './noise.js';
 import { rand } from './rng.js';
+import { addVenueScenery } from './venues.js';
 
 // ---------------------------------------------------------------------------
 // Authored layout data
@@ -1204,7 +1205,10 @@ export function addGroundCover(scene, frames, D, opts = {}) {
   const ground = opts.ground || 'grass';
   // The desert already has addScrub (brush + saguaros) and a street circuit
   // has no rough at all — doubling up would just cost draw calls.
-  if (ground === 'sand' || ground === 'city') return;
+  if (ground === 'sand' || ground === 'city') {
+    addVenueScenery(scene, frames, D);
+    return;
+  }
   if (!frames || frames.length < 8) return;
 
   const density = opts.density ?? 1;
@@ -1312,4 +1316,5 @@ export function addGroundCover(scene, frames, D, opts = {}) {
 
   // --- farm tracks ---
   addFarmTracks(scene, frames, D, ground, cfg);
+  addVenueScenery(scene, frames, D);
 }

@@ -184,8 +184,17 @@ pass. `M` mutes; the choice is remembered.
   definition; everything is parented to a disposable group so switching
   circuits tears down and rebuilds cleanly.
 - **Cars**: procedurally lofted bodies (GT coupe, rally hatch, AI muscle, open-wheeler) with
-  clear-coated paint, wheel-arch liners, smoked-lens light clusters and
-  detailed alloy wheels — merged down to a handful of draw calls per car.
+  clear-coated paint, cut-out wheel arches with painted returns, open window
+  apertures with visible cabins, smoked-lens light clusters and distinct
+  alloy wheels and tyres — merged into material batches per car.
+- **City**: chamfered office towers, terraced apartments and masonry blocks,
+  recessed shops and arcades, planted squares and sidewalks, plus a harbour
+  of moored yachts, finger docks and a palm promenade.
+- **Circuit identity**: race-control buildings, a speedway timing tower,
+  a historic park pavilion, timber alpine lodges and desert shade structures.
+  Forest coverage follows the entire circuit, including the ends of the
+  Alpine and Parco layouts. Brake boards face approaching drivers; grid,
+  finish-line and crossing paint follow the road crown.
 
 ## Project layout
 
@@ -223,6 +232,12 @@ Headless scripts resolve Chrome from `$CHROME_EXE`, the Puppeteer cache, or
 the local Playwright install, and need `npm run dev` running first.
 
 ## Verification
+
+`node scripts/world-audit.mjs` builds all six worlds and checks road winding,
+finite geometry, scenery clearance, resource budgets and complete disposal.
+The visual CI job captures every circuit before and after the change, plus
+all four car bodies from matching cameras. See `docs/VISUAL_AUDIT.md` for
+the per-circuit findings and remaining limitations.
 
 `node scripts/graphics-test.mjs` checks render budgets, adaptation and tree
 batch transforms. `scripts/browser-check.mjs` exercises all circuits, quality

@@ -6,6 +6,7 @@ import { buildContactShadow } from './parts.js';
 import { mergeByMaterial } from './merge.js';
 import { addLivery } from './livery.js';
 import { HUB_LOCAL_Y } from '../stance.js';
+import { cutWheelWells } from './wheelWells.js';
 
 import * as gtCoupe from './gtCoupe.js';
 import * as muscle from './muscle.js';
@@ -42,9 +43,15 @@ function getHull(key, def) {
     // two spacings within 15 % of each other and returns ~2.2 k triangles per
     // road car, which is a fifth of the whole overrun.
     // profilePoints is ignored once a car declares surface features.
-    hullCache.set(key, def.keys ? buildLoftHull(def.keys, {
-      ringsPerSegment: 7, profilePoints: 16,
-    }) : null);
+    let hull = def.keys ? buildLoftHull(def.keys, {
+      ringsPerSegment: 7, profilePoints: 16, panes: def.PANES,
+    }) : null;
+    if (hull && key !== 'open-wheel') {
+      const shell = cutWheelWells(hull);
+      hull.dispose();
+      hull = shell;
+    }
+    hullCache.set(key, hull);
   }
   return hullCache.get(key);
 }

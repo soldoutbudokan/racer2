@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  makeTire, makeSidewall, makeRimDark, makeDisc, makeCaliper,
+  makeTire, makeSlickTire, makeSidewall, makeRimDark, makeDisc, makeCaliper,
 } from './carMaterials.js';
 import { mergeByMaterial } from './merge.js';
 
@@ -54,6 +54,7 @@ const templates = new Map();
 
 const STYLES = {
   gt:        { spokes: 5, twin: true,  spokeW: 0.040, rim: 'bright', lock: 'lugs' },
+  rally:     { spokes: 8, twin: false, spokeW: 0.048, rim: 'bright', lock: 'lugs' },
   muscle:    { spokes: 5, twin: false, spokeW: 0.085, rim: 'bright', lock: 'lugs' },
   openWheel: { spokes: 10, twin: false, spokeW: 0.030, rim: 'dark', lock: 'center' },
 };
@@ -204,7 +205,7 @@ function buildTemplateRaw(styleKey, style) {
   const group = new THREE.Group();
 
   // Tyre: lathed profile — crowned tread band + two bulged sidewalls.
-  const tread = new THREE.Mesh(latheX(TREAD_PROFILE, TYRE_SEG), makeTire());
+  const tread = new THREE.Mesh(latheX(TREAD_PROFILE, TYRE_SEG), styleKey === 'openWheel' ? makeSlickTire() : makeTire());
   tread.castShadow = true;
   group.add(tread);
   for (const dir of [1, -1]) {
