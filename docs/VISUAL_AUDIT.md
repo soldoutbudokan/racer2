@@ -17,6 +17,7 @@ This pass covers all four car bodies and all six circuits. It combines a source/
 | Forest coverage | Fixed forest bounds ended before the far sections of Alpine and Parco. | Forest extent now covers the actual circuit bounds without increasing its configured population. |
 | Pit/forest overlap | Rendered review found tree crowns intersecting the Speedway garage after the forest change. | Derive the pit exclusion volume from its actual geometry and remove vegetation whose complete transformed bounds overlap it, at every LOD. |
 | Country-circuit identity | Five circuits relied heavily on the same generic race infrastructure. | Added small, batched venue buildings with independent footprint clearance checks. |
+| Review fixes | Desert rocks and brush escaped the venue clearing; tree LOD levels could disagree at the pit volume; one frontage lot reached onto the promenade slab; the finish chequer shared the grid paint's depth offset; the wheel-arch clipper dropped faces that only touched a cut plane. | Named and cleared the desert scatter (the audit now checks it), tested every tree LOD with one union box, stopped city lots at the slab, raised the chequer's polygon offset, and gave on-plane vertices to both clip sides. CI now waits for each dev server before using it. |
 
 ## Circuit-by-circuit scope
 

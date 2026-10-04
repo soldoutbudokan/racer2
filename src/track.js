@@ -221,9 +221,11 @@ export function createTrack(scene, world, materials, def) {
 
   // Start/finish line
   const sfTex = makeStartFinishTexture();
+  // One offset unit above the grid paint: the first row's front outline lies
+  // under the chequer, and at equal height and offset the two would z-fight.
   const sfMat = new THREE.MeshStandardMaterial({
     map: sfTex, roughness: 0.6,
-    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
   });
   const sf = new THREE.Mesh(roadMarkingGeometry(frames[0], ROAD_WIDTH, 1.6, ROAD_WIDTH / 2), sfMat);
   sf.name = 'road-marking-finish';
@@ -1693,10 +1695,11 @@ function addCityBuildings(scene, frames, D) {
   const centreZ = D.terrain?.centre?.z ?? 0;
 
   // Nothing gets built on the water side of the sea-front straight — that
-  // strip belongs to the marina promenade.
+  // strip belongs to the marina promenade, whose slab starts at the barrier
+  // line (scenery/marina.js), so no lot may reach past it.
   let seaX = -Infinity;
   for (const f of frames) seaX = Math.max(seaX, f.pos.x);
-  seaX += D.armco + 2;
+  seaX += D.armco;
 
   const n = frames.length;
   const step = 5;
@@ -1947,6 +1950,7 @@ function addRocks(scene, frames, D) {
   });
   const N = 150;
   const inst = new THREE.InstancedMesh(base, rockMat, N);
+  inst.name = 'desertRocks';
   inst.castShadow = true;
   inst.receiveShadow = true;
   const m = new THREE.Matrix4();
@@ -1998,6 +2002,7 @@ function addScrub(scene, frames, D) {
   });
   const BUSH_N = 260;
   const bushes = new THREE.InstancedMesh(bushGeo, bushMat, BUSH_N);
+  bushes.name = 'desertScrub';
   bushes.castShadow = true;
   bushes.receiveShadow = true;
   const m4 = new THREE.Matrix4();
@@ -2047,6 +2052,7 @@ function addScrub(scene, frames, D) {
   });
   const CACT_N = 46;
   const cacti = new THREE.InstancedMesh(cactusGeo, cactusMat, CACT_N);
+  cacti.name = 'saguaros';
   cacti.castShadow = true;
   placed = 0;
   for (let i = 0; i < CACT_N * 6 && placed < CACT_N; i++) {

@@ -246,17 +246,24 @@ async function auditWorlds() {
         // Check every tree LOD, including spatial-batch transforms. Trunks
         // must stay outside the model footprint; canopy overlap is reviewed
         // in the rendered views because its silhouette is not a solid box.
+        // Scattered ground cover, rocks and desert brush must not stand
+        // inside the footprint either.
+        const vegetationNames = new Set(['grassTufts', 'flowerDrifts', 'shrubs', 'alpineRock', 'hedgerows',
+          'desertScrub', 'saguaros', 'desertRocks']);
         const instance = new THREE.Matrix4(), transform = new THREE.Matrix4();
         track.group.traverse(object => {
-          if (!object.isInstancedMesh || !object.name.startsWith('trees-')) return;
+          if (!object.isInstancedMesh) return;
+          const isTree = object.name.startsWith('trees-');
+          if (!isTree && !vegetationNames.has(object.name)) return;
+          const margin = isTree ? 1 : 0;
           for (let i = 0; i < object.count; i++) {
             object.getMatrixAt(i, instance); transform.multiplyMatrices(object.matrixWorld, instance);
             for (const site of venues) {
               const dx = transform.elements[12] - site.x, dz = transform.elements[14] - site.z;
               const x = Math.cos(site.yaw) * dx - Math.sin(site.yaw) * dz;
               const z = Math.sin(site.yaw) * dx + Math.cos(site.yaw) * dz;
-              if (Math.abs(x) < site.width / 2 + 1 && Math.abs(z) < site.depth / 2 + 1)
-                failure.push(`tree instance intersects ${id} venue footprint`);
+              if (Math.abs(x) < site.width / 2 + margin && Math.abs(z) < site.depth / 2 + margin)
+                failure.push(`${object.name} instance intersects ${id} venue footprint`);
             }
           }
         });
@@ -281,7 +288,6 @@ async function auditWorlds() {
             if (!contained) failure.push(`${object.name} lies outside the recorded pit footprint`);
           }
         });
-        const vegetationNames = new Set(['grassTufts', 'flowerDrifts', 'shrubs', 'alpineRock', 'hedgerows']);
         track.group.traverse(object => {
           if (!object.isInstancedMesh || !(object.name.startsWith('trees-') || vegetationNames.has(object.name))) return;
           object.geometry.computeBoundingBox();

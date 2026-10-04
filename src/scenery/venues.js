@@ -251,6 +251,15 @@ function chooseSite(frames, D, plan) {
   return null;
 }
 
+// Horizontal clearing margin for each scattered ground-cover batch, by mesh
+// name. Every scatterer that can land inside a building must be listed here.
+const VEGETATION_MARGINS = {
+  grassTufts: 0.8, flowerDrifts: 0.8, hedgerows: 0.8,
+  shrubs: 2.5, alpineRock: 2.5, desertScrub: 2.5, saguaros: 1.5,
+  // Boulders are instanced at up to 5.5x; their reach is added per instance.
+  desertRocks: 0.5,
+};
+
 // Trees are spatially batched and some carry local cell offsets. Remove only
 // instances inside the accepted building clearing, updating both LOD levels,
 // so roofs cannot sprout tree trunks after the forest bounds correction.
@@ -258,6 +267,7 @@ function clearVegetation(scene, footprints) {
   scene.updateMatrixWorld(true);
   const local = new THREE.Matrix4(), world = new THREE.Matrix4(), colour = new THREE.Color();
   const relative = new THREE.Matrix4(), instanceBounds = new THREE.Box3();
+  const sites = footprints.map((site) => ({ ...site, cos: Math.cos(site.yaw), sin: Math.sin(site.yaw) }));
   // Existing pit buildings publish their measured vertical extent too. Test
   // the complete vegetation geometry against that volume: a large stone-pine
   // canopy can reach the roof even when its trunk clears the usual margin.
@@ -268,24 +278,38 @@ function clearVegetation(scene, footprints) {
       new THREE.Vector3(-site.width / 2 - 0.25, site.minY - 0.1, -site.depth / 2 - 0.25),
       new THREE.Vector3(site.width / 2 + 0.25, site.maxY + 0.25, site.depth / 2 + 0.25)),
   }));
+  // Tree LODs share instance matrices but not geometry: a distant canopy, a
+  // mid-range card and its trunk all have different bounds. Test every tree
+  // level with one union box so a stand never keeps a card its trunk lost.
+  const treeBounds = new THREE.Box3();
+  if (volumes.length) scene.traverse((mesh) => {
+    if (!mesh.isInstancedMesh || !mesh.name.startsWith('trees-')) return;
+    if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+    treeBounds.union(mesh.geometry.boundingBox);
+  });
   let removed = 0;
   scene.traverse((mesh) => {
     if (!mesh.isInstancedMesh) return;
     const isTree = mesh.name.startsWith('trees-');
-    if (!isTree && !['grassTufts', 'flowerDrifts', 'shrubs', 'alpineRock', 'hedgerows'].includes(mesh.name)) return;
+    const baseMargin = isTree ? 6.5 : VEGETATION_MARGINS[mesh.name];
+    if (baseMargin === undefined) return;
     if (volumes.length && !mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
-    const margin = isTree ? 6.5 : mesh.name === 'shrubs' || mesh.name === 'alpineRock' ? 2.5 : 0.8;
+    const bounds = isTree ? treeBounds : mesh.geometry.boundingBox;
+    const scaled = mesh.name === 'desertRocks';
     let kept = 0;
     for (let i = 0; i < mesh.count; i++) {
       mesh.getMatrixAt(i, local); world.multiplyMatrices(mesh.matrixWorld, local);
       const x = world.elements[12], z = world.elements[14];
-      const excluded = footprints.some((site) => {
+      const e = local.elements;
+      // The deformed unit icosahedron reaches 1.35 before the instance scale.
+      const margin = baseMargin + (scaled ? 1.4 * Math.max(Math.hypot(e[0], e[1], e[2]),
+        Math.hypot(e[4], e[5], e[6]), Math.hypot(e[8], e[9], e[10])) : 0);
+      const excluded = sites.some((site) => {
         const dx = x - site.x, dz = z - site.z;
-        const cos = Math.cos(site.yaw), sin = Math.sin(site.yaw);
-        return Math.abs(cos * dx - sin * dz) < site.width / 2 + margin && Math.abs(sin * dx + cos * dz) < site.depth / 2 + margin;
+        return Math.abs(site.cos * dx - site.sin * dz) < site.width / 2 + margin && Math.abs(site.sin * dx + site.cos * dz) < site.depth / 2 + margin;
       }) || volumes.some((volume) => {
         relative.multiplyMatrices(volume.inverse, world);
-        instanceBounds.copy(mesh.geometry.boundingBox).applyMatrix4(relative);
+        instanceBounds.copy(bounds).applyMatrix4(relative);
         return volume.bounds.intersectsBox(instanceBounds);
       });
       if (excluded) { removed++; continue; }

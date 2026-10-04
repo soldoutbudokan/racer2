@@ -15,7 +15,10 @@ function splitPolygon(polygon, plane) {
   for (let i = 0; i < polygon.length; i++) {
     const a = polygon[i], b = polygon[(i + 1) % polygon.length];
     const da = plane.distance(a), db = plane.distance(b);
-    (da <= EPS ? inside : outside).push(a);
+    // A vertex on the plane belongs to both sides, as in Sutherland-Hodgman.
+    // Giving it to one side alone dropped any face that only touched the cut.
+    if (da <= EPS) inside.push(a);
+    if (da >= -EPS) outside.push(a);
     if ((da < -EPS && db > EPS) || (da > EPS && db < -EPS)) {
       const t = da / (da - db);
       const v = a.map((value, k) => value + (b[k] - value) * t);
