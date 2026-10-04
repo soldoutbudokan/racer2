@@ -27,6 +27,46 @@ function topFaces(geometry) {
   return { up, down, degenerate };
 }
 
+// Exact segment-to-rectangle distance, independently of the scenery builder's
+// point-sampled placement test. Rotate the segment into the footprint frame.
+function segmentRectangleDistance(ax, az, bx, bz, halfWidth, halfDepth) {
+  const dx = bx - ax, dz = bz - az;
+  let low = 0, high = 1;
+  for (const [p, d, h] of [[ax, dx, halfWidth], [az, dz, halfDepth]]) {
+    if (Math.abs(d) < 1e-12) { if (Math.abs(p) > h) { low = Infinity; break; } }
+    else {
+      const first = (-h - p) / d, second = (h - p) / d;
+      low = Math.max(low, Math.min(first, second));
+      high = Math.min(high, Math.max(first, second));
+    }
+  }
+  if (low <= high) return 0;
+  const toBox = (x, z) => Math.hypot(Math.max(0, Math.abs(x) - halfWidth), Math.max(0, Math.abs(z) - halfDepth));
+  let distance = Math.min(toBox(ax, az), toBox(bx, bz));
+  for (const x of [-halfWidth, halfWidth]) for (const z of [-halfDepth, halfDepth]) {
+    const t = Math.max(0, Math.min(1, ((x - ax) * dx + (z - az) * dz) / Math.max(1e-20, dx * dx + dz * dz)));
+    distance = Math.min(distance, Math.hypot(x - ax - t * dx, z - az - t * dz));
+  }
+  return distance;
+}
+assert.equal(segmentRectangleDistance(-10, 0, 10, 0, 1, 1), 0, 'a segment can cross a footprint with both endpoints outside');
+assert.equal(segmentRectangleDistance(-10, 3, 10, 3, 1, 1), 2, 'parallel segment separation');
+assert.equal(segmentRectangleDistance(4, 5, 4, 5, 1, 1), 5, 'corner and zero-length segment separation');
+
+function venueClearance(frames, site) {
+  const co = Math.cos(site.yaw), si = Math.sin(site.yaw);
+  let closest = Infinity;
+  const local = p => {
+    const dx = p.x - site.x, dz = p.z - site.z;
+    return [co * dx - si * dz, si * dx + co * dz];
+  };
+  for (let i = 0; i < frames.length; i++) {
+    const a = local(frames[i].pos), b = local(frames[(i + 1) % frames.length].pos);
+    closest = Math.min(closest, segmentRectangleDistance(...a, ...b, site.width / 2, site.depth / 2));
+  }
+  return closest;
+}
+
 for (const def of TRACKS) {
   seedCircuit(def.id); beginStream('asphalt');
   const curve = new THREE.CatmullRomCurve3(def.controlPoints.map(([x, z]) => new THREE.Vector3(x, 0, z)),
@@ -101,8 +141,9 @@ async function auditWorlds() {
         const failure = [], geos = new Set(), mats = new Set(), texs = new Set(), buffers = new Set();
         const result = { id, milliseconds: Math.round(performance.now() - start), meshes: 0, instances: 0,
           triangles: 0, instancedTriangles: 0, geometryBytes: 0, texturePixels: 0,
-          cityBuildings: 0, venueFootprints: 0, roadMarkings: 0, brakeMarkers: 0,
-          minBuildingClearance: null, names: {}, failure };
+          cityBuildings: 0, publicSpaces: 0, venueFootprints: 0, roadMarkings: 0, brakeMarkers: 0,
+          minBuildingClearance: null, minVenueClearance: null, names: {}, failure };
+        const venues = [];
         const finite = (values, label) => {
           for (const value of values) if (!Number.isFinite(value)) { failure.push(`nonfinite ${label}`); break; }
         };
@@ -175,6 +216,37 @@ async function auditWorlds() {
             result.minBuildingClearance = Math.min(result.minBuildingClearance ?? Infinity, gap);
             if (gap < 0.5) failure.push(`city building intrudes into barrier clearance: ${gap.toFixed(2)}m at ${building.x},${building.z}`);
           }
+          for (const space of object.userData.cityPublicSpaces || []) {
+            result.publicSpaces++;
+            const gap = clearance(space.x, space.z, space.halfWidth, space.halfDepth);
+            if (gap < 0.5) failure.push(`city public space intrudes into barrier clearance: ${gap.toFixed(2)}m`);
+          }
+          for (const site of object.userData.venueFootprints || []) {
+            venues.push(site); result.venueFootprints++;
+            finite(Object.values(site), 'venue footprint');
+            const actual = venueClearance(track.frames, site), gap = actual - track.armcoOffset;
+            result.minVenueClearance = Math.min(result.minVenueClearance ?? Infinity, gap);
+            if (gap < 5.4) failure.push(`venue footprint too close to circuit: ${gap.toFixed(2)}m beyond barriers`);
+            if (actual > site.roadClearance + 0.01 || actual < site.roadClearance - 1.2)
+              failure.push('venue clearance metadata disagrees with independent segment test');
+          }
+        });
+        // Check every tree LOD, including spatial-batch transforms. Trunks
+        // must stay outside the model footprint; canopy overlap is reviewed
+        // in the rendered views because its silhouette is not a solid box.
+        const instance = new THREE.Matrix4(), transform = new THREE.Matrix4();
+        track.group.traverse(object => {
+          if (!object.isInstancedMesh || !object.name.startsWith('trees-')) return;
+          for (let i = 0; i < object.count; i++) {
+            object.getMatrixAt(i, instance); transform.multiplyMatrices(object.matrixWorld, instance);
+            for (const site of venues) {
+              const dx = transform.elements[12] - site.x, dz = transform.elements[14] - site.z;
+              const x = Math.cos(site.yaw) * dx - Math.sin(site.yaw) * dz;
+              const z = Math.sin(site.yaw) * dx + Math.cos(site.yaw) * dz;
+              if (Math.abs(x) < site.width / 2 + 1 && Math.abs(z) < site.depth / 2 + 1)
+                failure.push(`tree instance intersects ${id} venue footprint`);
+            }
+          }
         });
         for (const texture of texs) {
           const image = texture.image;
@@ -183,6 +255,7 @@ async function auditWorlds() {
         if (result.roadMarkings < 3) failure.push('finish line or starting grid paint missing');
         if (def.theme.brakeMarkers && !result.brakeMarkers) failure.push('braking boards missing');
         if (id === 'downtown' && result.cityBuildings < 500) failure.push('city architecture missing');
+        if (id !== 'downtown' && !result.venueFootprints) failure.push('circuit-specific venue architecture missing');
         for (const body of world.bodies) {
           finite([body.position.x, body.position.y, body.position.z, body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w], 'physics body');
           for (const offset of body.shapeOffsets) finite([offset.x, offset.y, offset.z], 'physics offset');

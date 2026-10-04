@@ -136,6 +136,20 @@ for (const id of ids) {
     }, frac);
     await page.screenshot({ path: `${OUT}/${id}-course${Math.round(frac * 100)}.png` });
   }
+  if (id === 'downtown') {
+    for (const [label, position, target] of [
+      ['harbour', [878, 45, 168], [818, 1, 43]],
+      ['yacht', [835, 8, 10], [824, 1, 42]],
+    ]) {
+      await page.evaluate(({ position, target }) => {
+        const ctx = window.__ctx;
+        ctx.camera.fov = 55;
+        ctx.camera.position.set(...position); ctx.camera.lookAt(...target);
+        ctx.camera.updateProjectionMatrix(); ctx.composer.render();
+      }, { position, target });
+      await page.screenshot({ path: `${OUT}/${id}-${label}.png` });
+    }
+  }
   console.log('shot', id);
 }
 console.log('errors:', errors.length ? errors.slice(0, 8) : 'none');

@@ -47,12 +47,12 @@ function beam(out, hex, a, b, width = 0.12) {
   out.metal.push(colourGeometry(g, hex));
 }
 
-function windows(out, width, y, z, height, count, trim = COLOURS.steel) {
-  box(out, 'glass', COLOURS.glass, width, height, 0.10, 0, y, z);
+function windows(out, width, y, z, height, count, trim = COLOURS.steel, x = 0) {
+  box(out, 'glass', COLOURS.glass, width, height, 0.10, x, y, z);
   for (let i = 0; i <= count; i++) {
-    box(out, 'metal', trim, 0.12, height + 0.16, 0.16, -width / 2 + i * width / count, y, z + 0.08);
+    box(out, 'metal', trim, 0.12, height + 0.16, 0.16, x - width / 2 + i * width / count, y, z + 0.08);
   }
-  for (const s of [-1, 1]) box(out, 'metal', trim, width + 0.18, 0.12, 0.20, 0, y + s * height / 2, z + 0.08);
+  for (const s of [-1, 1]) box(out, 'metal', trim, width + 0.18, 0.12, 0.20, x, y + s * height / 2, z + 0.08);
 }
 
 function rail(out, w, z, y, hex = 0x62696a) {
@@ -100,7 +100,7 @@ function raceControl(out, id) {
   box(out, 'solid', trim, 21.4, 0.25, 2.0, 0, 5.2, 4.6);
   // A set-back glazed timing room and wraparound observation terrace.
   box(out, 'solid', wall, 9.8, 3.0, 7.8, -2.8, 7.6, -0.8);
-  windows(out, 8.7, 7.65, 3.16, 1.8, 4, trim);
+  windows(out, 8.7, 7.65, 3.16, 1.8, 4, trim, -2.8);
   for (const side of [-1, 1]) box(out, 'glass', COLOURS.glass, 0.12, 1.8, 5.7, -2.8 + side * 4.95, 7.65, -0.4);
   rail(out, 20, 4.7, 6.3, trim);
   if (historic) {
