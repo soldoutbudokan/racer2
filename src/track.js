@@ -14,6 +14,8 @@ import { addGrandstands, addPitComplex } from './scenery/stands.js';
 import { addGroundCover } from './scenery/groundcover.js';
 import { addMesas } from './scenery/mesas.js';
 import { addCityDistrict } from './scenery/city.js';
+import { addMarina } from './scenery/marina.js';
+import { createCityArchitecture, cityBuildingStyle } from './scenery/cityArchitecture.js';
 import {
   roadCrownY, buildRoadGeometry, buildEdgeLineGeometry, buildKerb3DGeometry,
   buildKerbCollision,
@@ -21,6 +23,7 @@ import {
 } from './scenery/roadwork.js';
 import { rand, seedCircuit, beginStream } from './scenery/rng.js';
 import { segmentsForLength } from './tracks.js';
+import { roadMarkingGeometry } from './scenery/roadMarkings.js';
 
 // Stable per-circuit seed so a track's hills are the same every reload.
 function strSeed(s) {
@@ -50,7 +53,7 @@ export function createTrack(scene, world, materials, def) {
   // Bundle the dimensions so the scenery builders can size themselves to this
   // particular circuit (street circuits are narrow with the wall at the kerb,
   // the easy oval is wide with acres of run-off, etc.).
-  const D = { road: ROAD_WIDTH, kerb: KERB_WIDTH, runoff: RUNOFF_WIDTH, armco: ARMCO_OFFSET };
+  const D = { id: def.id, road: ROAD_WIDTH, kerb: KERB_WIDTH, runoff: RUNOFF_WIDTH, armco: ARMCO_OFFSET };
 
   // Bind the scenery RNG to this circuit. Everything scattered below draws
   // from a named, reproducible stream instead of Math.random(), so a circuit
@@ -218,19 +221,19 @@ export function createTrack(scene, world, materials, def) {
 
   // Start/finish line
   const sfTex = makeStartFinishTexture();
+  // One offset unit above the grid paint: the first row's front outline lies
+  // under the chequer, and at equal height and offset the two would z-fight.
   const sfMat = new THREE.MeshStandardMaterial({
     map: sfTex, roughness: 0.6,
-    polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
   });
-  const sf = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_WIDTH, 1.6), sfMat);
-  sf.rotation.x = -Math.PI / 2;
-  sf.position.copy(frames[0].pos).add(new THREE.Vector3(0, 0.014, 0));
-  const yawSF = Math.atan2(frames[0].tan.x, frames[0].tan.z);
-  sf.rotation.z = -yawSF;
+  const sf = new THREE.Mesh(roadMarkingGeometry(frames[0], ROAD_WIDTH, 1.6, ROAD_WIDTH / 2), sfMat);
+  sf.name = 'road-marking-finish';
+  sf.receiveShadow = true;
   group.add(sf);
 
-  // Painted starting grid behind the line
-  addStartingGrid(group, frames[0]);
+  // Painted starting grid behind the line, seated on the same crown.
+  addStartingGrid(group, frames[0], ROAD_WIDTH);
 
   // Start/finish gantry (carries the five-column start-light rig)
   const startLights = addStartGantry(group, frames[0], ROAD_WIDTH);
@@ -850,14 +853,22 @@ function makeFacadeTexture(kind, base, litFrac = 0.10) {
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, w, h);
   if (kind === 'glass') {
-    // vertical glazing strips with a diagonal sky sheen
+    // Reflective glazing keeps the material's supplied tint. Match both
+    // vertical ends of the tile and keep the reflection subtle: the former
+    // bright-to-dark ramp restarted every 24 m, painting a false wide stripe
+    // through every tower. Real floor lines below still repeat every 3 m.
+    const hex = parseInt(base.slice(1), 16);
+    const tint = [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+    const sky = [181, 197, 207];
+    const paneColour = (mix, shift) => `rgb(${tint.map((c, i) => Math.round(c * (1 - mix) + sky[i] * mix + shift)).join(',')})`;
     for (let q = 0; q < 8; q++) {
       const x0 = q * 16;
-      const g = ctx.createLinearGradient(x0, 0, x0 + 13, h);
-      g.addColorStop(0, '#9db4c6');
-      g.addColorStop(0.45, '#6e8496');
-      g.addColorStop(0.55, '#b9cbd8');
-      g.addColorStop(1, '#556878');
+      const shift = Math.sin(q * 2.17) * 3;
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, paneColour(0.40, shift));
+      g.addColorStop(0.42, paneColour(0.33, shift));
+      g.addColorStop(0.68, paneColour(0.44, shift));
+      g.addColorStop(1, paneColour(0.40, shift));
       ctx.fillStyle = g;
       ctx.fillRect(x0 + 2, 0, 12, h);
     }
@@ -1104,14 +1115,18 @@ function addBrakeMarkers(scene, frames, curvature, D) {
         })
       );
       board.position.set(pos.x, 1.5, pos.z);
-      board.rotation.y = yaw;
+      // PlaneGeometry faces local +z; approaching drivers are behind this
+      // frame, so the numbered face must look AGAINST the travel tangent.
+      board.rotation.y = yaw + Math.PI;
+      board.name = 'brake-marker-face';
+      board.userData.approachTangent = f.tan.toArray();
       board.castShadow = true;
       scene.add(board);
       // Sit the back panel a couple of centimetres behind the face so the
       // two planes never z-fight.
       const back = new THREE.Mesh(boardGeo, backMat);
-      back.position.set(pos.x - Math.sin(yaw) * 0.02, 1.5, pos.z - Math.cos(yaw) * 0.02);
-      back.rotation.y = yaw + Math.PI;
+      back.position.set(pos.x + Math.sin(yaw) * 0.02, 1.5, pos.z + Math.cos(yaw) * 0.02);
+      back.rotation.y = yaw;
       scene.add(back);
       const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.1, 0.08), postMat);
       post.position.set(pos.x, 0.55, pos.z);
@@ -1122,84 +1137,36 @@ function addBrakeMarkers(scene, frames, curvature, D) {
 
 // ---------- Track features ----------
 
-function addStartingGrid(scene, startFrame) {
-  // Eight grid slots painted on the asphalt behind the start line — makes it
-  // unmistakable where laps begin and where the cars line up.
-  const yaw = Math.atan2(startFrame.tan.x, startFrame.tan.z);
-  const tan = startFrame.tan.clone().normalize();
-  const left = startFrame.left.clone().normalize();
-  const slotW = 2.0;
-  const slotL = 4.6;
-  const rowSpacing = 7.0;
-  const lateralOffset = 2.5;
-  const rows = 4;
-
-  const slotMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 0.7,
-    metalness: 0,
-    transparent: true,
-    opacity: 0.7,
-    polygonOffset: true,
-    polygonOffsetFactor: -3,
-    polygonOffsetUnits: -3,
-  });
-  const stripeMat = new THREE.MeshStandardMaterial({
-    color: 0xffd84a,
-    roughness: 0.7,
-    metalness: 0,
-    transparent: true,
-    opacity: 0.85,
-    polygonOffset: true,
-    polygonOffsetFactor: -3,
-    polygonOffsetUnits: -3,
-  });
-
-  for (let r = 0; r < rows; r++) {
-    for (const sign of [+1, -1]) {
-      const back = -2.8 - r * rowSpacing;
-      const lat = lateralOffset * sign;
-      const center = startFrame.pos.clone()
-        .add(tan.clone().multiplyScalar(back))
-        .add(left.clone().multiplyScalar(lat));
-      const outline = makeFlatRectOutline(slotW, slotL, 0.14, slotMat);
-      outline.position.set(center.x, 0.0135, center.z);
-      outline.rotation.y = -yaw;
-      scene.add(outline);
-
-      // Front bar — thicker yellow stripe at the front of each slot for the
-      // "this is where the nose of your car goes" feel.
-      const front = new THREE.Mesh(
-        new THREE.PlaneGeometry(slotW - 0.4, 0.22),
-        stripeMat
-      );
-      front.rotation.x = -Math.PI / 2;
-      const frontPos = center.clone()
-        .add(tan.clone().multiplyScalar(slotL / 2 - 0.4));
-      front.position.set(frontPos.x, 0.014, frontPos.z);
-      front.rotation.z = -yaw;
-      scene.add(front);
+function addStartingGrid(scene, startFrame, roadWidth) {
+  // Merge all eight outlines and nose bars into two batches instead of 40
+  // individual draw calls. Each strip follows the asphalt's shallow crown.
+  const outlines = [], fronts = [];
+  const slotW = 2.0, slotL = 4.6, thick = 0.14;
+  const paint = (bucket, w, l, lat, along) => bucket.push(
+    roadMarkingGeometry(startFrame, w, l, roadWidth / 2, lat, along));
+  for (let r = 0; r < 4; r++) {
+    for (const sign of [-1, 1]) {
+      const back = -2.8 - r * 7, lat = 2.5 * sign;
+      for (const end of [-1, 1]) {
+        paint(outlines, slotW, thick, lat, back + end * (slotL - thick) / 2);
+        paint(outlines, thick, slotL - 2 * thick, lat + end * (slotW - thick) / 2, back);
+      }
+      paint(fronts, slotW - 0.4, 0.22, lat, back + slotL / 2 - 0.4);
     }
   }
-}
-
-function makeFlatRectOutline(w, l, thick, material) {
-  // A flat rectangular outline lying in the XZ plane (normal +Y) — four thin
-  // strips parented to a single Group.
-  const g = new THREE.Group();
-  for (const sz of [-1, +1]) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, thick), material);
-    m.rotation.x = -Math.PI / 2;
-    m.position.z = sz * (l / 2 - thick / 2);
-    g.add(m);
+  for (const [geometries, color, name] of [
+    [outlines, 0xc8c9c3, 'road-marking-grid'],
+    [fronts, 0xd7b743, 'road-marking-grid-nose'],
+  ]) {
+    const mesh = new THREE.Mesh(mergeGeometries(geometries), new THREE.MeshStandardMaterial({
+      color, roughness: 0.83, metalness: 0,
+      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3,
+    }));
+    mesh.name = name;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    geometries.forEach(g => g.dispose());
   }
-  for (const sx of [-1, +1]) {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(thick, l), material);
-    m.rotation.x = -Math.PI / 2;
-    m.position.x = sx * (w / 2 - thick / 2);
-    g.add(m);
-  }
-  return g;
 }
 
 function addStartGantry(scene, startFrame, road) {
@@ -1723,29 +1690,16 @@ function addCityBuildings(scene, frames, D) {
     emissiveMap: storefrontTex, emissiveIntensity: 0.10,
     roughness: 0.6, metalness: 0.15, envMapIntensity: 0.5,
   });
-  const darkMat = new THREE.MeshStandardMaterial({
-    color: 0x24272c, roughness: 0.8, metalness: 0.25,
-  });
-
-  const buckets = facadeMats.map(() => []);
-  const podiumBucket = [];
-  const darkBucket = [];
+  const architecture = createCityArchitecture(scene, { facadeMats, podiumMat }, 'city-frontage');
+  const centreX = D.terrain?.centre?.x ?? 0;
+  const centreZ = D.terrain?.centre?.z ?? 0;
 
   // Nothing gets built on the water side of the sea-front straight — that
-  // strip belongs to the marina promenade.
+  // strip belongs to the marina promenade, whose slab starts at the barrier
+  // line (scenery/marina.js), so no lot may reach past it.
   let seaX = -Infinity;
   for (const f of frames) seaX = Math.max(seaX, f.pos.x);
-  seaX += D.armco + 2;
-
-  const box = (bucket, w, h, d, px, py, pz, fx = 1, fy = 1) => {
-    const geo = new THREE.BoxGeometry(w, h, d);
-    if (fx !== 1 || fy !== 1) {
-      const uv = geo.getAttribute('uv');
-      for (let v = 0; v < uv.count; v++) uv.setXY(v, uv.getX(v) * fx, uv.getY(v) * fy);
-    }
-    geo.translate(px, py, pz);
-    bucket.push(geo);
-  };
+  seaX += D.armco;
 
   const n = frames.length;
   const step = 5;
@@ -1768,57 +1722,20 @@ function addCityBuildings(scene, frames, D) {
         if (keys.some((k) => occupied.has(k))) continue;
         keys.forEach((k) => occupied.add(k));
 
-        const matIdx = (rand() * facadeMats.length) | 0;
-        const height = tier === 0
-          ? 16 + rand() * 46
-          : 22 + rand() * 60;
-        const hasPodium = rand() < 0.7;
-        let towerBase = 0;
-        if (hasPodium) {
-          const ph = rand() < 0.5 ? 4.5 : 9;
-          // podium fills the lot; storefront texture repeats every ~12 m
-          box(podiumBucket, w, ph, d, px, ph / 2, pz,
-            Math.max(1, Math.round(w / 12)), Math.max(1, Math.round(ph / 4.5)));
-          box(darkBucket, w + 0.5, 0.4, d + 0.5, px, ph + 0.2, pz);
-          towerBase = ph + 0.4;
-        }
-        const tw = hasPodium ? Math.max(9, w - 3.5) : w;
-        const td = hasPodium ? Math.max(9, d - 3.5) : d;
-        const th = height;
-        box(buckets[matIdx], tw, th, td, px, towerBase + th / 2, pz,
-          Math.max(1, Math.round(tw / 13)), Math.max(1, Math.round(th / 24)));
-        // parapet + rooftop plant
-        const topY = towerBase + th;
-        box(darkBucket, tw + 0.5, 0.6, td + 0.5, px, topY + 0.3, pz);
-        const acN = (rand() * 3) | 0;
-        for (let a = 0; a < acN; a++) {
-          box(darkBucket, 1.6, 1.0, 1.2,
-            px + (rand() - 0.5) * (tw - 3),
-            topY + 1.1,
-            pz + (rand() - 0.5) * (td - 3));
-        }
-        if (rand() < 0.22) {
-          box(darkBucket, 0.22, 4 + rand() * 5, 0.22, px, topY + 2.5, pz);
-        }
+        const identity = cityBuildingStyle(px, pz, centreX, centreZ, true);
+        const height = identity.style === 'masonry' ? 16 + rand() * 16
+          : identity.style === 'residential' ? 24 + rand() * 25
+          : (tier === 0 ? 28 : 40) + rand() * 48;
+        architecture.addBuilding({ x: px, z: pz, width: w, depth: d, height,
+          ...identity, detail: tier === 0, landmark: tier === 1 && height > 75 });
       }
     }
   }
 
-  const addMerged = (geos, mat) => {
-    if (!geos.length) return;
-    const merged = mergeGeometries(geos);
-    const mesh = new THREE.Mesh(merged, mat);
-    mesh.castShadow = true;
-    mesh.receiveShadow = true;
-    scene.add(mesh);
-    for (const g of geos) g.dispose();
-  };
-  buckets.forEach((geos, i) => addMerged(geos, facadeMats[i]));
-  addMerged(podiumBucket, podiumMat);
-  addMerged(darkBucket, darkMat);
+  architecture.finish();
   // The district fill (scenery/city.js) shares the lot grid and materials so
   // its blocks never overlap these and the two read as one city.
-  return { occupied, facadeMats, podiumMat, darkMat, seaX };
+  return { occupied, facadeMats, podiumMat, seaX };
 }
 
 // Hazed silhouette towers well beyond the raced blocks, so the skyline
@@ -1895,161 +1812,6 @@ function addCitySkyline(scene, frames) {
   mesh.name = 'city-skyline';
   for (const g of geos) g.dispose();
   scene.add(mesh);
-}
-
-// The harbour beyond the sea-front straight: open water, a stone quay with
-// railings, a palm promenade and moored boats.
-function addMarina(scene, frames, D) {
-  // The sea lies past the circuit's greatest +x extent.
-  let maxX = -Infinity;
-  for (const f of frames) maxX = Math.max(maxX, f.pos.x);
-  const edge = maxX + D.armco + 9;               // quay drop-off line
-  // promenade span follows the frames that actually run along the sea front
-  let zMin = Infinity, zMax = -Infinity;
-  for (const f of frames) {
-    if (f.pos.x > maxX - 40) { zMin = Math.min(zMin, f.pos.z); zMax = Math.max(zMax, f.pos.z); }
-  }
-  zMin -= 60; zMax += 60;
-
-  // Water: opaque, deep blue-green, mirror-ish so it catches the sky.
-  const ripple = makeNormalTexture(256, 0.55);
-  ripple.wrapS = ripple.wrapT = THREE.RepeatWrapping;
-  ripple.repeat.set(160, 160);
-  const water = new THREE.Mesh(
-    new THREE.PlaneGeometry(3800, 4200),
-    new THREE.MeshStandardMaterial({
-      color: 0x14384c, roughness: 0.16, metalness: 0.1,
-      normalMap: ripple, normalScale: new THREE.Vector2(0.35, 0.35),
-      envMapIntensity: 1.2,
-    })
-  );
-  water.rotation.x = -Math.PI / 2;
-  water.position.set(edge + 1900, 0.0, (zMin + zMax) / 2);
-  water.receiveShadow = true;
-  scene.add(water);
-
-  // Concrete promenade from behind the wall out to the quay edge.
-  const promenade = new THREE.Mesh(
-    new THREE.PlaneGeometry(edge - (maxX + D.armco) + 2, zMax - zMin),
-    new THREE.MeshStandardMaterial({
-      color: 0xa9a49a, roughness: 0.9, metalness: 0,
-      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
-    })
-  );
-  promenade.rotation.x = -Math.PI / 2;
-  promenade.position.set((maxX + D.armco + edge) / 2 + 1, 0.02, (zMin + zMax) / 2);
-  promenade.receiveShadow = true;
-  scene.add(promenade);
-
-  // Quay stone edge + railing posts and rail.
-  const stone = new THREE.MeshStandardMaterial({ color: 0x8d8a80, roughness: 0.9 });
-  const quay = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, zMax - zMin), stone);
-  quay.position.set(edge, 0.25, (zMin + zMax) / 2);
-  quay.castShadow = quay.receiveShadow = true;
-  scene.add(quay);
-  const railMat = new THREE.MeshStandardMaterial({ color: 0x3c4046, roughness: 0.5, metalness: 0.6 });
-  const postGeo = new THREE.BoxGeometry(0.08, 1.0, 0.08);
-  const postN = Math.floor((zMax - zMin) / 4);
-  const posts = new THREE.InstancedMesh(postGeo, railMat, postN);
-  const m4 = new THREE.Matrix4();
-  for (let i = 0; i < postN; i++) {
-    m4.makeTranslation(edge - 0.6, 0.95, zMin + 2 + i * 4);
-    posts.setMatrixAt(i, m4);
-  }
-  posts.instanceMatrix.needsUpdate = true;
-  scene.add(posts);
-  const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, zMax - zMin), railMat);
-  rail.position.set(edge - 0.6, 1.45, (zMin + zMax) / 2);
-  scene.add(rail);
-
-  // Palm promenade: instanced trunks + frond crowns.
-  const palmN = Math.max(6, Math.floor((zMax - zMin) / 17));
-  const trunkGeo = new THREE.CylinderGeometry(0.11, 0.18, 4.8, 6);
-  trunkGeo.translate(0, 2.4, 0);
-  const frondSingle = new THREE.PlaneGeometry(0.55, 2.8, 1, 4);
-  {
-    // droop each frond outward-down along its length
-    const p = frondSingle.getAttribute('position');
-    for (let v = 0; v < p.count; v++) {
-      const t = (p.getY(v) + 1.4) / 2.8;
-      p.setZ(v, -Math.pow(t, 1.7) * 1.3);
-      p.setX(v, p.getX(v) * (1 - t * 0.55));
-    }
-  }
-  const fronds = [];
-  for (let k = 0; k < 8; k++) {
-    const fr = frondSingle.clone();
-    fr.rotateX(-Math.PI / 2 + 0.45);
-    fr.rotateY((k / 8) * Math.PI * 2 + 0.2);
-    fr.translate(0, 4.8, 0);
-    fronds.push(fr);
-  }
-  const crownGeo = mergeGeometries(fronds);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8a6b4a, roughness: 0.95 });
-  const crownMat = new THREE.MeshStandardMaterial({
-    color: 0x41682f, roughness: 0.9, side: THREE.DoubleSide,
-  });
-  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, palmN);
-  const crowns = new THREE.InstancedMesh(crownGeo, crownMat, palmN);
-  trunks.castShadow = crowns.castShadow = true;
-  const q4 = new THREE.Quaternion();
-  const s4 = new THREE.Vector3();
-  for (let i = 0; i < palmN; i++) {
-    const pz = zMin + 10 + i * ((zMax - zMin - 20) / (palmN - 1)) + (rand() - 0.5) * 3;
-    const px = edge - 3.6 + (rand() - 0.5) * 1.2;
-    const sc = 0.85 + rand() * 0.4;
-    q4.setFromEuler(new THREE.Euler(0, rand() * Math.PI * 2, (rand() - 0.5) * 0.08));
-    s4.set(sc, sc, sc);
-    m4.compose(new THREE.Vector3(px, 0, pz), q4, s4);
-    trunks.setMatrixAt(i, m4);
-    crowns.setMatrixAt(i, m4);
-  }
-  trunks.instanceMatrix.needsUpdate = true;
-  crowns.instanceMatrix.needsUpdate = true;
-  scene.add(trunks);
-  scene.add(crowns);
-
-  // Moored boats: simple hull + cabin (+ mast on the sailboats).
-  const hullMat = new THREE.MeshStandardMaterial({ color: 0xe8e6e0, roughness: 0.35, metalness: 0.1 });
-  const mastMat = new THREE.MeshStandardMaterial({ color: 0x53575d, roughness: 0.5, metalness: 0.5 });
-  const hullGeos = [], mastGeos = [];
-  const boatN = 9;
-  for (let i = 0; i < boatN; i++) {
-    const bx = edge + 10 + rand() * 45;
-    const bz = zMin + 20 + (i + rand() * 0.6) * ((zMax - zMin - 40) / boatN);
-    const yaw = (rand() - 0.5) * 0.5 + (rand() < 0.5 ? 0 : Math.PI);
-    const sc = 0.8 + rand() * 0.7;
-    const hull = new THREE.BoxGeometry(2.2 * sc, 0.9 * sc, 6.5 * sc);
-    {
-      // taper the bow so it isn't a shoebox
-      const p = hull.getAttribute('position');
-      for (let v = 0; v < p.count; v++) {
-        const t = Math.max(0, p.getZ(v) / (3.25 * sc) - 0.35);
-        p.setX(v, p.getX(v) * (1 - t * 0.75));
-      }
-    }
-    const cabin = new THREE.BoxGeometry(1.5 * sc, 0.7 * sc, 2.2 * sc);
-    cabin.translate(0, 0.8 * sc, -0.8 * sc);
-    const boat = mergeGeometries([hull, cabin]);
-    const rot = new THREE.Matrix4().makeRotationY(yaw);
-    boat.applyMatrix4(rot);
-    boat.translate(bx, 0.42 * sc, bz);
-    hullGeos.push(boat);
-    if (rand() < 0.55) {
-      const mast = new THREE.CylinderGeometry(0.04, 0.05, 6 * sc, 6);
-      mast.translate(0, 3.4 * sc, -0.4 * sc);
-      mast.applyMatrix4(rot);
-      mast.translate(bx, 0, bz);
-      mastGeos.push(mast);
-    }
-  }
-  const hulls = new THREE.Mesh(mergeGeometries(hullGeos), hullMat);
-  hulls.castShadow = true;
-  scene.add(hulls);
-  if (mastGeos.length) {
-    const masts = new THREE.Mesh(mergeGeometries(mastGeos), mastMat);
-    scene.add(masts);
-  }
 }
 
 // Paved sidewalks (with a kerb shadow line) hugging both walls — street
@@ -2161,10 +1923,9 @@ function addCrosswalks(scene, frames, curvature, road) {
       const ai = (i - 12 + n) % n;
       if (curvature[ai] > 0.0014) { cooldown = 30; continue; }
       const f = frames[ai];
-      const cw = new THREE.Mesh(new THREE.PlaneGeometry(road - 1.4, 3.0), mat);
-      cw.rotation.x = -Math.PI / 2;
-      cw.position.set(f.pos.x, 0.018, f.pos.z);
-      cw.rotation.z = -Math.atan2(f.tan.x, f.tan.z);
+      const cw = new THREE.Mesh(roadMarkingGeometry(f, road - 1.4, 3.0, road / 2), mat);
+      cw.name = 'road-marking-crosswalk';
+      cw.receiveShadow = true;
       scene.add(cw);
       placed++;
       cooldown = 40;
@@ -2189,6 +1950,7 @@ function addRocks(scene, frames, D) {
   });
   const N = 150;
   const inst = new THREE.InstancedMesh(base, rockMat, N);
+  inst.name = 'desertRocks';
   inst.castShadow = true;
   inst.receiveShadow = true;
   const m = new THREE.Matrix4();
@@ -2240,6 +2002,7 @@ function addScrub(scene, frames, D) {
   });
   const BUSH_N = 260;
   const bushes = new THREE.InstancedMesh(bushGeo, bushMat, BUSH_N);
+  bushes.name = 'desertScrub';
   bushes.castShadow = true;
   bushes.receiveShadow = true;
   const m4 = new THREE.Matrix4();
@@ -2289,6 +2052,7 @@ function addScrub(scene, frames, D) {
   });
   const CACT_N = 46;
   const cacti = new THREE.InstancedMesh(cactusGeo, cactusMat, CACT_N);
+  cacti.name = 'saguaros';
   cacti.castShadow = true;
   placed = 0;
   for (let i = 0; i < CACT_N * 6 && placed < CACT_N; i++) {

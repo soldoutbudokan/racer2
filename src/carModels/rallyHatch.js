@@ -43,13 +43,13 @@ export const keys = [
   { z: 2.10, hw: 0.880, yb: -0.145, hip: 0.415, yt: 0.480, topW: 0.760, hard: true },
 ];
 
-export const wheelStyle = 'gt';
+export const wheelStyle = 'rally';
 const F = profileFractions(keys);
 
 // A long rectangular greenhouse is the main silhouette cue. A wide painted
 // B-pillar divides the front and rear side panes. The backlight spans the
 // steep hatch itself, below the white roof and its roof-edge spoiler.
-const PANES = [
+export const PANES = [
   { zStart: 0.985, zEnd: 0.650, beltFrac: F.tumble, topFrac: 1.0, steps: 8 },
   { zStart: 0.550, zEnd: -0.300, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 12 },
   { zStart: -0.400, zEnd: -1.505, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 15 },
@@ -192,7 +192,7 @@ export function decorate(body, ctx) {
     seats: 2, cage: true, harness: true,
   }));
   body.add(buildUnderbody({ y: -0.245, w: 1.20, len: 3.45 }));
-  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.825, r: 0.41, width: 0.26 }));
+  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.825, r: 0.413, width: 0.26, lip: false }));
 
   // Short mud flaps sit behind the wheels and clear the .36-radius tyre.
   for (const z of [1.045, -1.855]) {

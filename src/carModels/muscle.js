@@ -67,7 +67,7 @@ const F = profileFractions(keys);
 // GT and plainly wrong here, and it was the single worst-looking thing on the
 // model. There is no roof panel at all — the crown is one continuous pressing
 // from header to backlight.
-const PANES = [
+export const PANES = [
   { zStart: 0.36, zEnd: 0.10, beltFrac: F.tumble, topFrac: 1.0, steps: 7 },   // windshield
   //                          z 0.10 -> 0.00 painted: A-pillar / header
   { zStart: 0.00, zEnd: -0.56, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 10 },
@@ -204,7 +204,7 @@ export function decorate(body, ctx) {
   }));
 
   body.add(buildUnderbody({ y: -0.245, w: 1.24, len: 3.7 }));
-  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.850, r: 0.41, width: 0.27 }));
+  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.850, r: 0.413, width: 0.27, lip: false }));
 
   return { brakeLights: tail.brakeMesh };
 }

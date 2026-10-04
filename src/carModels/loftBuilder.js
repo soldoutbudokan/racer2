@@ -404,6 +404,7 @@ export function buildLoftHull(keys, opts = {}) {
   const N = L.N;
   const ringsPerSeg = opts.ringsPerSegment ?? 8;
   const capEnds = opts.capEnds ?? true;
+  const panes = opts.panes ?? [];
 
   const segs = keys.length - 1;
   const R = segs * ringsPerSeg;                 // number of ring steps
@@ -434,14 +435,29 @@ export function buildLoftHull(keys, opts = {}) {
   const rowBridge = [];   // stitch rows[i] -> rows[i+1]?
   const rowZ = [];
 
-  for (let r = 0; r <= R; r++) {
-    const u = (r / R) * segs;
+  // Glazing has real openings in the painted shell. Insert exact rows at
+  // every pane edge so removing those cells cannot leave a jagged painted
+  // fringe behind the glass. Pillars and the roof retain the same loft.
+  const samples = Array.from({ length: R + 1 }, (_, r) => r / R * segs);
+  for (const pane of panes) {
+    for (const z of [pane.zStart, pane.zEnd]) {
+      let lo = 0, hi = segs;
+      for (let i = 0; i < 32; i++) {
+        const mid = (lo + hi) / 2;
+        if (sampleField(keys, 'z', mid) < z) lo = mid; else hi = mid;
+      }
+      const u = (lo + hi) / 2;
+      if (!samples.some(value => Math.abs(value - u) < 1e-6)) samples.push(u);
+    }
+  }
+  samples.sort((a, b) => a - b);
+  for (const u of samples) {
     const p = stationAt(keys, u, L.feat);
     const half = L.half(p);
     // A `hard` interior station is a crease ACROSS the body (a fascia leading
     // edge, a deck break): emit its ring twice and do not stitch the copies,
     // for the same shading reason as the profile breaks above.
-    const si = (r % ringsPerSeg === 0) ? r / ringsPerSeg : -1;
+    const si = Math.abs(u - Math.round(u)) < 1e-6 ? Math.round(u) : -1;
     const copies = (si > 0 && si < segs && keys[si].hard === true) ? 2 : 1;
     for (let c = 0; c < copies; c++) {
       rows.push(positions.length / 3);
@@ -450,7 +466,7 @@ export function buildLoftHull(keys, opts = {}) {
       for (let j = 0; j < M; j++) {
         const { k, s } = cols[j];
         positions.push(s * half[k].x, half[k].y, p.z);
-        uvs.push(j / M, r / R);
+        uvs.push(j / M, u / segs);
       }
     }
   }
@@ -462,6 +478,12 @@ export function buildLoftHull(keys, opts = {}) {
     for (let j = 0; j < M; j++) {
       if (!bridge[j]) continue;
       const j1 = (j + 1) % M;
+      const z = (rowZ[ri] + rowZ[ri + 1]) / 2;
+      const frac = (cols[j].k + cols[j1].k) / (2 * (N - 1));
+      if (panes.some(pane => z > Math.min(pane.zStart, pane.zEnd) &&
+          z < Math.max(pane.zStart, pane.zEnd) &&
+          frac > pane.beltFrac - 1e-6 && frac < pane.topFrac + 1e-6 &&
+          (!pane.side || pane.side === cols[j].s))) continue;
       const v00 = a + j, v01 = a + j1, v10 = b + j, v11 = b + j1;
       // Winding chosen so faces point outward (verified via signed volume).
       indices.push(v00, v11, v10);

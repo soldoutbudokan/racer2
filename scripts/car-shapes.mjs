@@ -13,6 +13,7 @@ const browser = await chromium.launch({
 });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 1600 } });
+  page.setDefaultTimeout(120000);
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
@@ -40,7 +41,8 @@ try {
     document.body.appendChild(sheet);
     const silhouette = new THREE.MeshBasicMaterial({ color: 0xd9e1e6 });
     const views = [['Silhouette', [9, 1.0, 0]], ['Side', [9, 1.0, 0]], ['Front quarter', [6, 2.8, 7]], ['Rear quarter', [6, 2.8, -7]]];
-    const cars = ['gt', 'hatch'].map(id => buildVisualCar(id, 0x71828b));
+    const labels = ['GT COUPE', 'RALLY HATCH', 'MUSCLE', 'OPEN WHEEL'];
+    const cars = ['gt', 'hatch', 'muscle', 'open-wheel'].map(id => buildVisualCar(id, 0x71828b));
     for (const [label, position] of views) {
       scene.overrideMaterial = label === 'Silhouette' ? silhouette : null;
       for (const [index, car] of cars.entries()) {
@@ -54,7 +56,7 @@ try {
         renderer.render(scene, camera);
         const cell = document.createElement('div');
         const title = document.createElement('div');
-        title.textContent = `${index ? 'RALLY HATCH' : 'GT COUPE'} · ${label} · ${label === 'Silhouette' ? 'Outline only' : 'Same paint'}`;
+        title.textContent = `${labels[index]} · ${label} · ${label === 'Silhouette' ? 'Outline only' : 'Same paint'}`;
         title.style.cssText = 'padding:12px 20px 0';
         const canvas = document.createElement('canvas');
         canvas.width = 640; canvas.height = 360;
@@ -68,7 +70,7 @@ try {
   });
   await page.locator('#car-shape-review').screenshot({ path: `${out}/car-shapes-same-paint.png` });
   assert.deepEqual(errors, [], 'shape comparison renders without browser errors');
-  console.log('PASS: same-paint car comparison rendered from side, front and rear');
+  console.log('PASS: all four cars rendered in identical paint from side, front and rear');
 } finally {
   await browser.close();
 }

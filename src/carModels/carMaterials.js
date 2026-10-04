@@ -132,8 +132,11 @@ export function makeGlass() {
     clearcoat: 1.0,
     clearcoatRoughness: 0.08,
     transparent: true,
-    opacity: 0.86,
-    side: THREE.FrontSide,
+    // The hull now has real window apertures, so the seats, harnesses and
+    // dash can be seen behind the reflection instead of a painted backing.
+    opacity: 0.72,
+    side: THREE.DoubleSide,
+    forceSinglePass: true,
     polygonOffset: true,
     // Light offset only: the greenhouse geometry now sits physically proud of
     // the paint (see buildGreenhouseShell), so it already draws in front. A
@@ -174,6 +177,16 @@ export function makeTire() {
     normalMap: n, normalScale: new THREE.Vector2(0.75, 0.75),
   });
   return _tire;
+}
+
+let _slickTire = null;
+export function makeSlickTire() {
+  // The exposed single-seater wheels use slick rubber. Reusing the road tyre's
+  // diagonal tread normal made these read as small road-car wheels in close-up.
+  return _slickTire ||= new THREE.MeshPhysicalMaterial({
+    color: 0x0a0a0b, roughness: 0.87, metalness: 0,
+    sheen: 0.40, sheenRoughness: 0.45,
+  });
 }
 
 let _sidewall = null;

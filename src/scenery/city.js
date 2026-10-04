@@ -17,12 +17,15 @@
  * coarser, haze-tinted ring of low-rise runs out to the skyline towers so the
  * ground plane never shows bare between them.
  *
- * Budget: every box is merged by material, so the whole fill is ~8 meshes.
+ * Architecture follows the same grammar as the foreground buildings, while
+ * streets, planted squares and low-rise neighbourhoods give the city a scale
+ * beyond a field of towers. Geometry is merged by material, not by object.
  */
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { fractalNoise } from './noise.js';
 import { rand } from './rng.js';
+import { createCityArchitecture, cityBuildingStyle } from './cityArchitecture.js';
 
 const GRID = 6;          // must match addCityBuildings' lot grid in track.js
 const BLOCK = 48;        // metres of block between streets (8 grid cells)
@@ -65,12 +68,11 @@ function makeStreetTexture() {
  *   occupied      Set of "cx:cz" 6 m cells already used by the trackside tiers
  *   facadeMats    array of MeshStandardMaterial with facade maps (from track.js)
  *   podiumMat     storefront material
- *   darkMat       parapets / plant rooms
  *   clearOfTrack  (px, pz, hw, hd, margin) -> bool
  *   seaX          nothing east of this (the marina)
  */
 export function addCityDistrict(scene, frames, D, opts) {
-  const { occupied, facadeMats, podiumMat, darkMat, clearOfTrack, seaX } = opts;
+  const { occupied, facadeMats, clearOfTrack, seaX } = opts;
   const cx = D.terrain?.centre?.x ?? 0;
   const cz = D.terrain?.centre?.z ?? 0;
   let ext = 0;
@@ -78,23 +80,25 @@ export function addCityDistrict(scene, frames, D, opts) {
   const districtR = ext + 330;       // dense fabric
   const fringeR = ext + 780;         // low-rise out toward the skyline ring
 
-  const cellKey = (x, z) => Math.floor(x / GRID) + ':' + Math.floor(z / GRID);
-  const lotFree = (px, pz, hw, hd) => {
-    for (let x = px - hw + 1; x < px + hw; x += GRID) {
-      for (let z = pz - hd + 1; z < pz + hd; z += GRID) {
-        if (occupied.has(cellKey(x, z))) return false;
-      }
+  // Test every touched cell, including a partial cell at the far edge. The
+  // former stepping loop missed those cells and could overlap a nearby lot.
+  const cellKeys = (px, pz, hw, hd) => {
+    const keys = [];
+    for (let x = Math.floor((px - hw) / GRID); x <= Math.floor((px + hw) / GRID); x++) {
+      for (let z = Math.floor((pz - hd) / GRID); z <= Math.floor((pz + hd) / GRID); z++) keys.push(`${x}:${z}`);
     }
-    return true;
+    return keys;
+  };
+  const lotFree = (px, pz, hw, hd) => {
+    return !cellKeys(px, pz, hw, hd).some((key) => occupied.has(key));
   };
   const claim = (px, pz, hw, hd) => {
-    for (let x = px - hw + 1; x < px + hw; x += GRID) {
-      for (let z = pz - hd + 1; z < pz + hd; z += GRID) occupied.add(cellKey(x, z));
-    }
+    for (const key of cellKeys(px, pz, hw, hd)) occupied.add(key);
   };
 
-  const buckets = facadeMats.map(() => []);
-  const podium = [], dark = [], fringe = [], streets = [];
+  const architecture = createCityArchitecture(scene, opts, 'city-district');
+  const fringe = [], streets = [], paving = [], lawn = [], foliage = [], furniture = [];
+  const publicSpaces = [];
   const box = (bucket, w, h, d, px, py, pz, fx = 1, fy = 1, tint = null) => {
     const geo = new THREE.BoxGeometry(w, h, d);
     if (fx !== 1 || fy !== 1) {
@@ -111,35 +115,32 @@ export function addCityDistrict(scene, frames, D, opts) {
     bucket.push(geo);
   };
 
-  // A building on a lot: podium + tower, optional setback, roof furniture.
-  const building = (px, pz, w, d, h, matIdx, landmark) => {
-    let base = 0;
-    if (h > 14 && rand() < 0.6) {
-      const ph = rand() < 0.5 ? 4.5 : 9;
-      box(podium, w, ph, d, px, ph / 2, pz, Math.max(1, Math.round(w / 12)), Math.max(1, Math.round(ph / 4.5)));
-      box(dark, w + 0.4, 0.4, d + 0.4, px, ph + 0.2, pz);
-      base = ph + 0.4;
+  const square = (x, z) => {
+    const w = BLOCK - 3;
+    box(paving, w, 0.18, w, x, 0.09, z);
+    // Four planted quarters separated by a generous pair of walking paths.
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const tx = x + sx * 11, tz = z + sz * 11;
+      box(lawn, 16, 0.1, 16, tx, 0.22, tz);
+      box(furniture, 0.45, 4.4, 0.45, tx, 2.4, tz);
+      const crown = new THREE.IcosahedronGeometry(1, 2);
+      const pos = crown.getAttribute('position');
+      for (let i = 0; i < pos.count; i++) {
+        const px = pos.getX(i), py = pos.getY(i), pz = pos.getZ(i);
+        // A continuous deformation avoids cracks between unshared ico faces.
+        const n = 1 + 0.12 * Math.sin(px * 8 + pz * 5) * Math.cos(py * 9 - pz * 3);
+        pos.setXYZ(i, tx + px * 4.8 * n, 5.2 + py * 3.0 * n, tz + pz * 4.8 * n);
+      }
+      crown.computeVertexNormals();
+      foliage.push(crown);
+      box(furniture, 3.0, 0.12, 0.65, tx - sx * 6, 0.65, tz);
+      box(furniture, 0.12, 0.55, 0.55, tx - sx * 6 - 1.1, 0.35, tz);
+      box(furniture, 0.12, 0.55, 0.55, tx - sx * 6 + 1.1, 0.35, tz);
     }
-    const tw = base ? Math.max(8, w - rnd(2, 5)) : w;
-    const td = base ? Math.max(8, d - rnd(2, 5)) : d;
-    box(buckets[matIdx], tw, h, td, px, base + h / 2, pz,
-      Math.max(1, Math.round(tw / 13)), Math.max(1, Math.round(h / 24)));
-    let topY = base + h;
-    box(dark, tw + 0.4, 0.6, td + 0.4, px, topY + 0.3, pz);
-    if (landmark || (h > 40 && rand() < 0.45)) {
-      // setback crown
-      const sw = tw * rnd(0.5, 0.75), sd = td * rnd(0.5, 0.75), sh = h * rnd(0.2, 0.45);
-      box(buckets[matIdx], sw, sh, sd, px + (rand() - 0.5) * (tw - sw), topY + sh / 2, pz + (rand() - 0.5) * (td - sd),
-        Math.max(1, Math.round(sw / 13)), Math.max(1, Math.round(sh / 24)));
-      topY += sh;
-      box(dark, sw + 0.4, 0.5, sd + 0.4, px, topY + 0.25, pz);
-    }
-    const acN = (rand() * 3) | 0;
-    for (let a = 0; a < acN; a++) {
-      box(dark, rnd(1.2, 2.4), rnd(0.8, 1.6), rnd(1.0, 2.0),
-        px + (rand() - 0.5) * (tw - 4), topY + 0.9, pz + (rand() - 0.5) * (td - 4));
-    }
-    if (rand() < 0.25) box(dark, 0.22, rnd(4, 11), 0.22, px, topY + 3, pz);
+    // A low, stone-edged central planter anchors the junction of the paths.
+    box(paving, 5, 0.65, 5, x, 0.43, z);
+    box(lawn, 4.5, 0.15, 4.5, x, 0.81, z);
+    publicSpaces.push({ x, z, halfWidth: w / 2, halfDepth: w / 2, height: 8.6, style: 'planted-square' });
   };
 
   // ---- Dense district on the block grid ----
@@ -148,7 +149,7 @@ export function addCityDistrict(scene, frames, D, opts) {
   const ox = -27, oz = 13;
   const bx0 = Math.floor((cx - districtR - ox) / PITCH), bx1 = Math.ceil((cx + districtR - ox) / PITCH);
   const bz0 = Math.floor((cz - districtR - oz) / PITCH), bz1 = Math.ceil((cz + districtR - oz) / PITCH);
-  let lots = 0;
+  let lots = 0, squares = 0, streetSegments = 0;
   for (let bi = bx0; bi <= bx1; bi++) {
     for (let bj = bz0; bj <= bz1; bj++) {
       const blockX = ox + bi * PITCH + BLOCK / 2;
@@ -164,6 +165,7 @@ export function addCityDistrict(scene, frames, D, opts) {
       ]) {
         if (sx + sw / 2 > seaX) continue;
         if (!clearOfTrack(sx, sz, sw / 2, sd / 2, D.armco + 2.5)) continue;
+        if (!lotFree(sx, sz, sw / 2, sd / 2)) continue;
         const g = new THREE.PlaneGeometry(sw, sd);
         g.rotateX(-Math.PI / 2);
         const uv = g.getAttribute('uv');
@@ -176,7 +178,23 @@ export function addCityDistrict(scene, frames, D, opts) {
         }
         g.translate(sx, 0.035, sz);
         streets.push(g);
+        // Separate raised sidewalks keep streets from looking like paint on
+        // the same car-park plane. Junction openings remain at either end.
+        for (const sign of [-1, 1]) {
+          if (sw < sd) box(paving, 1.6, 0.18, BLOCK, sx + sign * (sw / 2 - 0.8), 0.09, sz);
+          else box(paving, BLOCK, 0.18, 1.6, sx, 0.09, sz + sign * (sd / 2 - 0.8));
+        }
+        streetSegments++;
       }
+      const wholeBlockFree = clearOfTrack(blockX, blockZ, BLOCK / 2, BLOCK / 2, D.armco + 2.6)
+        && lotFree(blockX, blockZ, BLOCK / 2, BLOCK / 2);
+      if (wholeBlockFree && rand() < 0.07) {
+        square(blockX, blockZ);
+        claim(blockX, blockZ, BLOCK / 2, BLOCK / 2);
+        squares++;
+        continue;
+      }
+      if (wholeBlockFree) box(paving, BLOCK, 0.12, BLOCK, blockX, 0.06, blockZ);
       // Split the block into lots: 1x1, 2x1, 1x2 or 2x2 along each axis.
       const nx = rand() < 0.5 ? 2 : (rand() < 0.5 ? 1 : 3);
       const nz = rand() < 0.5 ? 2 : (rand() < 0.5 ? 1 : 3);
@@ -185,18 +203,20 @@ export function addCityDistrict(scene, frames, D, opts) {
       const core = 1 - Math.min(1, Math.max(0, (rc - ext * 0.7) / (districtR - ext * 0.7)));
       for (let li = 0; li < nx; li++) {
         for (let lj = 0; lj < nz; lj++) {
-          if (rand() < 0.08) continue;                     // a car park, a plaza
           const px = blockX - BLOCK / 2 + lw * (li + 0.5);
           const pz = blockZ - BLOCK / 2 + ld * (lj + 0.5);
           const w = lw - rnd(2, 5), d = ld - rnd(2, 5);
           if (!clearOfTrack(px, pz, w / 2, d / 2, D.armco + 2.6)) continue;
           if (!lotFree(px, pz, w / 2, d / 2)) continue;
           claim(px, pz, w / 2, d / 2);
-          const landmark = rand() < 0.035;
-          const h = landmark
-            ? rnd(70, 130)
-            : 9 + Math.pow(rand(), 1.6) * (14 + core * 58);
-          building(px, pz, w, d, h, (rand() * facadeMats.length) | 0, landmark);
+          const identity = cityBuildingStyle(px, pz, cx, cz);
+          const landmark = identity.style === 'office' && core > 0.45 && rand() < 0.075;
+          const h = landmark ? rnd(84, 126)
+            : identity.style === 'masonry' ? rnd(12, 24)
+            : identity.style === 'residential' ? rnd(18, 30 + core * 18)
+            : 18 + Math.pow(rand(), 1.5) * (20 + core * 62);
+          architecture.addBuilding({ x: px, z: pz, width: w, depth: d,
+            height: h, ...identity, detail: false, landmark });
           lots++;
         }
       }
@@ -238,9 +258,11 @@ export function addCityDistrict(scene, frames, D, opts) {
     scene.add(mesh);
     for (const g of geos) g.dispose();
   };
-  buckets.forEach((geos, i) => addMerged(geos, facadeMats[i], `city-district-${i}`, true));
-  addMerged(podium, podiumMat, 'city-district-podium', true);
-  addMerged(dark, darkMat, 'city-district-roof', false);
+  architecture.finish();
+  addMerged(paving, new THREE.MeshStandardMaterial({ color: 0x99998e, roughness: 0.96 }), 'city-public-paving', false);
+  addMerged(lawn, new THREE.MeshStandardMaterial({ color: 0x586044, roughness: 1 }), 'city-public-gardens', false);
+  addMerged(foliage, new THREE.MeshStandardMaterial({ color: 0x38513b, roughness: 0.94 }), 'city-square-trees', true);
+  addMerged(furniture, new THREE.MeshStandardMaterial({ color: 0x615b4d, roughness: 0.88 }), 'city-square-furniture', true);
   addMerged(fringe, new THREE.MeshStandardMaterial({
     map: facadeMats[0].map, vertexColors: true, roughness: 0.85, metalness: 0.05,
     envMapIntensity: 0.25, fog: true,
@@ -257,5 +279,7 @@ export function addCityDistrict(scene, frames, D, opts) {
     scene.add(mesh);
     for (const g of streets) g.dispose();
   }
+  scene.userData.cityPublicSpaces = publicSpaces;
+  scene.userData.cityDistrict = { buildings: lots, squares, streetSegments };
   return lots;
 }
