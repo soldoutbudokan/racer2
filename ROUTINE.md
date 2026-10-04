@@ -97,6 +97,33 @@ than grain, and fall back to `pngdiff --box` on the region you changed.
 6. Only push to `main` after the owner replies "go".
 7. Append what you did to the Changelog, and add/clear Backlog items.
 
+## Owner-requested visual overhaul — pending review (2026-10-03)
+
+PR #9, branch `claude/visual-world-audit`, is a broad owner-requested audit,
+not a scheduled one-change run. Preview:
+https://soldoutbudokan.github.io/racer2/preview/
+
+- Road-car hulls have real wheel openings with painted returns and window
+  apertures that reveal the existing cabins. Rally wheels and open-wheel slicks
+  now have distinct detail; collision, axle and tyre dimensions are unchanged.
+- Marina Street has office, residential and masonry building forms with real
+  setbacks, balconies, arcades and roof equipment, planted squares, and a
+  rebuilt harbour with moored yachts and connected docks.
+- All other circuits have dedicated architectural landmarks. Forest bounds now
+  follow translated layouts, so Alpine and Parco retain woodland for the full
+  lap. Mesa tops face upward. Braking boards face approaching drivers, and
+  batched road markings conform to the crown.
+- `scripts/world-audit.mjs` checks all six complete worlds, including finite
+  geometry, winding, building clearances, resource budgets and disposal. CI
+  captures matching before/after views of every circuit and all four cars.
+- Local build, graphics, car geometry, selection units, world audit, and all-six
+  AI laps/traffic pass. Browser checks and visual review run in GitHub Actions
+  because this local environment cannot launch Chromium.
+- See `docs/VISUAL_AUDIT.md` for circuit-specific findings. The pre-existing
+  tight corner radii and flat driving terrain are recorded, not redesigned.
+
+This preview is not accepted into `main`; preserve the owner's review step.
+
 ## Changelog (accepted to `main`)
 
 - **2026-09-24** (accepted → `main` 2026-09-24, owner: "push to main and close

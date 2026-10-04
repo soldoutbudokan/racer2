@@ -24,6 +24,11 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: node scripts/graphics-test.mjs && node scripts/smoke-car.mjs
+      - name: Complete world geometry and resource audit
+        if: matrix.check == 'visual'
+        run: |
+          node scripts/world-audit.mjs
+          node scripts/track-geometry.mjs qa/track-layouts
       - name: AI laps and traffic regression suite
         if: matrix.check == 'physics'
         run: node scripts/ai-test.mjs
@@ -43,16 +48,16 @@ jobs:
       - name: Driving and circuit regression suite
         if: matrix.check == 'physics'
         run: node scripts/physics-test.mjs
-      - name: Car shape comparison
+      - name: All-car before and after comparison
         if: matrix.check == 'visual'
-        run: node scripts/car-shapes.mjs
-      - name: Upload car shape comparison
+        run: |
+          GAME_URL=http://localhost:5174/ QA_DIR=qa/before/cars node scripts/car-shapes.mjs
+          QA_DIR=qa/after/cars node scripts/car-shapes.mjs
+      - name: All-circuit before and after comparison
         if: matrix.check == 'visual'
-        uses: actions/upload-artifact@v4
-        with:
-          name: racer2-car-shapes
-          path: qa/car-shapes-same-paint.png
-          retention-days: 14
+        run: |
+          GAME_URL=http://localhost:5174/ node scripts/audit-shots.mjs qa/before/tracks
+          node scripts/audit-shots.mjs qa/after/tracks
       - name: Visual and performance comparison
         if: matrix.check == 'visual'
         env:
@@ -64,6 +69,57 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always() && matrix.check == 'visual'
         with:
+          name: racer2-track-gp
+          path: |
+            qa/before/tracks/gp-*.png
+            qa/after/tracks/gp-*.png
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.check == 'visual'
+        with:
+          name: racer2-track-sprint
+          path: |
+            qa/before/tracks/sprint-*.png
+            qa/after/tracks/sprint-*.png
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.check == 'visual'
+        with:
+          name: racer2-track-downtown
+          path: |
+            qa/before/tracks/downtown-*.png
+            qa/after/tracks/downtown-*.png
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.check == 'visual'
+        with:
+          name: racer2-track-alpine
+          path: |
+            qa/before/tracks/alpine-*.png
+            qa/after/tracks/alpine-*.png
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.check == 'visual'
+        with:
+          name: racer2-track-dunes
+          path: |
+            qa/before/tracks/dunes-*.png
+            qa/after/tracks/dunes-*.png
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.check == 'visual'
+        with:
+          name: racer2-track-parco
+          path: |
+            qa/before/tracks/parco-*.png
+            qa/after/tracks/parco-*.png
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.check == 'visual'
+        with:
           name: racer2-visual-and-performance-checks
-          path: qa/
+          path: |
+            qa/
+            !qa/before/tracks/**
+            !qa/after/tracks/**
           retention-days: 14

@@ -105,7 +105,9 @@ function buildFormation(F, pos, col, idx, colTmp) {
     col.push(colTmp.r, colTmp.g, colTmp.b);
   }
   for (let i = 0; i < na; i++) {
-    idx.push(base, rimStart + i, rimStart + (i + 1) % na);
+    // +x -> +z winds downward in Three's xz plane. Reverse the fan so the
+    // cap is an opaque upward-facing surface, not a hole from high cameras.
+    idx.push(base, rimStart + (i + 1) % na, rimStart + i);
   }
 
   // Wall: rows from the rim down to the skirt.
@@ -136,7 +138,7 @@ function buildFormation(F, pos, col, idx, colTmp) {
         // and shed rock only up near the cliff foot.
         colTmp.set(SAND).lerp(new THREE.Color(SCREE), t * t * 0.9);
         const fan = fractalNoise(Math.cos(a) * 3 + seed, Math.sin(a) * 3, 2);
-        colTmp.lerp(new THREE.Color(STRATA[bed % STRATA.length]), fan * 0.30 * t);
+        colTmp.lerp(new THREE.Color(STRATA[((bed % STRATA.length) + STRATA.length) % STRATA.length]), fan * 0.30 * t);
       } else {
         const sIdx = (y + g * 4) / STRATA_H;
         const k0 = Math.floor(sIdx);

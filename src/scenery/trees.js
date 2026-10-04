@@ -797,7 +797,7 @@ function buildMidTrunk(h, r0, r1) {
  * dominant plus a secondary species, and shares one colour tint so the copse
  * reads as a single wood with meadow between it and the next.
  */
-function makeStands(count, extent, weights) {
+function makeStands(count, bounds, weights) {
   const nSpecies = weights.length;
   const stands = [];
   // Fewer, bigger stands than the old count/26 at 15-58 m: the F1-derived
@@ -812,7 +812,7 @@ function makeStands(count, extent, weights) {
     let sec = weightedPick(weights);
     if (sec === dom) sec = (dom + 1 + ((rand() * (nSpecies - 1)) | 0)) % nSpecies;
     stands.push({
-      x: rnd(-extent, extent), z: rnd(-extent, extent),
+      x: rnd(bounds.minX, bounds.maxX), z: rnd(bounds.minZ, bounds.maxZ),
       rx, rz: rx * rnd(0.42, 1.0), cos: Math.cos(rot), sin: Math.sin(rot),
       dom, sec,
       // Stand tint as a LINEAR multiplier around 1 — see the header note on
@@ -863,6 +863,18 @@ export function scatterTrees(scene, frames, opts = {}) {
   const nearMin = opts.nearMin ?? band[0] ?? 35;
   const extent = band[1] ?? 800;
   const terrain = opts.terrain || null;
+  // The real layouts are translated away from the start-line origin. A fixed
+  // origin-centred square used to cut off Monza's entire northern sector and
+  // the southern tip of Spa. Centre each forest on its circuit's bounds and
+  // leave at least 220 m of woodland beyond every extremity. Counts and the
+  // near-geometry cap stay fixed: covering the whole lap is not more trees.
+  const xs = frames.map((f) => f.pos.x), zs = frames.map((f) => f.pos.z);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minZ = Math.min(...zs), maxZ = Math.max(...zs);
+  const cx = (minX + maxX) / 2, cz = (minZ + maxZ) / 2;
+  const halfX = Math.max(extent, (maxX - minX) / 2 + 220);
+  const halfZ = Math.max(extent, (maxZ - minZ) / 2 + 220);
+  const bounds = { minX: cx - halfX, maxX: cx + halfX, minZ: cz - halfZ, maxZ: cz + halfZ };
   // Slope rejection: broadleaf woodland does not grow on a scree face,
   // conifers happily do. Without this the stands walk up the new rolling
   // ground and lean out of the hillside.
@@ -923,32 +935,33 @@ export function scatterTrees(scene, frames, opts = {}) {
   // each, the old per-candidate sweep over 650 frames was the whole build.
   const distToTrack = (() => {
     const CELL = 6;
-    const half = extent + 40;
-    const N = Math.ceil((2 * half) / CELL) + 1;
-    const grid = new Float32Array(N * N).fill(1e9);
+    const x0 = bounds.minX - 40, z0 = bounds.minZ - 40;
+    const NX = Math.ceil((2 * halfX + 80) / CELL) + 1;
+    const NZ = Math.ceil((2 * halfZ + 80) / CELL) + 1;
+    const grid = new Float32Array(NX * NZ).fill(1e9);
     const rad = Math.ceil(160 / CELL);
     for (let k = 0; k < frames.length; k += 2) {
       const p = frames[k].pos;
-      const ci = Math.round((p.x + half) / CELL), cj = Math.round((p.z + half) / CELL);
-      for (let j = Math.max(0, cj - rad); j <= Math.min(N - 1, cj + rad); j++) {
-        const dz = j * CELL - half - p.z;
-        for (let i = Math.max(0, ci - rad); i <= Math.min(N - 1, ci + rad); i++) {
-          const dx = i * CELL - half - p.x;
+      const ci = Math.round((p.x - x0) / CELL), cj = Math.round((p.z - z0) / CELL);
+      for (let j = Math.max(0, cj - rad); j <= Math.min(NZ - 1, cj + rad); j++) {
+        const dz = j * CELL + z0 - p.z;
+        for (let i = Math.max(0, ci - rad); i <= Math.min(NX - 1, ci + rad); i++) {
+          const dx = i * CELL + x0 - p.x;
           const d = dx * dx + dz * dz;
-          const o = j * N + i;
+          const o = j * NX + i;
           if (d < grid[o]) grid[o] = d;
         }
       }
     }
     return (x, z) => {
-      const i = Math.round((x + half) / CELL), j = Math.round((z + half) / CELL);
-      if (i < 0 || j < 0 || i >= N || j >= N) return 1e4;
-      const d = grid[j * N + i];
+      const i = Math.round((x - x0) / CELL), j = Math.round((z - z0) / CELL);
+      if (i < 0 || j < 0 || i >= NX || j >= NZ) return 1e4;
+      const d = grid[j * NX + i];
       return d >= 1e9 ? 161 : Math.sqrt(d);   // beyond the raster radius: far enough
     };
   })();
 
-  const stands = makeStands(count, extent, weights);
+  const stands = makeStands(count, bounds, weights);
   const sites = [];
   const maxTries = count * 8;
   for (let i = 0; i < maxTries && sites.length < count; i++) {
@@ -962,10 +975,10 @@ export function scatterTrees(scene, frames, opts = {}) {
       x = st.x + lx * st.cos - lz * st.sin;
       z = st.z + lx * st.sin + lz * st.cos;
     } else {
-      x = rnd(-extent, extent);
-      z = rnd(-extent, extent);
+      x = rnd(bounds.minX, bounds.maxX);
+      z = rnd(bounds.minZ, bounds.maxZ);
     }
-    if (Math.abs(x) > extent || Math.abs(z) > extent) continue;
+    if (x < bounds.minX || x > bounds.maxX || z < bounds.minZ || z > bounds.maxZ) continue;
 
     const d = distToTrack(x, z);
     if (d < nearMin) continue;
