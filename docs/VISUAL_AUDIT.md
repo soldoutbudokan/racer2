@@ -15,6 +15,7 @@ This pass covers all four car bodies and all six circuits. It combines a source/
 | Braking boards | Board fronts faced the direction of travel, showing their backs to approaching drivers. | Faces now point against the approach tangent. Tested on every circuit that uses them. |
 | Dunes scenery | Mesa cap triangles faced downward. | Corrected cap winding so the top faces render from above. |
 | Forest coverage | Fixed forest bounds ended before the far sections of Alpine and Parco. | Forest extent now covers the actual circuit bounds without increasing its configured population. |
+| Pit/forest overlap | Rendered review found tree crowns intersecting the Speedway garage after the forest change. | Derive the pit exclusion volume from its actual geometry and remove vegetation whose complete transformed bounds overlap it, at every LOD. |
 | Country-circuit identity | Five circuits relied heavily on the same generic race infrastructure. | Added small, batched venue buildings with independent footprint clearance checks. |
 
 ## Circuit-by-circuit scope
@@ -41,6 +42,7 @@ The audit checks:
 - Upward finish/grid/crosswalk triangles and brake-board fronts facing approaching traffic.
 - City footprint clearance against all sampled circuit segments, including midpoints.
 - Independent exact segment-to-oriented-footprint clearance for all new country-circuit buildings; tree-instance origins kept outside those footprints at every LOD.
+- Full transformed vegetation bounds against the pit complex at every LOD, including canopy width, instance scale and spatial-batch offsets.
 - Complete disposal of owned geometry, materials and textures, and removal of scene nodes and physics bodies.
 - Whole-world resource ceilings of 96 MiB geometry buffers, 1,000 meshes, 256 materials and 96 textures. These include all LOD levels and are not per-frame draw calls or GPU timings.
 
@@ -50,12 +52,14 @@ The complete-world run after the architecture and marina changes passed:
 | --- | ---: | ---: | ---: | ---: | ---: |
 | GP | 537 | 169 | 16.6 | 84 | 46 |
 | Speedway | 492 | 205 | 10.4 | 69 | 38 |
-| Downtown | 299 | 147 | 28.6 | 91 | 48 |
+| Downtown | 301 | 149 | 28.6 | 91 | 48 |
 | Alpine | 405 | 134 | 16.6 | 55 | 30 |
 | Dunes | 257 | 109 | 11.2 | 59 | 36 |
 | Parco | 600 | 150 | 15.7 | 79 | 44 |
 
 All 48 braking boards faced correctly. All 23 road-marking meshes faced upward. The 905 city building footprints remained at least 2.73 m beyond the barrier envelope, and all 22 public squares cleared it. Exact segment tests on the seven new venue footprints found a minimum 6.77 m gap beyond the barrier envelope. No tree-instance origin intersected those footprints at any LOD. The generated JSON is the authoritative result for each later run; these figures describe this audit snapshot.
+
+The pit follow-up passed all six worlds. Each of the three pit complexes enclosed all seven of its named meshes, including instanced garage doors. Full bounds checks found zero vegetation intersections across 34,455 GP, 18,196 Speedway and 42,500 Parco instances. The test first caught one remaining Speedway canopy after the initial trunk-margin fix, demonstrating why checking only tree origins was insufficient.
 
 ## Reproducing the review
 
@@ -78,6 +82,16 @@ node scripts/audit-shots.mjs qa/after/tracks
 
 The PR workflow checks out the base revision on port 5174 and the candidate on 5173. It captures all four cars in identical paint and lighting, plus nine fixed views per circuit: overview, oblique and seven positions around the lap. Two additional city views inspect the harbour and yacht at close range. Track captures wait for the selected circuit to finish rebuilding, park the car with deterministic physics, freeze the loop and use the same fixed graphics preset on both revisions. The workflow also runs the existing physics, AI, graphics, car selection and visual/performance suites. It uploads one matched before/after artifact per circuit and a separate cars/reports artifact, keeping downloads manageable.
 
-## Limits of the evidence
+## Rendered review
 
-Local Chromium could not start in the restricted execution environment, so local geometry checks do not establish visual quality, shadow quality or runtime frame rate. Those require the CI screenshots and browser reports. Inspect city road-level occlusion, marina scale, landmark/vegetation intersections, glass tint, wheel attachment and all four car silhouettes in the uploaded artifacts before making a final visual judgement. The layouts remain flat in physics; scenery hills and road camber are visual features.
+CI run `37173730270` passed both the physics and visual jobs. The review covered all four car sheets, all six circuit screenshot sets and the marina close-ups. The revised window apertures expose the existing interiors; the marina now has docks and recognisable hulls/cabins rather than floating white blocks; the corrected mesa tops render as solid surfaces. The controlled views also caught two issues: tree crowns intersecting the Speedway pit garage after the forest coverage change, and excessive repetition of pale office facades along the waterfront.
+
+The follow-up adds pit exclusions derived from the actual building geometry and checks entire vegetation bounds, including canopy scale. It also preserves each facade's supplied tint, removes the sharp repeated gradient band and mixes restrained slate offices into the waterfront palette. These changes preserve the circuit layout and city building footprints. The follow-up needs its own rendered CI capture; the preceding run cannot establish the appearance of later edits.
+
+The render report contained no browser errors. In the matched GP balanced-preset comparison, draw calls changed from 356 to 351 and triangles from 1,059,334 to 986,248. These figures do not establish an all-circuit performance ceiling: among the performance-preset circuit captures, Parco remains the heaviest at 528 calls and 1,315,127 triangles.
+
+## Retained limitations
+
+Broad asphalt aprons between some city buildings and the waterfront still look sparse from high views. The water retains visible highlight/tile seams that also appear in the baseline capture. Track elevations remain flat in physics, and the existing tight corner radii listed above are unchanged. Scenery hills and road camber are visual features.
+
+Local Chromium could not start in the restricted execution environment; rendered review therefore used the CI artifacts. Geometry checks cover structure and clearance, while screenshots establish appearance at fixed cameras. Neither the software-renderer screenshots nor static draw counts establish frame rate on a player's device.

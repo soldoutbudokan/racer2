@@ -1019,6 +1019,7 @@ function buildScaffoldStand(out, seats, S, pal, pat) {
  * offsets `o` from the centreline and converted by X().
  */
 export function addPitComplex(scene, startFrame, D) {
+  const firstChild = scene.children.length;
   const armco = D?.armco ?? 13;
   const flatR = D?.terrain?.flatR ?? (armco + 46);
   // The model was authored for the GP circuit (barrier at 13 m). On a wider
@@ -1343,6 +1344,38 @@ export function addPitComplex(scene, startFrame, D) {
     mesh.name = 'pit-doors';
     attach(scene, mesh, startFrame);
   }
+
+  // Keep scenery clear of the actual model, including its cantilever, wall,
+  // pit-lane apron and instanced doors. Deriving this from authored geometry
+  // keeps the exclusion correct when the wide-track shift or garage changes.
+  const footprint = getPitComplexFootprint(scene.children.slice(firstChild), startFrame);
+  if (footprint) (scene.userData.pitFootprints ||= []).push(footprint);
+}
+
+/** All pit meshes share the start-frame transform and are authored locally. */
+export function getPitComplexFootprint(meshes, startFrame) {
+  const bounds = new THREE.Box3(), part = new THREE.Box3();
+  const matrix = new THREE.Matrix4();
+  for (const mesh of meshes) {
+    if (!mesh.geometry) continue;
+    mesh.geometry.computeBoundingBox();
+    if (mesh.isInstancedMesh) {
+      for (let i = 0; i < mesh.count; i++) {
+        mesh.getMatrixAt(i, matrix);
+        bounds.union(part.copy(mesh.geometry.boundingBox).applyMatrix4(matrix));
+      }
+    } else bounds.union(mesh.geometry.boundingBox);
+  }
+  if (bounds.isEmpty()) return null;
+  const yaw = Math.atan2(startFrame.tan.x, startFrame.tan.z);
+  const centre = bounds.getCenter(new THREE.Vector3()).applyAxisAngle(UP, yaw).add(startFrame.pos);
+  return {
+    x: centre.x, z: centre.z, yaw,
+    width: bounds.max.x - bounds.min.x,
+    depth: bounds.max.z - bounds.min.z,
+    minY: bounds.min.y + startFrame.pos.y,
+    maxY: bounds.max.y + startFrame.pos.y,
+  };
 }
 
 /** Place a locally-built pit mesh onto whatever start straight this track has. */

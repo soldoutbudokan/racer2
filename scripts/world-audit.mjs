@@ -141,9 +141,11 @@ async function auditWorlds() {
         const failure = [], geos = new Set(), mats = new Set(), texs = new Set(), buffers = new Set();
         const result = { id, milliseconds: Math.round(performance.now() - start), meshes: 0, instances: 0,
           triangles: 0, instancedTriangles: 0, geometryBytes: 0, texturePixels: 0,
-          cityBuildings: 0, publicSpaces: 0, venueFootprints: 0, roadMarkings: 0, brakeMarkers: 0,
+          cityBuildings: 0, publicSpaces: 0, venueFootprints: 0, pitFootprints: 0,
+          pitMeshesChecked: 0, pitVegetationInstancesChecked: 0, pitVegetationBoundsOverlaps: 0,
+          roadMarkings: 0, brakeMarkers: 0,
           minBuildingClearance: null, minVenueClearance: null, names: {}, failure };
-        const venues = [];
+        const venues = [], pits = [];
         const finite = (values, label) => {
           for (const value of values) if (!Number.isFinite(value)) { failure.push(`nonfinite ${label}`); break; }
         };
@@ -230,6 +232,16 @@ async function auditWorlds() {
             if (actual > site.roadClearance + 0.01 || actual < site.roadClearance - 1.2)
               failure.push('venue clearance metadata disagrees with independent segment test');
           }
+          for (const site of object.userData.pitFootprints || []) {
+            finite(Object.values(site), 'pit footprint');
+            if (!(site.width > 0 && site.depth > 0 && site.maxY > site.minY)) failure.push('pit footprint has invalid dimensions');
+            const matrix = new THREE.Matrix4().makeRotationY(site.yaw);
+            matrix.setPosition(site.x, 0, site.z).invert();
+            pits.push({ site, matrix, bounds: new THREE.Box3(
+              new THREE.Vector3(-site.width / 2, site.minY, -site.depth / 2),
+              new THREE.Vector3(site.width / 2, site.maxY, site.depth / 2)) });
+            result.pitFootprints++;
+          }
         });
         // Check every tree LOD, including spatial-batch transforms. Trunks
         // must stay outside the model footprint; canopy overlap is reviewed
@@ -248,6 +260,45 @@ async function auditWorlds() {
             }
           }
         });
+        // A trunk-only check missed crowns growing through the Speedway pit
+        // roof. Transform the full geometry bounds for every vegetation
+        // instance at every LOD into the pit's local frame. This conservative
+        // volume test catches both crowns and low shrubs, including cell offsets.
+        const localToPit = new THREE.Matrix4(), vegetationBounds = new THREE.Box3();
+        track.group.traverse(object => {
+          if (!object.geometry || !object.name.startsWith('pit-')) return;
+          result.pitMeshesChecked++;
+          for (let i = 0; i < (object.isInstancedMesh ? object.count : 1); i++) {
+            if (object.isInstancedMesh) object.getMatrixAt(i, instance); else instance.identity();
+            transform.multiplyMatrices(object.matrixWorld, instance);
+            const contained = pits.some(pit => {
+              localToPit.multiplyMatrices(pit.matrix, transform);
+              vegetationBounds.copy(object.geometry.boundingBox).applyMatrix4(localToPit);
+              // The tiny tolerance covers float geometry rounding, not extra
+              // scenery space. This catches incomplete exclusion metadata.
+              return pit.bounds.clone().expandByScalar(0.002).containsBox(vegetationBounds);
+            });
+            if (!contained) failure.push(`${object.name} lies outside the recorded pit footprint`);
+          }
+        });
+        const vegetationNames = new Set(['grassTufts', 'flowerDrifts', 'shrubs', 'alpineRock', 'hedgerows']);
+        track.group.traverse(object => {
+          if (!object.isInstancedMesh || !(object.name.startsWith('trees-') || vegetationNames.has(object.name))) return;
+          object.geometry.computeBoundingBox();
+          for (let i = 0; i < object.count; i++) {
+            object.getMatrixAt(i, instance); transform.multiplyMatrices(object.matrixWorld, instance);
+            for (const pit of pits) {
+              result.pitVegetationInstancesChecked++;
+              localToPit.multiplyMatrices(pit.matrix, transform);
+              vegetationBounds.copy(object.geometry.boundingBox).applyMatrix4(localToPit);
+              if (vegetationBounds.intersectsBox(pit.bounds)) {
+                result.pitVegetationBoundsOverlaps++;
+                if (result.pitVegetationBoundsOverlaps <= 6)
+                  failure.push(`${object.name} instance ${i} intersects pit geometry bounds`);
+              }
+            }
+          }
+        });
         for (const texture of texs) {
           const image = texture.image;
           if (image?.width && image?.height) result.texturePixels += image.width * image.height;
@@ -256,6 +307,7 @@ async function auditWorlds() {
         if (def.theme.brakeMarkers && !result.brakeMarkers) failure.push('braking boards missing');
         if (id === 'downtown' && result.cityBuildings < 500) failure.push('city architecture missing');
         if (id !== 'downtown' && !result.venueFootprints) failure.push('circuit-specific venue architecture missing');
+        if (def.theme.pit && !result.pitFootprints) failure.push('pit structure footprint metadata missing');
         for (const body of world.bodies) {
           finite([body.position.x, body.position.y, body.position.z, body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w], 'physics body');
           for (const offset of body.shapeOffsets) finite([offset.x, offset.y, offset.z], 'physics offset');

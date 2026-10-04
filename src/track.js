@@ -851,14 +851,22 @@ function makeFacadeTexture(kind, base, litFrac = 0.10) {
   ctx.fillStyle = base;
   ctx.fillRect(0, 0, w, h);
   if (kind === 'glass') {
-    // vertical glazing strips with a diagonal sky sheen
+    // Reflective glazing keeps the material's supplied tint. Match both
+    // vertical ends of the tile and keep the reflection subtle: the former
+    // bright-to-dark ramp restarted every 24 m, painting a false wide stripe
+    // through every tower. Real floor lines below still repeat every 3 m.
+    const hex = parseInt(base.slice(1), 16);
+    const tint = [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+    const sky = [181, 197, 207];
+    const paneColour = (mix, shift) => `rgb(${tint.map((c, i) => Math.round(c * (1 - mix) + sky[i] * mix + shift)).join(',')})`;
     for (let q = 0; q < 8; q++) {
       const x0 = q * 16;
-      const g = ctx.createLinearGradient(x0, 0, x0 + 13, h);
-      g.addColorStop(0, '#9db4c6');
-      g.addColorStop(0.45, '#6e8496');
-      g.addColorStop(0.55, '#b9cbd8');
-      g.addColorStop(1, '#556878');
+      const shift = Math.sin(q * 2.17) * 3;
+      const g = ctx.createLinearGradient(0, 0, 0, h);
+      g.addColorStop(0, paneColour(0.40, shift));
+      g.addColorStop(0.42, paneColour(0.33, shift));
+      g.addColorStop(0.68, paneColour(0.44, shift));
+      g.addColorStop(1, paneColour(0.40, shift));
       ctx.fillStyle = g;
       ctx.fillRect(x0 + 2, 0, 12, h);
     }

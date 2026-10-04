@@ -257,11 +257,23 @@ function chooseSite(frames, D, plan) {
 function clearVegetation(scene, footprints) {
   scene.updateMatrixWorld(true);
   const local = new THREE.Matrix4(), world = new THREE.Matrix4(), colour = new THREE.Color();
+  const relative = new THREE.Matrix4(), instanceBounds = new THREE.Box3();
+  // Existing pit buildings publish their measured vertical extent too. Test
+  // the complete vegetation geometry against that volume: a large stone-pine
+  // canopy can reach the roof even when its trunk clears the usual margin.
+  const volumes = footprints.filter((site) => Number.isFinite(site.maxY)).map((site) => ({
+    inverse: new THREE.Matrix4().compose(new THREE.Vector3(site.x, 0, site.z),
+      new THREE.Quaternion().setFromAxisAngle(UP, site.yaw), ONE).invert(),
+    bounds: new THREE.Box3(
+      new THREE.Vector3(-site.width / 2 - 0.25, site.minY - 0.1, -site.depth / 2 - 0.25),
+      new THREE.Vector3(site.width / 2 + 0.25, site.maxY + 0.25, site.depth / 2 + 0.25)),
+  }));
   let removed = 0;
   scene.traverse((mesh) => {
     if (!mesh.isInstancedMesh) return;
     const isTree = mesh.name.startsWith('trees-');
     if (!isTree && !['grassTufts', 'flowerDrifts', 'shrubs', 'alpineRock', 'hedgerows'].includes(mesh.name)) return;
+    if (volumes.length && !mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
     const margin = isTree ? 6.5 : mesh.name === 'shrubs' || mesh.name === 'alpineRock' ? 2.5 : 0.8;
     let kept = 0;
     for (let i = 0; i < mesh.count; i++) {
@@ -271,6 +283,10 @@ function clearVegetation(scene, footprints) {
         const dx = x - site.x, dz = z - site.z;
         const cos = Math.cos(site.yaw), sin = Math.sin(site.yaw);
         return Math.abs(cos * dx - sin * dz) < site.width / 2 + margin && Math.abs(sin * dx + cos * dz) < site.depth / 2 + margin;
+      }) || volumes.some((volume) => {
+        relative.multiplyMatrices(volume.inverse, world);
+        instanceBounds.copy(mesh.geometry.boundingBox).applyMatrix4(relative);
+        return volume.bounds.intersectsBox(instanceBounds);
       });
       if (excluded) { removed++; continue; }
       if (kept !== i) {
@@ -287,6 +303,13 @@ function clearVegetation(scene, footprints) {
 }
 
 export function addVenueScenery(scene, frames, D) {
+  // The forest is built after the pit complex and before ground cover. Clear
+  // the model's measured footprint here, once every vegetation LOD exists;
+  // this also covers circuits where no extra landmark can be placed.
+  const pitFootprints = scene.userData.pitFootprints || [];
+  if (pitFootprints.length) {
+    scene.userData.removedPitVegetationInstances = clearVegetation(scene, pitFootprints);
+  }
   const plans = PLANS[D.id];
   if (!plans) return;
   const all = { solid: [], metal: [], glass: [] }, footprints = [];

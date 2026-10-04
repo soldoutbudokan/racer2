@@ -188,5 +188,13 @@ export function cityBuildingStyle(x, z, centreX, centreZ, foreground = false) {
   const district = Math.sin((x - centreX) * 0.0044) + Math.cos((z - centreZ) * 0.0052);
   if (district < -0.05) return { style: 'masonry', matIndex: 3 + Math.floor(rand() * 3) };
   if (district < 0.94) return { style: 'residential', matIndex: 3 + Math.floor(rand() * 3) };
-  return { style: 'office', matIndex: (foreground || rand() < 0.7) ? 6 + Math.floor(rand() * 2) : Math.floor(rand() * 3) };
+  if (foreground) {
+    // Use the same single random draw as the original foreground selection,
+    // so a palette edit leaves every building footprint and height in place.
+    // Silver/blue glazing shares the quarter with restrained slate towers;
+    // previously the foreground flag forced every office to identical glass.
+    const material = rand();
+    return { style: 'office', matIndex: material < 0.32 ? 6 : material < 0.62 ? 7 : material < 0.82 ? 0 : 1 };
+  }
+  return { style: 'office', matIndex: rand() < 0.7 ? 6 + Math.floor(rand() * 2) : Math.floor(rand() * 3) };
 }
