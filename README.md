@@ -183,10 +183,18 @@ pass. `M` mutes; the choice is remembered.
   and hoodoos. Each circuit is a data
   definition; everything is parented to a disposable group so switching
   circuits tears down and rebuilds cleanly.
-- **Cars**: procedurally lofted bodies (GT coupe, rally hatch, AI muscle, open-wheeler) with
-  clear-coated paint, cut-out wheel arches with painted returns, open window
-  apertures with visible cabins, smoked-lens light clusters and distinct
-  alloy wheels and tyres — merged into material batches per car.
+- **Cars**: procedurally lofted bodies (GT coupe, rally hatch, AI muscle,
+  open-wheeler) sampled at 43 columns per section and 12 rings per station,
+  with rolled bumper edges instead of flat end walls, crowned hoods, roofs and
+  decks, noses that fall continuously into a low bumper face (GT, hatch),
+  lamps cut into the fender corners as real apertures with recessed housings,
+  lit elements and flush lenses, clear-coated paint, cut-out wheel arches with
+  painted returns, open window apertures with visible cabins, 48-segment
+  tyres and distinct alloy wheels — merged into material batches per car.
+- **Frame pacing**: the simulation steps at a fixed 120 Hz; every car is drawn
+  interpolated between its last two steps, and the chase camera and shadow
+  frustum follow that drawn pose, so a 60, 120 or 144 Hz display all see
+  continuous motion instead of a car that lurches against the camera.
 - **City**: chamfered office towers, terraced apartments and masonry blocks,
   recessed shops and arcades, planted squares and sidewalks, plus a harbour
   of moored yachts, finger docks and a palm promenade.
@@ -205,7 +213,7 @@ src/
   scene.js      renderer, colour grade, IBL, shadow-follow, post-processing
   sky.js        sky dome: gradient, sun glow, per-circuit horizon
   garage.js     menu showroom render
-  car.js        visual + physics car: engine, gearbox, aero, tyres
+  car.js        visual + physics car: engine, gearbox, aero, tyres, render interpolation
   ai.js         lap speed profile, pure pursuit, traffic, recovery
   tracks.js     circuit catalogue: centrelines + per-circuit themes
   track.js      circuit geometry, groove, kerbs, gravel, themed scenery
@@ -215,7 +223,7 @@ src/
   camera.js     chase / hood / cinematic cameras
   hud.js        tachometer, timing, race order, start lights, pace, minimap
   audio.js      procedural engine / tyre / surface / wind / impact sound
-  carModels/    procedural car bodies, wheels, materials
+  carModels/    procedural car bodies (loft, bumper rolls, lamp apertures), wheels, materials
 scripts/
   physics-test.mjs  deterministic driving-model assertions (23 checks)
   ai-test.mjs       AI laps on every circuit plus traffic scenarios, in Node

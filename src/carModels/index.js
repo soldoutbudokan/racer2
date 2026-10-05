@@ -36,15 +36,16 @@ const BODY_DROP = HUB_LOCAL_Y;
 const hullCache = new Map();
 function getHull(key, def) {
   if (!hullCache.has(key)) {
-    // ringsPerSegment 7, not 9: the surfaced profile pins 22 vertex COLUMNS
-    // (~57 mm apart along the section), so 9 rings per segment sampled z at
-    // ~38 mm — over half again as fine as the curve it is crossed with, and
-    // the extra rings only restate curvature Catmull already draws. 7 puts the
-    // two spacings within 15 % of each other and returns ~2.2 k triangles per
-    // road car, which is a fifth of the whole overrun.
-    // profilePoints is ignored once a car declares surface features.
+    // The surfaced profile pins a vertex column every ~28 mm along the
+    // section (loftBuilder RES), and 12 rings per segment samples z at
+    // ~25 mm, so the two spacings match and a flared arch is as smooth along
+    // the car as it is around it. That is ~9 k triangles per road-car hull:
+    // one draw call, shared by every car of the archetype, and a small
+    // fraction of a single forest batch. profilePoints is ignored once a car
+    // declares surface features.
     let hull = def.keys ? buildLoftHull(def.keys, {
-      ringsPerSegment: 7, profilePoints: 16, panes: def.PANES,
+      ringsPerSegment: 12, profilePoints: 16, panes: def.PANES,
+      capRoll: def.CAP_ROLL,
     }) : null;
     if (hull && key !== 'open-wheel') {
       const shell = cutWheelWells(hull);

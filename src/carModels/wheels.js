@@ -60,13 +60,15 @@ const STYLES = {
 };
 
 // Lathe segments for everything that shows a round SILHOUETTE (tread,
-// sidewalls, rim lip). 24 puts a 15 deg facet on a 0.36 m radius — about
-// 3 mm of sagitta, i.e. a pixel at the distance a rival car is ever seen from —
-// and it has to be the SAME number for the tread and the sidewalls or the
-// shoulder seam they share splits open. Four wheels per car x five cars makes
-// this the single most multiplied number in the whole model, which is why it is
-// 24 and not 30.
-const TYRE_SEG = 24;
+// sidewalls, rim lip). 48 puts a 7.5 deg facet on a 0.36 m radius — under a
+// millimetre of sagitta, so the tyre is a circle even in the player's own
+// chase view and the garage close-up, where 24 read as a polygon. It has to
+// be the SAME number for the tread and the sidewalls or the shoulder seam
+// they share splits open.
+const TYRE_SEG = 48;
+// Segments for the rim face, barrel and brake parts: round, but seen behind
+// the tyre and the spokes, so they need fewer than the silhouette.
+const RIM_SEG = 36;
 
 // Tyre cross-section, positive-x half, ordered tread → bead (increasing axial
 // keeps LatheGeometry normals outward): rounded shoulder, bulged sidewall
@@ -125,14 +127,14 @@ function buildFace(style, dir) {
   const rimMat = style.rim === 'dark' ? makeRimDark() : makeAlloy();
 
   // Outer rim lip — the bright ring that defines the wheel diameter.
-  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.238, 0.013, 4, TYRE_SEG), rimMat);
+  const lip = new THREE.Mesh(new THREE.TorusGeometry(0.238, 0.013, 6, TYRE_SEG), rimMat);
   lip.rotation.y = Math.PI / 2;
   lip.position.x = dir * LIP_X;
   face.add(lip);
 
   // Dish: conical band dropping from the lip back to the recessed spoke
   // plane. This is what gives the wheel its barrel depth.
-  const dishGeo = new THREE.CylinderGeometry(DISH_OUT_R, DISH_IN_R, DISH_DEPTH, 22, 1, true);
+  const dishGeo = new THREE.CylinderGeometry(DISH_OUT_R, DISH_IN_R, DISH_DEPTH, RIM_SEG, 1, true);
   dishGeo.rotateZ(-dir * (Math.PI / 2)); // wide end toward the lip
   const dish = new THREE.Mesh(dishGeo, rimMat);
   dish.position.x = dir * (LIP_X - 0.002 - DISH_DEPTH / 2);
@@ -158,7 +160,7 @@ function buildFace(style, dir) {
   }
 
   // Hub, recessed with the spokes.
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.055, 12), rimMat);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.055, 20), rimMat);
   hub.rotation.z = Math.PI / 2;
   hub.position.x = dir * SPOKE_HUB_X;
   face.add(hub);
@@ -225,7 +227,7 @@ function buildTemplateRaw(styleKey, style) {
   // covered the middle 0.10 of the 0.28-wide tyre, so the upper opening read as
   // a hollow ring with body paint showing through.
   const barrel = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.230, 0.230, 0.18, 20, 1, true),
+    new THREE.CylinderGeometry(0.230, 0.230, 0.18, RIM_SEG, 1, true),
     makeRimDark(),
   );
   barrel.rotateZ(Math.PI / 2);
@@ -237,7 +239,7 @@ function buildTemplateRaw(styleKey, style) {
   // it never z-fights the brake face and never hides the caliper/rotor detail
   // that sits proud of it.
   const plug = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.230, 0.230, 0.012, 20),
+    new THREE.CylinderGeometry(0.230, 0.230, 0.012, RIM_SEG),
     makeRimDark(),
   );
   plug.rotateZ(Math.PI / 2);
@@ -245,20 +247,20 @@ function buildTemplateRaw(styleKey, style) {
 
   // Brakes: dark hat + inset rotor, distinct radii/materials.
   const rotor = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.185, 0.185, 0.032, 22),
+    new THREE.CylinderGeometry(0.185, 0.185, 0.032, RIM_SEG),
     makeDisc(),
   );
   rotor.rotateZ(Math.PI / 2);
   group.add(rotor);
   const hat = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.085, 0.085, 0.044, 12),
+    new THREE.CylinderGeometry(0.085, 0.085, 0.044, 20),
     makeRimDark(),
   );
   hat.rotateZ(Math.PI / 2);
   group.add(hat);
 
   // Caliper: a curved saddle astride the rotor, up behind the spokes.
-  const calGeo = new THREE.TorusGeometry(0.190, 0.030, 4, 6, 1.0);
+  const calGeo = new THREE.TorusGeometry(0.190, 0.030, 6, 10, 1.0);
   calGeo.rotateY(Math.PI / 2); // ring around the X axis
   const caliper = new THREE.Mesh(calGeo, makeCaliper());
   caliper.rotation.x = 1.22; // arc apex to the upper front quadrant

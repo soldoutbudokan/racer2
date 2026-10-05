@@ -27,34 +27,40 @@ import {
 // they are the same, and the reasons are recorded there.
 export const keys = [
   // z,      hw,     yb,     hip,   yt,    topW  + surface features
-  { z: -2.24, hw: 0.900, yb: -0.085, hip: 0.360, yt: 0.560, topW: 0.70, hard: true },
+  { z: -2.24, hw: 0.900, yb: -0.085, hip: 0.360, yt: 0.560, topW: 0.70, hard: true,
+    crown: 0.005 },
   { z: -2.04, hw: 0.975, yb: -0.060, hip: 0.430, yt: 0.625, topW: 0.83,
-    crease: 0.012, creaseY: 0.80 },
+    crease: 0.012, creaseY: 0.80, crown: 0.007 },
   { z: -1.78, hw: 1.000, yb: -0.030, hip: 0.480, yt: 0.650, topW: 0.88,
-    flare: 0.040, lipY: 0.68, crease: 0.017, creaseY: 0.82, sill: 0.010 },
+    flare: 0.040, lipY: 0.68, crease: 0.017, creaseY: 0.82, sill: 0.010, crown: 0.009 },
   { z: -1.45, hw: 1.005, yb:  0.060, hip: 0.500, yt: 0.660, topW: 0.90,
-    flare: 0.030, lipY: 0.70, crease: 0.018, creaseY: 0.83 },    // rear axle
+    flare: 0.030, lipY: 0.70, crease: 0.018, creaseY: 0.83, crown: 0.011 },    // rear axle
   { z: -1.16, hw: 1.000, yb: -0.085, hip: 0.495, yt: 0.760, topW: 0.82,
-    flare: 0.040, lipY: 0.66, sill: 0.022, crease: 0.016, creaseY: 0.79 },
+    flare: 0.040, lipY: 0.66, sill: 0.022, crease: 0.016, creaseY: 0.79, crown: 0.013 },
   // Roof authored at its two ends only — Catmull carries the crown to y ~0.940
   // between them (see gtCoupe.js).
   { z: -0.86, hw: 0.992, yb: -0.170, hip: 0.490, yt: 0.905, topW: 0.75,
-    sill: 0.032, crease: 0.014, creaseY: 0.815, tuck: 0.30 },    // C-pillar
+    sill: 0.032, crease: 0.014, creaseY: 0.815, tuck: 0.30, crown: 0.020 },    // C-pillar
   { z:  0.00, hw: 0.988, yb: -0.188, hip: 0.480, yt: 0.930, topW: 0.74,
-    sill: 0.034, crease: 0.013, creaseY: 0.830, tuck: 0.30 },    // header rail
+    sill: 0.034, crease: 0.013, creaseY: 0.830, tuck: 0.30, crown: 0.020 },    // header rail
   { z:  0.36, hw: 0.995, yb: -0.175, hip: 0.475, yt: 0.715, topW: 0.79,
-    sill: 0.030, crease: 0.013, creaseY: 0.833 },                // cowl
+    sill: 0.030, crease: 0.013, creaseY: 0.833, crown: 0.012 },                // cowl
   { z:  1.10, hw: 1.005, yb: -0.060, hip: 0.480, yt: 0.565, topW: 0.87,
-    flare: 0.042, lipY: 0.66, sill: 0.012, crease: 0.012, creaseY: 0.84 },
+    flare: 0.042, lipY: 0.66, sill: 0.012, crease: 0.012, creaseY: 0.84, crown: 0.018 },
   { z:  1.45, hw: 1.005, yb:  0.060, hip: 0.490, yt: 0.555, topW: 0.88,
-    flare: 0.030, lipY: 0.70, crease: 0.014, creaseY: 0.83 },    // front axle
+    flare: 0.030, lipY: 0.70, crease: 0.014, creaseY: 0.83, crown: 0.020 },    // front axle
   { z:  1.80, hw: 1.002, yb: -0.050, hip: 0.470, yt: 0.550, topW: 0.87,
-    flare: 0.038, lipY: 0.68, crease: 0.012, creaseY: 0.84 },
+    flare: 0.038, lipY: 0.68, crease: 0.012, creaseY: 0.84, crown: 0.018 },
   { z:  2.14, hw: 0.985, yb: -0.125, hip: 0.395, yt: 0.535, topW: 0.85,
-    hard: true, crease: 0.007, creaseY: 0.85 },                  // leading edge
-  { z:  2.24, hw: 0.965, yb: -0.140, hip: 0.350, yt: 0.480, topW: 0.82 },
-  { z:  2.32, hw: 0.900, yb: -0.145, hip: 0.300, yt: 0.420, topW: 0.74, hard: true },
+    hard: true, crease: 0.007, creaseY: 0.85, crown: 0.012 },                  // leading edge
+  { z:  2.24, hw: 0.965, yb: -0.140, hip: 0.350, yt: 0.480, topW: 0.82, crown: 0.007 },
+  { z:  2.32, hw: 0.900, yb: -0.145, hip: 0.300, yt: 0.420, topW: 0.74, hard: true,
+    crown: 0.004 },
 ];
+
+// Bumper edge radii — see gtCoupe.js. A classic chrome-era bumper is a touch
+// crisper than the GT's moulded fascia.
+export const CAP_ROLL = { nose: 0.050, tail: 0.050 };
 
 export const wheelStyle = 'muscle';
 
@@ -154,16 +160,20 @@ export function decorate(body, ctx) {
     z: -2.235, y: 0.32, width: 1.44, height: 0.16, depth: 0.058, segments: 8,
   });
   body.add(tail.group);
-  body.add(buildGrille({ z: 2.325, y: 0.06, w: 1.05, h: 0.20 }));
-  body.add(buildTowEye({ z: 2.325, y: -0.095, x: 0.34, r: 0.042 }));
+  // Grille 10 mm up and 40 mm shorter, tow eye smaller: the lower edge of
+  // the cap now turns away round a 50 mm bumper roll, so nothing may reach
+  // the bottom 20 mm of the old outline.
+  body.add(buildGrille({ z: 2.325, y: 0.07, w: 1.05, h: 0.16 }));
+  body.add(buildTowEye({ z: 2.325, y: -0.090, x: 0.34, r: 0.032 }));
   body.add(buildSplitter({
     z: 2.26, y: -0.165, w: 1.36, canardX: 0.88, canardLen: 0.14,
   }));
   // rearZ sits 12 mm behind the tail cap plane (-2.240) — see the note in
   // gtCoupe.js. At the old -2.235 the plate quad and the badge disc both landed
   // exactly ON the cap and z-fought it.
+  // Plate 30 mm up out of the tail's bumper roll; the badge moves with it.
   body.add(buildBadgesAndPlate({
-    frontZ: 2.325, frontY: 0.30, rearZ: -2.252, rearY: 0.16, plateY: 0.02,
+    frontZ: 2.325, frontY: 0.30, rearZ: -2.252, rearY: 0.19, plateY: 0.05,
   }));
   body.add(buildDiffuser({ z: -2.00, y: -0.26, w: 1.46 }));
   body.add(buildExhaust({ z: -2.28, y: 0.06, x: 0.46, count: 4, r: 0.048 }));
@@ -172,9 +182,10 @@ export function decorate(body, ctx) {
 
   // ---- Body surface details, measured off the flank at each station.
   body.add(buildMirrors({ z: 0.32, y: 0.450, x: 0.938, color: ctx.color }));
-  body.add(buildWipers({ z: 0.41, y: 0.700, x: 0.28, len: 0.50, tilt: 0.10, rake: 0.06 }));
+  // Both sit on crowned panels (cowl 12 mm, roof 20 mm).
+  body.add(buildWipers({ z: 0.41, y: 0.712, x: 0.28, len: 0.50, tilt: 0.10, rake: 0.06 }));
   // Classic whip mast rather than the GT's shark fin.
-  body.add(buildAerial({ z: -1.00, y: 0.865, style: 'whip' }));
+  body.add(buildAerial({ z: -1.00, y: 0.885, style: 'whip' }));
   // Handle and repeater sit on different parts of the flank (door shoulder
   // 0.988, fender haunch 1.012), so they get a call each — see gtCoupe.js.
   body.add(faceOutboard(buildDoorFurniture({

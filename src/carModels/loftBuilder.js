@@ -103,39 +103,54 @@ function sampleField(keys, field, u, dflt = 0) {
  *                   trick as the hip crease, one rung lower). Small values
  *                   read best — 0.008..0.020. Negative scoops instead.
  *   creaseY         height of that line.
+ *   crown   m       CROWN: how far the centre of the top plane (hood, roof,
+ *                   deck) domes above `yt`, falling to nothing at the top
+ *                   corner. A dead-flat plane aimed at the sky mirrors it as
+ *                   one unbroken tone and reads as a slab; a 10-20 mm dome
+ *                   gives the panel a highlight gradient that reads as
+ *                   pressed metal. Negative scoops the panel.
  */
 export const SURFACE_DEFAULTS = {
   tuck: 0.245, tuckY: 0.10,
   sill: 0, sillY: 0.26,
   flare: 0, lipY: 0.55,
   crease: 0, creaseY: 0.80,
+  crown: 0,
 };
 const SURFACE_FIELDS = Object.keys(SURFACE_DEFAULTS);
+
+// Resolution of the surfaced profile: vertex columns per rung of the landmark
+// ladder below. 1 is the ladder itself (22 columns, ~57 mm apart on a road
+// car); 2 puts a column every ~28 mm, so a flared arch or a tumblehome is a
+// curve instead of a run of visible chords. Every landmark stays on an exact
+// integer index whatever the value, which is what lets the glazing, seams and
+// seals keep sampling the same polyline as the hull.
+const RES = 2;
 
 // Profile point count of the surfaced profile. Every landmark below lands on
 // an exact integer index at this count, so creases fall on vertex columns
 // instead of being chorded away.
-const PROFILE_N = 22;
+const PROFILE_N = 21 * RES + 1;
 
-// Profile point index of each landmark of the SURFACED profile (N = 22).
+// Profile point index of each landmark of the SURFACED profile.
 // Divide by PROFILE_N - 1 for the profile FRACTION an archetype authors seams
 // against — or just call profileFractions(keys), which also answers correctly
 // for legacy cars.
 const IDX = {
-  panCentre: 0,   // underside centre line
-  panEdge: 2,     // outer edge of the flat floor pan (hard corner)
-  underRoll: 3,   // fillet between the pan and the rocker
-  sillFoot: 4,    // bottom of the rocker face
-  sillLip: 6,     // top of the rocker / door's lower edge (undercut step)
-  flankFoot: 7,   // flank proper, just above the sill step
-  archLip: 9,     // wheel-arch flare lip (widest line of the fender)
-  crease: 11,     // character / shoulder line
-  shoulder: 13,   // hip = beltline crease, the widest point of the body
-  beltTuck: 14,   // first point above the belt = glass sill
-  tumble: 16,     // tumblehome mid-point
-  topCorner: 18,  // roof / deck top corner
-  crownEdge: 19,  // start of the flat crown plane
-  crownCentre: 21,
+  panCentre: 0,            // underside centre line
+  panEdge: 2 * RES,        // outer edge of the flat floor pan (hard corner)
+  underRoll: 3 * RES,      // fillet between the pan and the rocker
+  sillFoot: 4 * RES,       // bottom of the rocker face
+  sillLip: 6 * RES,        // top of the rocker / door's lower edge (undercut step)
+  flankFoot: 7 * RES,      // flank proper, just above the sill step
+  archLip: 9 * RES,        // wheel-arch flare lip (widest line of the fender)
+  crease: 11 * RES,        // character / shoulder line
+  shoulder: 13 * RES,      // hip = beltline crease, the widest point of the body
+  beltTuck: 14 * RES,      // first point above the belt = glass sill
+  tumble: 16 * RES,        // tumblehome mid-point
+  topCorner: 18 * RES,     // roof / deck top corner
+  crownEdge: 19 * RES,     // start of the crown plane
+  crownCentre: 21 * RES,
 };
 
 // Legacy landmark fractions, for reference (N = 16 as index.js builds it):
@@ -296,6 +311,7 @@ function halfProfileSurfaced(p, N, feat) {
   const flare = clamp(p.flare, 0, 0.5);
   const crease = clamp(p.crease, -0.06, 0.2);
   const tuck = clamp(p.tuck, 0, 0.9);
+  const crown = clamp(p.crown, -0.04, 0.08);
 
   const xFoot = hw * 0.955;
   // Base flank: vertical below the sill step, then leaning out to the hip —
@@ -339,8 +355,11 @@ function halfProfileSurfaced(p, N, feat) {
     { i: IDX.beltTuck, x: hw * 0.955, y: hipY + upSpan * 0.10 },
     { i: IDX.tumble, x: tw + (hw - tw) * 0.42, y: hipY + upSpan * 0.56 },
     { i: IDX.topCorner, x: tw, y: top - Math.min(0.006, upSpan * 0.08) },
-    { i: IDX.crownEdge, x: tw * 0.52, y: top },
-    { i: IDX.crownCentre, x: 0, y: top, hard: true },
+    // Crown: a shallow dome from the top corners up to the centre line. The
+    // edge node sits at 52 % of the half-width, where a parabola has 73 % of
+    // its rise left.
+    { i: IDX.crownEdge, x: tw * 0.52, y: top + crown * 0.73 },
+    { i: IDX.crownCentre, x: 0, y: top + crown, hard: true },
   ];
 
   const pts = sampleNodes(nodes, N);
@@ -389,14 +408,73 @@ function stationAt(keys, u, feat) {
 }
 
 /**
+ * Offset a half-profile polyline INWARD by `d` metres: every point moves back
+ * along the bisector of its two edge normals, mitred so the offset edges stay
+ * `d` from the originals at a corner. The centre-line points stay on x = 0 so
+ * the mirrored ring still shares them. This is the section of a bumper roll
+ * part-way round the radius (see buildLoftHull's capRoll).
+ */
+function insetHalf(half, d) {
+  const N = half.length;
+  const out = new Array(N);
+  let cy = 0;
+  for (const q of half) cy += q.y;
+  cy /= N;
+  const n1 = new THREE.Vector2(), n2 = new THREE.Vector2(), nb = new THREE.Vector2();
+  // Outward edge normal: rotate the along-profile tangent a quarter turn
+  // clockwise (pan -> down, flank -> outboard, crown -> up).
+  const edgeNormal = (a, b, o) => {
+    o.set(b.y - a.y, -(b.x - a.x));
+    const l = o.length();
+    if (l > 1e-9) o.divideScalar(l); else o.set(0, 0);
+    return o;
+  };
+  for (let k = 0; k < N; k++) {
+    const p = half[k];
+    // The ring continues across the centre line, so the end points see their
+    // mirror image as the neighbour: the normal there is straight up or down.
+    const a = k > 0 ? half[k - 1] : { x: -half[1].x, y: half[1].y };
+    const b = k < N - 1 ? half[k + 1] : { x: -half[N - 2].x, y: half[N - 2].y };
+    edgeNormal(a, p, n1);
+    edgeNormal(p, b, n2);
+    const e1 = n1.lengthSq() > 0 ? n1 : n2;
+    nb.copy(n1).add(n2);
+    if (nb.lengthSq() < 1e-12) nb.copy(e1);
+    if (nb.lengthSq() < 1e-12) { out[k] = p.clone(); continue; }
+    nb.normalize();
+    const cosHalf = Math.max(0.5, Math.abs(nb.dot(e1)));
+    // Never carry a point past the middle of its own section.
+    const dist = Math.min(d / cosHalf, Math.hypot(p.x, p.y - cy) * 0.6);
+    out[k] = new THREE.Vector2(p.x - nb.x * dist, p.y - nb.y * dist);
+  }
+  for (const q of out) if (q.x < 0) q.x = 0;
+  out[0].x = 0;
+  out[N - 1].x = 0;
+  return out;
+}
+
+// Rings per quarter turn of a bumper roll. Six puts a vertex every 15 deg,
+// which on a 60 mm radius is a 16 mm chord — finer than the hull's own rows.
+const ROLL_STEPS = 6;
+
+/**
  * Build a smooth lofted body shell.
  * @param keys  ordered key stations (tail -> nose), each
  *              { z, hw, yb, hip, yt, topW } plus optional surface features
  *              (see SURFACE_DEFAULTS) and an optional `hard: true` corner flag.
- * @param opts  { ringsPerSegment=8, profilePoints=14, capEnds=true }
+ * @param opts  { ringsPerSegment=8, profilePoints=14, capEnds=true, capRoll }
  *              profilePoints is IGNORED once any station declares a surface
  *              feature — the surfaced profile fixes it at PROFILE_N so every
  *              consumer (seams, glazing, seals) samples the same polyline.
+ *              capRoll: { tail, nose } radii in metres. A flat end cap is a
+ *              wall, and a car whose nose and tail are walls reads as a brick
+ *              however carefully its flanks are sculpted. With a roll radius
+ *              the skin turns through a quarter circle into the cap over the
+ *              last `r` of the body — a bumper edge — and the cap itself
+ *              shrinks to the end ring inset by `r`. Fascia parts placed on
+ *              the cap plane still sit on skin as long as they stay inside
+ *              that inset outline (the roll is within a millimetre of the
+ *              plane for the first half of the radius).
  * @returns THREE.BufferGeometry with position, normal, uv (and uv2 = uv).
  */
 export function buildLoftHull(keys, opts = {}) {
@@ -405,9 +483,25 @@ export function buildLoftHull(keys, opts = {}) {
   const ringsPerSeg = opts.ringsPerSegment ?? 8;
   const capEnds = opts.capEnds ?? true;
   const panes = opts.panes ?? [];
+  const rollTail = capEnds ? Math.max(0, opts.capRoll?.tail ?? 0) : 0;
+  const rollNose = capEnds ? Math.max(0, opts.capRoll?.nose ?? 0) : 0;
 
   const segs = keys.length - 1;
   const R = segs * ringsPerSeg;                 // number of ring steps
+  const zTail = keys[0].z, zNose = keys[segs].z;
+  // Loft parameter u at which the station curve passes z (the loft is
+  // monotonic in z, so bisection is exact enough).
+  const uAtZ = (z) => {
+    let lo = 0, hi = segs;
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2;
+      if (sampleField(keys, 'z', mid) < z) lo = mid; else hi = mid;
+    }
+    return (lo + hi) / 2;
+  };
+  // The loft proper stops `r` short of each rolled end; the roll takes over.
+  const uT = rollTail > 0 ? uAtZ(zTail + rollTail) : 0;
+  const uN = rollNose > 0 ? uAtZ(zNose - rollNose) : segs;
 
   // Ring vertex COLUMNS. Normally one per profile point (right side up, then
   // the mirrored left side back down, sharing the two centre verts). At a
@@ -438,19 +532,47 @@ export function buildLoftHull(keys, opts = {}) {
   // Glazing has real openings in the painted shell. Insert exact rows at
   // every pane edge so removing those cells cannot leave a jagged painted
   // fringe behind the glass. Pillars and the roof retain the same loft.
-  const samples = Array.from({ length: R + 1 }, (_, r) => r / R * segs);
+  const samples = Array.from({ length: R + 1 }, (_, r) => r / R * segs)
+    .filter((u) => u > uT + 1e-9 && u < uN - 1e-9);
+  samples.push(uT, uN);
   for (const pane of panes) {
     for (const z of [pane.zStart, pane.zEnd]) {
-      let lo = 0, hi = segs;
-      for (let i = 0; i < 32; i++) {
-        const mid = (lo + hi) / 2;
-        if (sampleField(keys, 'z', mid) < z) lo = mid; else hi = mid;
-      }
-      const u = (lo + hi) / 2;
+      const u = uAtZ(z);
+      if (u <= uT || u >= uN) continue;
       if (!samples.some(value => Math.abs(value - u) < 1e-6)) samples.push(u);
     }
   }
   samples.sort((a, b) => a - b);
+
+  const emitRing = (half, z, v, copies) => {
+    for (let c = 0; c < copies; c++) {
+      rows.push(positions.length / 3);
+      rowZ.push(z);
+      rowBridge.push(!(c === 0 && copies === 2));
+      for (let j = 0; j < M; j++) {
+        const { k, s } = cols[j];
+        positions.push(s * half[k].x, half[k].y, z);
+        uvs.push(j / M, v);
+      }
+    }
+  };
+  // Bumper roll: rings from just inside the loft's last row round to the cap,
+  // each the loft's own section at that z (so the authored taper is kept)
+  // inset by the roll's depth at that angle. Ordered toward the cap.
+  const rollRings = (r, zEnd, dir) => {
+    const out = [];
+    for (let i = 1; i <= ROLL_STEPS; i++) {
+      const th = (Math.PI / 2) * (i / ROLL_STEPS);
+      const z = zEnd - dir * r * (1 - Math.sin(th));
+      const d = r * (1 - Math.cos(th));
+      out.push({ z, half: insetHalf(L.half(stationAtZ(keys, z, L.feat)), d) });
+    }
+    return out;
+  };
+
+  if (rollTail > 0) {
+    for (const ring of rollRings(rollTail, zTail, -1).reverse()) emitRing(ring.half, ring.z, 0, 1);
+  }
   for (const u of samples) {
     const p = stationAt(keys, u, L.feat);
     const half = L.half(p);
@@ -459,16 +581,10 @@ export function buildLoftHull(keys, opts = {}) {
     // for the same shading reason as the profile breaks above.
     const si = Math.abs(u - Math.round(u)) < 1e-6 ? Math.round(u) : -1;
     const copies = (si > 0 && si < segs && keys[si].hard === true) ? 2 : 1;
-    for (let c = 0; c < copies; c++) {
-      rows.push(positions.length / 3);
-      rowZ.push(p.z);
-      rowBridge.push(!(c === 0 && copies === 2));
-      for (let j = 0; j < M; j++) {
-        const { k, s } = cols[j];
-        positions.push(s * half[k].x, half[k].y, p.z);
-        uvs.push(j / M, u / segs);
-      }
-    }
+    emitRing(half, p.z, u / segs, copies);
+  }
+  if (rollNose > 0) {
+    for (const ring of rollRings(rollNose, zNose, 1)) emitRing(ring.half, ring.z, 1, 1);
   }
 
   const indices = [];
@@ -525,8 +641,11 @@ export function buildLoftHull(keys, opts = {}) {
         else indices.push(center, b, a);
       }
     };
-    addCap(0, false, keys[0].hard === true);                       // tail
-    addCap(rows.length - 1, true, keys[keys.length - 1].hard === true); // nose
+    // A rolled end shares its cap verts with the last roll ring: the roll
+    // already turned the normal through the quarter circle, so a split here
+    // would only put a seam at the foot of the bumper edge.
+    addCap(0, false, keys[0].hard === true && rollTail === 0);                       // tail
+    addCap(rows.length - 1, true, keys[keys.length - 1].hard === true && rollNose === 0); // nose
   }
 
   const geo = new THREE.BufferGeometry();
@@ -585,6 +704,34 @@ function skinPoint(keys, L, z, c, cache) {
   );
 }
 
+// Outward unit normal of the skin at (z, c), from the two tangents (along the
+// profile, along z), oriented away from the body's interior axis.
+function skinNormal(keys, L, z, c, cache) {
+  const dz = 0.008, dc = 0.03;
+  const tf = skinPoint(keys, L, z, Math.min(2, c + dc), cache)
+    .sub(skinPoint(keys, L, z, Math.max(0, c - dc), cache));
+  const tz = skinPoint(keys, L, z + dz, c, cache).sub(skinPoint(keys, L, z - dz, c, cache));
+  const nrm = tf.cross(tz);
+  if (nrm.lengthSq() < 1e-12) nrm.set(0, 1, 0); else nrm.normalize();
+  const p = skinPoint(keys, L, z, c, cache);
+  const q = stationAtZ(keys, z, L.feat);
+  if (nrm.dot(new THREE.Vector3(p.x, p.y - (q.yb + q.yt) * 0.5, 0)) < 0) nrm.negate();
+  return nrm;
+}
+
+/**
+ * Where the skin is at station z and signed profile fraction f (the same
+ * convention as buildPanelSeams paths), and which way it faces — so a part
+ * can be seated ON the bodywork by measurement instead of by eye.
+ * @returns { position: THREE.Vector3, normal: THREE.Vector3 }
+ */
+export function sampleSkin(keys, z, f, opts = {}) {
+  const L = profileFor(keys, opts.profilePoints ?? 16);
+  const cache = new Map();
+  const c = toRing(f);
+  return { position: skinPoint(keys, L, z, c, cache), normal: skinNormal(keys, L, z, c, cache) };
+}
+
 // One unit of ring coordinate is roughly this many metres of profile arc, so
 // (z, c) waypoints can be measured in one consistent space.
 const RING_M = 1.2;
@@ -633,18 +780,8 @@ function emitRibbon(out, keys, L, cache, path, width, proud, cut = 0.09) {
 
   const P = [], Nr = [];
   for (const [z, c] of pts) {
-    const p = skinPoint(keys, L, z, c, cache);
-    // Surface normal from the two tangents (along the profile, along z).
-    const dz = 0.008, dc = 0.03;
-    const tf = skinPoint(keys, L, z, Math.min(2, c + dc), cache)
-      .sub(skinPoint(keys, L, z, Math.max(0, c - dc), cache));
-    const tz = skinPoint(keys, L, z + dz, c, cache).sub(skinPoint(keys, L, z - dz, c, cache));
-    const nrm = tf.cross(tz);
-    if (nrm.lengthSq() < 1e-12) nrm.set(0, 1, 0); else nrm.normalize();
-    // Orient outward: away from the body's interior axis at this station.
-    const q = stationAtZ(keys, z, L.feat);
-    if (nrm.dot(new THREE.Vector3(p.x, p.y - (q.yb + q.yt) * 0.5, 0)) < 0) nrm.negate();
-    P.push(p); Nr.push(nrm);
+    P.push(skinPoint(keys, L, z, c, cache));
+    Nr.push(skinNormal(keys, L, z, c, cache));
   }
 
   const base = positions.length / 3;
@@ -868,6 +1005,69 @@ export function buildGreenhouseShell(keys, opts = {}) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+/**
+ * A recessed well behind every flank pane of `panes`: the pane's own patch of
+ * skin sunk `depth` along the surface normal for a floor, and four walls from
+ * its edges up to the rim of the opening. This is what lets a lamp cluster
+ * live in a real aperture cut through the painted shell (loftBuilder's pane
+ * removal) instead of standing on the fascia as a box: the hole shows a dark
+ * housing with the lamp elements inside it, never the hollow of the shell.
+ * Crown-crossing panes are glazing and are skipped. Use a double-sided
+ * material: the walls are seen from inside the hole.
+ *
+ * opts: { panes, depth=0.03 }
+ * @returns THREE.BufferGeometry, or null if nothing was built.
+ */
+export function buildPaneWells(keys, opts = {}) {
+  const L = profileFor(keys, opts.profilePoints ?? 14);
+  const N = L.N;
+  const depth = opts.depth ?? 0.03;
+  const positions = [], indices = [];
+  for (const pane of resolvePanes(opts)) {
+    if (pane.zStart === undefined || pane.zEnd === undefined || pane.topFrac >= 0.999) continue;
+    const iBelt = clamp(Math.round(pane.beltFrac * (N - 1)), 0, N - 2);
+    const iTop = clamp(Math.round(pane.topFrac * (N - 1)), iBelt + 1, N - 1);
+    const steps = pane.steps, K = iTop - iBelt + 1;
+    for (const sg of [1, -1]) {
+      if (pane.side !== 0 && pane.side !== sg) continue;
+      const floorBase = positions.length / 3;
+      const rim = [];
+      for (let s = 0; s <= steps; s++) {
+        const z = pane.zStart + (pane.zEnd - pane.zStart) * (s / steps);
+        const half = L.half(stationAtZ(keys, z, L.feat));
+        for (let k = iBelt; k <= iTop; k++) {
+          const [nx, ny] = profileNormal(half, k, N);
+          positions.push((half[k].x - nx * depth) * sg, half[k].y - ny * depth, z);
+          rim.push(half[k].x * sg, half[k].y, z);
+        }
+      }
+      const rimBase = positions.length / 3;
+      positions.push(...rim);
+      const at = (s, k) => s * K + k;
+      for (let s = 0; s < steps; s++) {
+        for (let k = 0; k < K - 1; k++) {
+          const a = floorBase + at(s, k), b = floorBase + at(s, k + 1);
+          const c = floorBase + at(s + 1, k), d = floorBase + at(s + 1, k + 1);
+          indices.push(a, c, d, a, d, b);
+        }
+      }
+      const wall = (i, j) => indices.push(
+        floorBase + i, floorBase + j, rimBase + j, floorBase + i, rimBase + j, rimBase + i);
+      for (let k = 0; k < K - 1; k++) { wall(at(0, k), at(0, k + 1)); wall(at(steps, k), at(steps, k + 1)); }
+      for (let s = 0; s < steps; s++) { wall(at(s, 0), at(s + 1, 0)); wall(at(s, K - 1), at(s + 1, K - 1)); }
+    }
+  }
+  if (!indices.length) return null;
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(positions.length / 3 * 2), 2));
   geo.setIndex(indices);
   geo.computeVertexNormals();
   geo.computeBoundingBox();

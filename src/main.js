@@ -705,8 +705,11 @@ function tick(ctx, dt, now) {
     acc -= fixedDt;
   }
 
-  // Update visuals from physics
-  for (const c of ctx.cars) c.car.update();
+  // Update visuals from physics, drawn at the accumulator's fraction between
+  // the last two steps so motion stays continuous whatever the frame rate
+  // (see the render-state interpolation note in car.js).
+  const alpha = acc / fixedDt;
+  for (const c of ctx.cars) c.car.update(alpha);
 
   // Containment failsafe — the barrier walls should make this unreachable,
   // but if a car ever ends up beyond the armco line (or under the world),
@@ -715,14 +718,16 @@ function tick(ctx, dt, now) {
 
   // Keep the tight shadow frustum centred on the primary car.
   const focusCar = ctx.cars[ctx.primaryPlayerIdx];
-  if (focusCar) ctx.updateShadowTarget(focusCar.car.body.position);
+  if (focusCar) ctx.updateShadowTarget(focusCar.car.pose.position);
 
-  // Update each player's chase camera
+  // Update each player's chase camera. It follows the pose the car is DRAWN
+  // at, not the raw physics body: the two differ by up to a physics step, and
+  // a camera aimed at the body made the rendered car jitter in the frame.
   for (const c of ctx.cars) {
     if (!c.isPlayer) continue;
     const v = c.car.body.velocity;
     const speedKmh = Math.hypot(v.x, v.y, v.z) * 3.6;
-    c.chase.update(dt, c.car.body, speedKmh);
+    c.chase.update(dt, c.car.pose, speedKmh);
   }
 
   // Sound, from this frame's driving state, heard from the primary camera.

@@ -97,11 +97,10 @@ than grain, and fall back to `pngdiff --box` on the region you changed.
 6. Only push to `main` after the owner replies "go".
 7. Append what you did to the Changelog, and add/clear Backlog items.
 
-## Owner-requested visual overhaul — pending review (2026-10-03)
+## Owner-requested visual overhaul (2026-10-03, merged as PR #9)
 
-PR #9, branch `claude/visual-world-audit`, is a broad owner-requested audit,
-not a scheduled one-change run. Preview:
-https://soldoutbudokan.github.io/racer2/preview/
+PR #9, branch `claude/visual-world-audit`, was a broad owner-requested audit,
+not a scheduled one-change run, and is now on `main`.
 
 - Road-car hulls have real wheel openings with painted returns and window
   apertures that reveal the existing cabins. Rally wheels and open-wheel slicks
@@ -122,7 +121,38 @@ https://soldoutbudokan.github.io/racer2/preview/
 - See `docs/VISUAL_AUDIT.md` for circuit-specific findings. The pre-existing
   tight corner radii and flat driving terrain are recorded, not redesigned.
 
-This preview is not accepted into `main`; preserve the owner's review step.
+
+## Owner-requested: car judder fix and modelling overhaul (2026-10-05)
+
+Pushed straight to `main` at the owner's request ("when done push to main"),
+from branch `claude/elegant-noether-rfx3gr`; not a scheduled run.
+
+- **Judder.** Physics stepped at a fixed 120 Hz with no interpolation, and
+  the chase camera smoothed independently, so the drawn car jumped against
+  the camera by up to a whole step whenever a frame carried a different
+  number of steps — every frame on a 120/144 Hz display, and on any hitch at
+  60 Hz. `car.js` now snapshots the chassis and wheel state on each
+  `postStep`, `update(alpha)` draws between the last two snapshots at the
+  accumulator's fraction, `reset()` resyncs the snapshots so a teleport is
+  never interpolated, and `main.js` aims the camera and shadow frustum at the
+  drawn pose (`car.pose`). `update()` with no argument still draws the exact
+  physics state, so every probe script is unchanged. Measured: wheel meshes
+  match cannon's own transforms to 1e-16, and under a 7–33 ms frame-time
+  pattern the drawn car stays within one physics step of the body.
+- **Modelling.** `loftBuilder`: section resolution doubled (43 columns, every
+  landmark still on an exact column), `crown` surface field (domed hoods,
+  roofs and decks), `capRoll` bumper rolls (a quarter-round into the end cap
+  instead of a wall), `sampleSkin` and `buildPaneWells` (recessed housings
+  behind cut-out panes). New `apertureLamps.js` furnishes lamp apertures cut
+  through the shell: dark well, satin plate, DRL blade, projector buttons,
+  gasket and flush lens; tail blades bake into the pulsed brake mesh. GT and
+  hatch noses re-authored to fall continuously into a low bumper face with
+  lamps in the fender corners; the muscle car keeps its upright classic
+  fascia with a rolled edge. 12 rings per station, 48-segment tyres,
+  64-segment arch cut. Parts near the cap edges re-seated inside the inset
+  outlines. Road cars are ~55 k triangles each including wheels.
+- Checks: smoke-car, graphics-test, world-audit (unit and full), ai-test,
+  physics-test, car-selection-test, browser-check and the production build.
 
 ## Changelog (accepted to `main`)
 

@@ -523,11 +523,81 @@ export function createCar(world, materials, options = {}) {
   // Visual wheel meshes paired to the physics info
   const wheelMeshes = visual.wheels;
 
+  // ---- Render-state interpolation ----
+  // The world steps at a fixed 120 Hz while frames arrive whenever the display
+  // wants them, so a frame carries one, two or three steps of travel — and a
+  // high-refresh display gets frames with none. Drawing the raw physics pose
+  // made the car lurch against the spring-smoothed camera by up to a whole
+  // step (half a metre at speed), which reads as the body smearing and
+  // doubling whenever it moves. Each step is snapshotted here and the visual
+  // is drawn between the last two snapshots at the accumulator's fraction, so
+  // the rendered motion is continuous at any frame rate. The pose is at most
+  // one step (8 ms) behind the simulation.
+  const snap = () => ({
+    position: new THREE.Vector3(), quaternion: new THREE.Quaternion(),
+    wheels: [0, 1, 2, 3].map(() => ({ suspension: 0, steering: 0, rotation: 0 })),
+  });
+  const prev = snap(), curr = snap();
+  function readState(into) {
+    const p = chassisBody.position, q = chassisBody.quaternion;
+    into.position.set(p.x, p.y, p.z);
+    into.quaternion.set(q.x, q.y, q.z, q.w);
+    for (let i = 0; i < 4; i++) {
+      const w = vehicle.wheelInfos[i];
+      const s = into.wheels[i];
+      s.suspension = w.suspensionLength;
+      s.steering = w.steering;
+      s.rotation = w.rotation;
+    }
+  }
+  function syncSnapshots() {
+    readState(curr);
+    prev.position.copy(curr.position);
+    prev.quaternion.copy(curr.quaternion);
+    for (let i = 0; i < 4; i++) Object.assign(prev.wheels[i], curr.wheels[i]);
+  }
+  function postStep() {
+    prev.position.copy(curr.position);
+    prev.quaternion.copy(curr.quaternion);
+    for (let i = 0; i < 4; i++) Object.assign(prev.wheels[i], curr.wheels[i]);
+    readState(curr);
+  }
+  world.addEventListener('postStep', postStep);
+  syncSnapshots();
+
+  // The pose the car is DRAWN at this frame. The chase camera and the shadow
+  // frustum follow this, not the raw body, so they never disagree with what
+  // is on screen.
+  const pose = { position: visual.root.position, quaternion: visual.root.quaternion };
+
+  // Wheel pose in chassis space, the same construction cannon's
+  // updateWheelTransform uses: hub = anchor + direction * suspension length,
+  // orientation = steer about the suspension axis, then spin about the axle.
+  const _wUp = new THREE.Vector3(), _wAxle = new THREE.Vector3();
+  const _wSteer = new THREE.Quaternion(), _wSpin = new THREE.Quaternion();
+  const _wLocal = new THREE.Vector3();
+  function placeWheel(i, chassisPos, chassisQ, suspension, steering, rotation) {
+    const w = vehicle.wheelInfos[i];
+    const m = wheelMeshes[i];
+    _wUp.set(-w.directionLocal.x, -w.directionLocal.y, -w.directionLocal.z).normalize();
+    _wAxle.set(w.axleLocal.x, w.axleLocal.y, w.axleLocal.z).normalize();
+    _wSteer.setFromAxisAngle(_wUp, steering);
+    _wSpin.setFromAxisAngle(_wAxle, rotation);
+    m.quaternion.copy(chassisQ).multiply(_wSteer).multiply(_wSpin).normalize();
+    _wLocal.set(
+      w.chassisConnectionPointLocal.x + w.directionLocal.x * suspension,
+      w.chassisConnectionPointLocal.y + w.directionLocal.y * suspension,
+      w.chassisConnectionPointLocal.z + w.directionLocal.z * suspension,
+    ).applyQuaternion(chassisQ);
+    m.position.copy(chassisPos).add(_wLocal);
+  }
+
   // Scratch objects for re-seating the contact shadow (see below).
   const _up = new THREE.Vector3(0, 1, 0);
   const _yawQ = new THREE.Quaternion();
   const _invQ = new THREE.Quaternion();
   const _off = new THREE.Vector3();
+  const _lerpQ = new THREE.Quaternion();
   // Clear the asphalt (0.01) and its cambered crown, but stay well under the
   // 0.36 wheel radius so the blob can never ride up over a tyre.
   const SHADOW_LIFT = 0.03;
@@ -550,7 +620,13 @@ export function createCar(world, materials, options = {}) {
   // downward raycast instead.
   let groundY = 0;
 
-  function update() {
+  /**
+   * Sync the visual to the physics. `alpha` is the fraction of a physics step
+   * the frame sits past the last completed step (main.js passes the
+   * accumulator's remainder); 1, the default, draws the current physics state
+   * exactly, which is what every probe and screenshot script expects.
+   */
+  function update(alpha = 1) {
     let hitSum = 0, contacts = 0;
     for (let i = 0; i < vehicle.wheelInfos.length; i++) {
       const w = vehicle.wheelInfos[i];
@@ -558,17 +634,35 @@ export function createCar(world, materials, options = {}) {
       // `isInContact`. `raycastResult` survives the call, and on a wheel that
       // is down, its hit point IS the road under that wheel.
       if (w.raycastResult.body) { hitSum += w.raycastResult.hitPointWorld.y; contacts++; }
+      // Keeps cannon's own worldTransform current for anything that reads it.
       vehicle.updateWheelTransform(i);
-      const t = w.worldTransform;
-      const m = wheelMeshes[i];
-      m.position.copy(t.position);
-      m.quaternion.copy(t.quaternion);
     }
     // Only wheels that are actually down get a vote: a lifted wheel hangs at
     // full droop, and averaging it in drags the estimated road up with it.
     if (contacts > 0) groundY = hitSum / contacts;
-    visual.root.position.copy(chassisBody.position);
-    visual.root.quaternion.copy(chassisBody.quaternion);
+
+    if (alpha >= 1) {
+      const p = chassisBody.position, q = chassisBody.quaternion;
+      visual.root.position.set(p.x, p.y, p.z);
+      visual.root.quaternion.set(q.x, q.y, q.z, q.w);
+      for (let i = 0; i < 4; i++) {
+        const w = vehicle.wheelInfos[i];
+        placeWheel(i, visual.root.position, visual.root.quaternion,
+          w.suspensionLength, w.steering, w.rotation);
+      }
+    } else {
+      const t = Math.max(0, alpha);
+      visual.root.position.lerpVectors(prev.position, curr.position, t);
+      _lerpQ.slerpQuaternions(prev.quaternion, curr.quaternion, t);
+      visual.root.quaternion.copy(_lerpQ);
+      for (let i = 0; i < 4; i++) {
+        const a = prev.wheels[i], b = curr.wheels[i];
+        placeWheel(i, visual.root.position, visual.root.quaternion,
+          a.suspension + (b.suspension - a.suspension) * t,
+          a.steering + (b.steering - a.steering) * t,
+          a.rotation + (b.rotation - a.rotation) * t);
+      }
+    }
 
     // Re-seat the fake contact shadow on the ROAD. It rides under `root`, so
     // it inherits the chassis pose — which is exactly wrong for it: the sprung
@@ -579,19 +673,19 @@ export function createCar(world, materials, options = {}) {
     // and drop it to the road plane inferred from the wheel hubs.
     const shadow = visual.shadow;
     if (shadow) {
-      const q = chassisBody.quaternion;
+      const q = visual.root.quaternion;
       const yaw = Math.atan2(2 * (q.x * q.z + q.w * q.y), 1 - 2 * (q.x * q.x + q.y * q.y));
       _yawQ.setFromAxisAngle(_up, yaw);
-      _invQ.set(q.x, q.y, q.z, q.w).invert();
+      _invQ.copy(q).invert();
       shadow.quaternion.copy(_invQ).multiply(_yawQ);
-      _off.set(0, groundY + SHADOW_LIFT - chassisBody.position.y, 0).applyQuaternion(_invQ);
+      _off.set(0, groundY + SHADOW_LIFT - visual.root.position.y, 0).applyQuaternion(_invQ);
       shadow.position.copy(_off);
       // Fade and spread with the gap between the settled ride height and where
       // the chassis actually is. Scaling the mesh also scales its 1.8 cm
       // centring offset, which moves the blob by under a centimetre at full
       // spread — far less than the spread itself.
       const air = Math.max(0,
-        chassisBody.position.y - STATIC_CHASSIS_HEIGHT - groundY - AIR_DEADBAND);
+        visual.root.position.y - STATIC_CHASSIS_HEIGHT - groundY - AIR_DEADBAND);
       const t = Math.min(1, air / AIR_SPAN);
       shadow.material.userData.fade.value = t;
       const s = 1 + t * AIR_SPREAD;
@@ -636,11 +730,15 @@ export function createCar(world, materials, options = {}) {
     vehicle.setSteeringValue(0, 0);
     vehicle.setSteeringValue(0, 1);
     for (let i = 0; i < 4; i++) vehicle.setBrake(0, i);
+    // A teleport must not be interpolated: the next frame would otherwise
+    // draw the car sliding across the circuit from where it was.
+    syncSnapshots();
   }
 
   function dispose() {
     visual.dispose();
     world.removeEventListener('preStep', preStepForces);
+    world.removeEventListener('postStep', postStep);
     vehicle.removeFromWorld(world);
     world.removeBody(chassisBody);
   }
@@ -649,6 +747,7 @@ export function createCar(world, materials, options = {}) {
     visual,
     body: chassisBody,
     vehicle,
+    pose,
     update,
     setBrakeLight,
     reset,

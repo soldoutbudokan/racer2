@@ -98,6 +98,17 @@ export function makeShutline() {
   return _shutline;
 }
 
+// Inside of a lamp aperture: the dark housing seen through the lens. Double
+// sided because its walls are looked at from inside the hole, and lightless
+// so no sky reflection can turn the cavity into a grey patch.
+let _well = null;
+export function makeWell() {
+  return _well ||= new THREE.MeshStandardMaterial({
+    color: 0x0a0b0d, metalness: 0.0, roughness: 0.92, envMapIntensity: 0.15,
+    side: THREE.DoubleSide,
+  });
+}
+
 let _carbon = null;
 export function makeCarbon() {
   if (_carbon) return _carbon;

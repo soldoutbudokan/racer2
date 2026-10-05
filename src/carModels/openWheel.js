@@ -55,6 +55,10 @@ export const keys = [
 
 export const wheelStyle = 'openWheel';
 
+// The nose tip and the crash structure end in small rounded caps rather than
+// flat plates (loftBuilder capRoll).
+export const CAP_ROLL = { nose: 0.020, tail: 0.030 };
+
 // Named landmark fractions of THIS car's cross-section. Every seam path and
 // cockpit-opening edge below is authored against these, never against the old
 // hard-coded 0.27/0.53/0.60/0.80 (which were the LEGACY profile's landmarks

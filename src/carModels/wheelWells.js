@@ -6,7 +6,7 @@ import * as THREE from 'three';
 // intersecting triangle exactly, preserving the loft's UVs and hard normals.
 // This runs once per cached road-car hull, never during rendering or driving.
 const ARCH_RADIUS = 0.408;
-const ARCH_SEGMENTS = 40;
+const ARCH_SEGMENTS = 64;
 const INNER_X = 0.665;
 const EPS = 1e-7;
 
@@ -44,7 +44,7 @@ export function cutWheelWells(source) {
   for (const axleZ of [-1.45, 1.45]) {
     for (const side of [-1, 1]) {
       const planes = [{ distance: v => INNER_X - side * v[0] }];
-      // Inscribed 40-gon: the largest radial approximation is only 1.3 mm.
+      // Inscribed 64-gon: the largest radial approximation is under 0.5 mm.
       const limit = ARCH_RADIUS * Math.cos(Math.PI / ARCH_SEGMENTS);
       for (let i = 0; i < ARCH_SEGMENTS; i++) {
         const angle = (i + 0.5) * Math.PI * 2 / ARCH_SEGMENTS;

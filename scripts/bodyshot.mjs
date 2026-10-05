@@ -2,10 +2,10 @@
 // glazing) on a chosen car. Drives deterministically like viewshot.mjs, then
 // orbits the camera around one car at close range.
 //
-//   node scripts/bodyshot.mjs [outPrefix] [carIndex] [driveSecs]
+//   node scripts/bodyshot.mjs [outPrefix] [carIndex] [driveSecs] [mode]
 //
 // Car indices follow main.js's grid: 0 = player (gt), 1 = open-wheel,
-// 2 = gt (AI), 3 = muscle.
+// 2 = gt (AI), 3 = muscle. In two-player mode, 1 is the rally hatch.
 import { chromium } from 'playwright-core';
 import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -22,6 +22,7 @@ function findChrome() {
 const out = process.argv[2] || '/tmp/body';
 const carIdx = parseInt(process.argv[3] || '0', 10);
 const driveSecs = parseFloat(process.argv[4] || '6');
+const mode = process.argv[5] || 'quick-race';
 
 const browser = await chromium.launch({
   executablePath: findChrome(), headless: true,
@@ -32,8 +33,8 @@ const errors = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push('PAGEERROR ' + e.message));
 await page.goto('http://localhost:5173/', { waitUntil: 'load' });
-await page.waitForSelector('button.mode[data-mode="quick-race"]', { timeout: 20000 });
-await page.click('button.mode[data-mode="quick-race"]');
+await page.waitForSelector(`button.mode[data-mode="${mode}"]`, { timeout: 20000 });
+await page.click(`button.mode[data-mode="${mode}"]`);
 await page.waitForTimeout(1500);
 
 await page.evaluate((secs) => {

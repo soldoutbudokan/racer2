@@ -304,6 +304,9 @@ export function buildTaillights({
   z = -2.04, y = 0.74, width = 1.5,
   height = 0.15, depth = 0.058, barH = 0.055,
   segments = 6, reverse = true, fog = true, indicator = true, lens = true,
+  // Further red geometry (already in chassis space) to bake into the one
+  // pulsed brake mesh — lamp strips cut into the fenders, for instance.
+  extraRed = [],
 } = {}) {
   const g = new THREE.Group();
   const trim = makeTrim();
@@ -354,6 +357,7 @@ export function buildTaillights({
         sx * (xc + clusterW * 0.24), y - height * 0.34, zRed);
     }
   }
+  for (const geo of extraRed) if (geo) red.push(geo);
   const brakeMat = makeTaillight();
   const brakeMesh = mergedMesh(red, brakeMat)
     || new THREE.Mesh(new THREE.BoxGeometry(width, barH, 0.022), brakeMat);
@@ -777,6 +781,10 @@ let _badgeMat = null, _plateMat = null;
 export function buildBadgesAndPlate({
   frontZ = 2.06, frontY = 0.06, rearZ = -2.06, rearY = 0.22, plateY = -0.04,
   plateRecess = true,
+  // Optional full pose for the front badge, for a nose with no flat fascia
+  // to stand it on: { position, normal } straight from loftBuilder's
+  // sampleSkin seats the disc flat on the sloping hood.
+  frontPose = null,
 } = {}) {
   const g = new THREE.Group();
   if (!_badgeMat) {
@@ -787,7 +795,12 @@ export function buildBadgesAndPlate({
   const badgeGeo = new THREE.CylinderGeometry(0.042, 0.042, 0.010, 18);
   badgeGeo.rotateX(Math.PI / 2);
   const bF = new THREE.Mesh(badgeGeo, _badgeMat);
-  bF.position.set(0, frontY, frontZ); g.add(bF);
+  bF.position.set(0, frontY, frontZ);
+  if (frontPose) {
+    bF.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), frontPose.normal);
+    bF.position.copy(frontPose.position).addScaledVector(frontPose.normal, 0.004);
+  }
+  g.add(bF);
   const bR = new THREE.Mesh(badgeGeo, _badgeMat);
   bR.position.set(0, rearY, rearZ); bR.rotation.y = Math.PI; g.add(bR);
 
