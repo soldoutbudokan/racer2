@@ -185,6 +185,15 @@ async function bootstrap() {
     }
   });
 
+  // F toggles full screen, in the menu and in a race. Ignored with a modifier
+  // held so Ctrl/Cmd+F still opens the browser's find bar. The canvas follows
+  // through the window resize the browser fires on entry and exit.
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyF' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault();
+    toggleFullscreen();
+  });
+
   // ---- Circuit selection ----
   // Swapping circuits tears down the current track (meshes + physics bodies)
   // and the racing-line ribbon, then rebuilds both plus the minimap. Only ever
@@ -837,6 +846,17 @@ function carHeading(q) {
 
 function frame() {
   return new Promise((res) => requestAnimationFrame(() => res()));
+}
+
+// The whole page goes full screen, not just the canvas, so the HUD and menus
+// come along. Requests can be refused (no key gesture, an iframe without
+// allowfullscreen, iPhone Safari); the game simply stays windowed.
+function toggleFullscreen() {
+  if (document.fullscreenElement) {
+    document.exitFullscreen().catch(() => {});
+  } else {
+    document.documentElement.requestFullscreen?.().catch(() => {});
+  }
 }
 
 // ---------- Rescue (back to track) ----------

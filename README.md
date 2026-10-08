@@ -54,6 +54,7 @@ keyboard listeners. Hidden tabs stop advancing the simulation.
 | `M`                     | Sound on / off    |
 | `R`                     | Reset to start    |
 | `B`                     | Back to track     |
+| `F`                     | Full screen       |
 
 ## Modes & driving aids
 
