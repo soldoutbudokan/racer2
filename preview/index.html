@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Racer2 — Circuit Series</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2305060a'/%3E%3Ctext x='8' y='12' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='800' fill='%23e6ff76'%3ER%3C/text%3E%3C/svg%3E" />
-    <script type="module" crossorigin src="./assets/index-CFw0lfhs.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BNx6I_Ur.css">
+    <script type="module" crossorigin src="./assets/index-DdEKtfT2.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DIuwhnQM.css">
   </head>
   <body>
     <div id="loading">
@@ -56,7 +56,7 @@
             <div class="graphics-settings"><div><label for="graphics-quality">GRAPHICS</label><p id="graphics-description">Adapts to keep your race smooth.</p></div><select id="graphics-quality"><option value="auto">Auto (recommended)</option><option value="performance">Performance</option><option value="balanced">Balanced</option><option value="high">High</option></select></div>
           </section>
         </main>
-        <footer class="menu-footer"><span>BUILT FOR THE NEXT LAP.</span><span>KEYBOARD CONTROLS <span aria-hidden="true">/</span> SOUND ON AT START</span></footer>
+        <footer class="menu-footer"><span>BUILT FOR THE NEXT LAP.</span><span>KEYBOARD CONTROLS <span aria-hidden="true">/</span> SOUND ON AT START <span aria-hidden="true">/</span> F FOR FULL SCREEN</span></footer>
       </div>
     </div>
 
@@ -70,6 +70,18 @@
         <div class="finish-actions">
           <button class="mode" id="finish-restart"><span class="mode-name">Race again</span><span class="mode-arrow" aria-hidden="true">↻</span></button>
           <button class="mode" id="finish-menu"><span class="mode-name">Main menu</span><span class="mode-arrow" aria-hidden="true">↗</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div id="pause" class="hidden">
+      <div class="finish-card pause-card" role="dialog" aria-labelledby="pause-title">
+        <div class="finish-eyebrow"><span class="status-dot"></span><span id="pause-mode">RACE</span><span id="pause-circuit"></span></div>
+        <div class="finish-title" id="pause-title">PAUSED</div>
+        <div class="finish-detail"><kbd>P</kbd> resume <span aria-hidden="true">·</span> <kbd>Esc</kbd> main menu</div>
+        <div class="finish-actions">
+          <button class="mode" id="pause-resume"><span class="mode-name">Resume</span><span class="mode-arrow" aria-hidden="true">▶</span></button>
+          <button class="mode" id="pause-menu"><span class="mode-name">Main menu</span><span class="mode-arrow" aria-hidden="true">↗</span></button>
         </div>
       </div>
     </div>
@@ -151,6 +163,8 @@
         <div class="hint-line"><span><kbd>M</kbd></span> Sound</div>
         <div class="hint-line"><span><kbd>R</kbd></span> Restart</div>
         <div class="hint-line"><span><kbd>B</kbd></span> Back to track</div>
+        <div class="hint-line"><span><kbd>F</kbd></span> Full screen</div>
+        <div class="hint-line"><span><kbd>P</kbd></span> Pause</div>
         <div class="hint-line"><span><kbd>Esc</kbd></span> Menu</div>
       </div>
     </div>
