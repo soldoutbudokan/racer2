@@ -55,6 +55,12 @@ keyboard listeners. Hidden tabs stop advancing the simulation.
 | `R`                     | Reset to start    |
 | `B`                     | Back to track     |
 | `F`                     | Full screen       |
+| `P`                     | Pause / resume    |
+| `Esc`                   | Main menu         |
+
+`P` holds the whole race: physics, rivals, start lights and the lap clock all
+wait, and the sound goes quiet. The time spent paused is not counted against
+the lap.
 
 ## Modes & driving aids
 

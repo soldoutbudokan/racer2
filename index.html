@@ -73,6 +73,18 @@
       </div>
     </div>
 
+    <div id="pause" class="hidden">
+      <div class="finish-card pause-card" role="dialog" aria-labelledby="pause-title">
+        <div class="finish-eyebrow"><span class="status-dot"></span><span id="pause-mode">RACE</span><span id="pause-circuit"></span></div>
+        <div class="finish-title" id="pause-title">PAUSED</div>
+        <div class="finish-detail"><kbd>P</kbd> resume <span aria-hidden="true">·</span> <kbd>Esc</kbd> main menu</div>
+        <div class="finish-actions">
+          <button class="mode" id="pause-resume"><span class="mode-name">Resume</span><span class="mode-arrow" aria-hidden="true">▶</span></button>
+          <button class="mode" id="pause-menu"><span class="mode-name">Main menu</span><span class="mode-arrow" aria-hidden="true">↗</span></button>
+        </div>
+      </div>
+    </div>
+
     <div id="ui" class="hidden">
       <div id="race-identity"><b>RACER<span>2</span><i></i></b><span id="race-circuit-name"></span></div>
       <ol id="standings" class="hidden" aria-label="Race order"></ol>
@@ -151,6 +163,7 @@
         <div class="hint-line"><span><kbd>R</kbd></span> Restart</div>
         <div class="hint-line"><span><kbd>B</kbd></span> Back to track</div>
         <div class="hint-line"><span><kbd>F</kbd></span> Full screen</div>
+        <div class="hint-line"><span><kbd>P</kbd></span> Pause</div>
         <div class="hint-line"><span><kbd>Esc</kbd></span> Menu</div>
       </div>
     </div>

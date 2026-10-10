@@ -109,11 +109,24 @@ export function createAudio(options = {}) {
   // A realtime context created outside a user gesture starts suspended. The
   // mode buttons are a gesture, so startMode's resume() normally lands; the
   // window listeners cover the browsers that need a second nudge.
+  let paused = false; // held by the game (P); see setPaused below
   function resume() {
-    if (virtualClock) return;
+    if (virtualClock || paused) return;
     if (context.state === 'suspended' && context.resume) {
       context.resume().catch(() => {});
     }
+  }
+
+  // ---- Pause ----
+  // The game holds a race on P. Suspending the context freezes every voice
+  // where it is, so nothing drones while the field sits still, and resume()
+  // stays a no-op until the pause lifts: a tab coming back to the front or a
+  // stray gesture nudge must not wake the engines under the pause card.
+  function setPaused(p) {
+    paused = !!p;
+    if (virtualClock) return;
+    if (paused) context.suspend?.().catch(() => {});
+    else resume();
   }
   const onGesture = () => {
     resume();
@@ -672,6 +685,7 @@ export function createAudio(options = {}) {
     setCars,
     update,
     resume,
+    setPaused,
     setMuted,
     toggleMute,
     get muted() { return muted; },
@@ -688,7 +702,7 @@ function createStub() {
   const debug = { available: false, muted: true, state: () => 'unavailable', cars: [], listener: null };
   return {
     available: false, context: null,
-    setCars() {}, update() {}, resume() {},
+    setCars() {}, update() {}, resume() {}, setPaused() {},
     setMuted(m) { return !!m; }, toggleMute() { return true; },
     get muted() { return true; },
     dispose() {}, debug, engines: ENGINES, masterVolume: 0,

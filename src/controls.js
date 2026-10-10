@@ -57,10 +57,15 @@ export function createInput(bindings) {
   function consumeRescue() { const v = state.rescue;       state.rescue = false;       return v; }
   function consumeLineToggle() { const v = state.lineToggle; state.lineToggle = false; return v; }
   function consumeSoundToggle() { const v = state.soundToggle; state.soundToggle = false; return v; }
+  // Drop the one-shot presses nobody has consumed. Held keys are kept, so a
+  // throttle held through a pause is still a throttle on the way out.
+  function clearPending() {
+    state.cameraToggle = state.reset = state.rescue = state.lineToggle = state.soundToggle = false;
+  }
 
   return {
     update, consumeToggle, consumeReset, consumeRescue, consumeLineToggle,
-    consumeSoundToggle, state,
+    consumeSoundToggle, clearPending, state,
     dispose() {
       window.removeEventListener('keydown', onDown);
       window.removeEventListener('keyup', onUp);

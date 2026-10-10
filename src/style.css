@@ -356,6 +356,26 @@ button:disabled { opacity: 0.45; cursor: wait; }
 .finish-actions button:first-child { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 .finish-actions button:first-child:hover { background: #efffa6; }
 
+/* ---------- Pause ---------- */
+/* The finish card's look, over a lighter veil: the held race stays readable
+   behind it. Sits under the finish and the menu, both of which clear it. */
+#pause {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(8, 14, 19, 0.55), rgba(4, 8, 11, 0.86) 70%);
+  animation: finish-in 0.25s ease both;
+}
+#pause.hidden { display: none; }
+#pause-circuit { margin-left: auto; color: var(--dim); }
+.pause-card .finish-detail { display: flex; align-items: center; gap: 6px; }
+.pause-card .finish-actions { margin-top: 22px; }
+
 /* ---------- Race HUD ---------- */
 #ui {
   position: fixed;

@@ -132,6 +132,28 @@ try {
     memory.push(await page.evaluate(() => window.__ctx.renderer.info.memory.geometries));
   }
   assert(memory.at(-1) <= memory[0] + 3, `restarts retain stable geometry memory: ${memory}`);
+  // Pause: P holds the race under its card, the time spent paused is pushed
+  // onto the lap clock on the way out, and Escape leaves a paused race clean.
+  // `started` is set so the countdown's per-frame clock re-stamp cannot mask a
+  // missing shift.
+  await page.evaluate(() => { const c = window.__ctx; c.mode = 'quick-race'; c.state.started = true; });
+  const lapStart = await page.evaluate(() => window.__ctx.cars[0].state.lapStart);
+  await page.keyboard.press('KeyP');
+  assert.equal(await page.evaluate(() => window.__ctx.paused), true, 'P pauses the race');
+  assert.equal(await page.evaluate(() => document.getElementById('pause').classList.contains('hidden')), false, 'pause card is shown');
+  const startT = await page.evaluate(() => window.__ctx.state.startT);
+  await page.waitForTimeout(400);
+  assert.equal(await page.evaluate(() => window.__ctx.state.startT), startT, 'a paused race does not advance');
+  await page.keyboard.press('KeyP');
+  assert.equal(await page.evaluate(() => window.__ctx.paused), false, 'P resumes the race');
+  const shifted = await page.evaluate(() => window.__ctx.cars[0].state.lapStart) - lapStart;
+  assert(shifted >= 350, `the lap clock is pushed on by the pause (${Math.round(shifted)} ms)`);
+  await page.keyboard.press('KeyP');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.evaluate(() => window.__ctx.mode), null, 'Escape leaves a paused race');
+  assert.equal(await page.evaluate(() => window.__ctx.paused || !document.getElementById('pause').classList.contains('hidden')), false, 'leaving clears the pause');
+  // Escape tore the race down; the finish-screen checks below expect one.
+  await start('quick-race');
   await page.evaluate(() => { window.__ctx.mode = 'quick-race'; document.getElementById('finish').classList.remove('hidden'); });
   await page.locator('#finish-restart').click();
   assert.equal(await page.evaluate(() => window.__ctx.cars.length), 4, 'finish screen restarts the selected race');
@@ -139,7 +161,7 @@ try {
   await page.locator('#finish-menu').click();
   assert.equal(await page.evaluate(() => window.__ctx.mode), null, 'finish screen returns to menu');
   assert.deepEqual(errors, [], 'no browser or WebGL errors');
-  console.log('PASS: garage, responsive menu, saved quality, all circuits, split screen, restart memory and render budgets');
+  console.log('PASS: garage, responsive menu, saved quality, all circuits, split screen, restart memory, pause and render budgets');
 } finally {
   writeFileSync(`${out}/render-cost.json`, JSON.stringify({ rows, errors }, null, 2));
   await browser.close();

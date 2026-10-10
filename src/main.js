@@ -66,6 +66,8 @@ function lapsFor(mode) {
   return mode === 'time-trial' ? 1 : RACE_LAPS;
 }
 
+const MODE_NAMES = { 'time-trial': 'TIME TRIAL', 'quick-race': 'QUICK RACE', 'two-player': 'TWO PLAYER' };
+
 const PLAYER2_COLOR = 0x1f6cff;
 const AI_COLORS = [0xfacc15, 0x059669, 0xea580c];
 
@@ -130,6 +132,10 @@ async function bootstrap() {
     primaryPlayerIdx: 0,
     mode: null,
     state: null,
+    // P holds the race; see setPaused. pausedAt is the performance.now()
+    // stamp the lap clocks are pushed on from when it lifts.
+    paused: false,
+    pausedAt: null,
     // Created on the first mode start (a click, so the browser lets it play).
     audio: null,
   };
@@ -183,6 +189,21 @@ async function bootstrap() {
     if (e.code === 'Escape' && ctx.mode) {
       stopMode(ctx);
     }
+  });
+
+  // P pauses a race and resumes it. Ignored with a modifier held so Ctrl/Cmd+P
+  // still prints, and once the results are up — the race is over by then.
+  window.addEventListener('keydown', (e) => {
+    if (e.code !== 'KeyP' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (!ctx.mode || ctx.state.finishShown) return;
+    e.preventDefault();
+    setPaused(ctx, !ctx.paused);
+  });
+  document.getElementById('pause-resume').addEventListener('click', () => {
+    setPaused(ctx, false);
+  });
+  document.getElementById('pause-menu').addEventListener('click', () => {
+    stopMode(ctx);
   });
 
   // F toggles full screen, in the menu and in a race. Ignored with a modifier
@@ -242,15 +263,13 @@ async function bootstrap() {
     last = now;
     graphics.resetSamples();
     if (document.hidden) {
-      hiddenAt = now;
+      // A paused race is already off the clock: the pause's own stamp covers
+      // the hidden stretch, and counting it twice would wind the clocks back.
+      if (!ctx.paused) hiddenAt = now;
       ctx.audio?.context?.suspend?.().catch(() => {});
     } else {
       if (hiddenAt !== null) {
-        const pause = now - hiddenAt;
-        for (const entry of ctx.cars) {
-          entry.state.lapStart += pause;
-          entry.state.raceStart += pause;
-        }
+        shiftClocks(ctx, now - hiddenAt);
         hiddenAt = null;
       }
       if (ctx.mode) ctx.audio?.resume();
@@ -265,8 +284,15 @@ async function bootstrap() {
     const dt = Math.min(0.05, frameMs / 1000);
     last = now;
     if (ctx.mode && !document.hidden) {
-      graphics.sample(frameMs);
-      tick(ctx, dt, now);
+      if (ctx.paused) {
+        // Nothing steps, but the held frame is redrawn: a resize (or F for
+        // full screen) clears the canvas, and a blank race behind the card
+        // would read as a crash.
+        render(ctx);
+      } else {
+        graphics.sample(frameMs);
+        tick(ctx, dt, now);
+      }
     }
   }
   requestAnimationFrame(loop);
@@ -340,6 +366,7 @@ function buildTrackSelector(container, ctx, rebuildTrack) {
 
 function startMode(ctx, mode) {
   // Tear down anything from a previous run.
+  setPaused(ctx, false);
   destroyCars(ctx);
 
   ctx.mode = mode;
@@ -390,6 +417,7 @@ function startMode(ctx, mode) {
 }
 
 function stopMode(ctx) {
+  setPaused(ctx, false);
   if (ctx.audio) ctx.audio.setCars([]);
   destroyCars(ctx);
   ctx.mode = null;
@@ -414,7 +442,6 @@ function racePlace(ctx, car) {
 function showFinish(ctx) {
   const primary = ctx.cars[ctx.primaryPlayerIdx];
   const st = primary.state;
-  const modeNames = { 'time-trial': 'TIME TRIAL', 'quick-race': 'QUICK RACE', 'two-player': 'TWO PLAYER' };
   let title = 'FINISHED';
   let detail = '';
   let stats = [];
@@ -437,7 +464,7 @@ function showFinish(ctx) {
     stats = [['WINNING TIME', formatMs(first.state.finishMs)], ['BEST LAP', formatMs(first.state.bestMs)]];
     winner = true;
   }
-  document.getElementById('finish-mode').textContent = modeNames[ctx.mode] || 'RACE';
+  document.getElementById('finish-mode').textContent = MODE_NAMES[ctx.mode] || 'RACE';
   document.getElementById('finish-circuit').textContent = ctx.track.name;
   const titleEl = document.getElementById('finish-title');
   titleEl.textContent = title;
@@ -481,6 +508,44 @@ function showFinish(ctx) {
 
 function hideFinish() {
   document.getElementById('finish').classList.add('hidden');
+}
+
+// ---------- Pause ----------
+
+// A paused race holds everything at once: the loop stops stepping, so the
+// physics, the rivals, the start lights and the lap clocks all wait together.
+// The clocks are performance.now() stamps, so the time spent paused is pushed
+// onto them when the pause lifts — the same bookkeeping the hidden-tab handler
+// does — and the sound is held rather than left droning at whatever the
+// engines were doing on the last frame.
+function setPaused(ctx, paused) {
+  if (paused === ctx.paused || (paused && !ctx.mode)) return;
+  ctx.paused = paused;
+  document.getElementById('pause').classList.toggle('hidden', !paused);
+  ctx.audio?.setPaused(paused);
+  if (paused) {
+    ctx.pausedAt = performance.now();
+    document.getElementById('pause-mode').textContent = MODE_NAMES[ctx.mode] || 'RACE';
+    document.getElementById('pause-circuit').textContent = ctx.track.name;
+    return;
+  }
+  if (ctx.pausedAt !== null) shiftClocks(ctx, performance.now() - ctx.pausedAt);
+  ctx.pausedAt = null;
+  // Keys pressed into the card (a camera cycle, a restart) do not fire on the
+  // first frame back: while the race is held, only P and Esc do anything.
+  for (const c of ctx.cars) c.input?.clearPending();
+  // The first frame back is slow (idle GPU), and is not a slow machine.
+  ctx.graphics.resetSamples();
+}
+
+// The lap and race clocks are performance.now() stamps, so anything that stops
+// the loop — a hidden tab, a pause — has to push them on by the time it took,
+// or the whole stretch lands on the lap.
+function shiftClocks(ctx, ms) {
+  for (const entry of ctx.cars) {
+    entry.state.lapStart += ms;
+    entry.state.raceStart += ms;
+  }
 }
 
 function createGameState(mode) {
@@ -800,7 +865,10 @@ function tick(ctx, dt, now) {
   const graphicsStatus = document.getElementById('graphics-status');
   if (graphicsStatus.textContent !== graphicsLabel) graphicsStatus.textContent = graphicsLabel;
 
-  // Render
+  render(ctx);
+}
+
+function render(ctx) {
   if (ctx.mode === 'two-player') {
     renderSplitScreen(ctx);
   } else {

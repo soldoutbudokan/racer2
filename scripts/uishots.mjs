@@ -83,6 +83,12 @@ for (const [w, h, tag] of [[1366, 768, 'laptop'], [1920, 1080, 'desktop'], [390,
   await freezeAndRender(page);
   await page.screenshot({ path: `${out}-race-chase.png` });
   await thaw(page);
+  // Pause card over the held race.
+  await page.keyboard.press('KeyP');
+  await page.waitForFunction(() => window.__ctx.paused);
+  await page.waitForTimeout(600);
+  await page.screenshot({ path: `${out}-race-paused.png` });
+  await page.keyboard.press('KeyP');
   // Hood + cinematic cameras.
   await page.keyboard.press('KeyC');
   await pump(page, 1.0, ['KeyW']);
