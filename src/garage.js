@@ -158,12 +158,29 @@ export function createGarage(renderer, environment) {
     bounds.getCenter(target);
     const vertical = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     let distance = 0;
-    // Fit every archetype to both dimensions, including wide open-wheel cars.
-    for (let i = 0; i < framingPoints.length; i += 3) {
-      corner.fromArray(framingPoints, i).sub(target);
-      distance = Math.max(distance,
-        Math.abs(corner.dot(right)) / (vertical * camera.aspect * 0.87) + corner.dot(direction),
-        Math.abs(corner.dot(cameraUp)) / (vertical * 0.79) + corner.dot(direction));
+    // Perspective moves the visual center below the body bounds. Recenter the
+    // projected silhouette before its final fit so no car wastes the top half
+    // of a wide stage. This only runs for a new still, never in the race loop.
+    for (let pass = 0; pass < 4; pass++) {
+      distance = 0;
+      for (let i = 0; i < framingPoints.length; i += 3) {
+        corner.fromArray(framingPoints, i).sub(target);
+        distance = Math.max(distance,
+          Math.abs(corner.dot(right)) / (vertical * camera.aspect * 0.87) + corner.dot(direction),
+          Math.abs(corner.dot(cameraUp)) / (vertical * 0.79) + corner.dot(direction));
+      }
+      if (pass === 3) break;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (let i = 0; i < framingPoints.length; i += 3) {
+        corner.fromArray(framingPoints, i).sub(target);
+        const depth = distance - corner.dot(direction);
+        const x = corner.dot(right) / (vertical * camera.aspect * depth);
+        const y = corner.dot(cameraUp) / (vertical * depth);
+        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+      }
+      target.addScaledVector(right, (minX + maxX) * 0.5 * vertical * camera.aspect * distance);
+      target.addScaledVector(cameraUp, (minY + maxY) * 0.5 * vertical * distance);
     }
     camera.position.copy(direction).multiplyScalar(distance).add(target);
     camera.lookAt(target);
