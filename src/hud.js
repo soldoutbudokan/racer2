@@ -37,7 +37,7 @@ export function createHud(maxSpeed = 320, engine = null) {
   // ---- Tachometer ----
   // A 270° sweep of LED segments. Each segment is its own path so the lit
   // count can change without rebuilding geometry, and each is coloured by its
-  // place in the rev band: lime through the pull, amber as it nears the
+  // place in the rev band: ivory through the pull, amber as it nears the
   // change-up point, red past it.
   const cx = 120, cy = 120, rOuter = 106, rInner = 92;
   const startA = Math.PI * 0.75;
@@ -319,7 +319,7 @@ export function createHud(maxSpeed = 320, engine = null) {
       const { x, y, nx, ny } = startMarker;
       mctx.lineWidth = 3;
       mctx.lineCap = 'butt';
-      mctx.strokeStyle = '#e6ff76';
+      mctx.strokeStyle = '#ff8055';
       mctx.beginPath();
       mctx.moveTo(x - nx * 7, y - ny * 7);
       mctx.lineTo(x + nx * 7, y + ny * 7);
@@ -338,7 +338,7 @@ export function createHud(maxSpeed = 320, engine = null) {
         const hx = c.heading.x, hy = c.heading.z;
         mctx.beginPath();
         mctx.arc(x, y, 10, 0, Math.PI * 2);
-        mctx.fillStyle = 'rgba(230, 255, 118, 0.18)';
+        mctx.fillStyle = 'rgba(255, 128, 85, 0.18)';
         mctx.fill();
         mctx.beginPath();
         mctx.moveTo(x + hx * 8, y + hy * 8);

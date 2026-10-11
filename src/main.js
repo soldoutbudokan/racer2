@@ -318,6 +318,8 @@ function buildTrackSelector(container, ctx, rebuildTrack) {
   const descriptions = { gp: 'Interlagos · Brazil', sprint: 'Sunset Speedway · Oval',
     downtown: 'Marina Bay · Singapore', alpine: 'Spa-Francorchamps · Belgium',
     dunes: 'Sakhir · Bahrain', parco: 'Monza · Italy' };
+  const locations = { gp: 'BRAZIL', sprint: 'SPEEDWAY', downtown: 'SINGAPORE',
+    alpine: 'BELGIUM', dunes: 'BAHRAIN', parco: 'ITALY' };
   container.innerHTML = '';
   function updateDetail() {
     document.getElementById('circuit-description').textContent = descriptions[ctx.selectedTrackId] || ctx.track.name;
@@ -341,7 +343,7 @@ function buildTrackSelector(container, ctx, rebuildTrack) {
     const path = points.map((p, i) => `${i ? 'L' : 'M'}${px(p)},${py(p)}`).join(' ') + ' Z';
     const level = DIFFICULTY_PIPS[def.difficulty] ?? 2;
     const pips = [1, 2, 3, 4].map((k) => `<b${k <= level ? ' class="on"' : ''}></b>`).join('');
-    btn.innerHTML = `<span class="track-number">0${index + 1}</span><span class="track-check" aria-hidden="true">↗</span>
+    btn.innerHTML = `<span class="track-number">0${index + 1} / ${locations[def.id]}</span><span class="track-check" aria-hidden="true">✓</span>
       <svg viewBox="0 0 120 76" aria-hidden="true"><path class="under" d="${path}"/><path d="${path}"/><circle cx="${px(points[0])}" cy="${py(points[0])}" r="3.2"/></svg>
       <span class="track-name">${def.name}</span><span class="track-sub"><i aria-hidden="true">${pips}</i>${def.difficulty}</span>`;
     btn.addEventListener('click', async () => {

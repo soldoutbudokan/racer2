@@ -164,6 +164,33 @@ async function checkBrowser() {
     }
     assert.equal(new Set(previews).size, CAR_CHOICES.length, 'every selected car changes the showroom image');
 
+    // Regression: the showroom used to project for its own aspect into a
+    // full-window framebuffer, stretching the car when copied to the preview.
+    for (const [width, height] of [[1280, 720], [390, 844]]) {
+      await page.setViewportSize({ width, height });
+      const projection = await page.evaluate(() => {
+        const ctx = window.__ctx, renderer = ctx.renderer, THREE = window.__THREE;
+        const state = () => ({
+          size: renderer.getSize(new THREE.Vector2()).toArray(),
+          ratio: renderer.getPixelRatio(),
+          viewport: renderer.getViewport(new THREE.Vector4()).toArray(),
+          scissor: renderer.getScissor(new THREE.Vector4()).toArray(),
+          scissorTest: renderer.getScissorTest(),
+        });
+        const before = state(), render = renderer.render;
+        let aspectError = Infinity;
+        renderer.render = function (scene, camera) {
+          aspectError = Math.abs(camera.aspect - this.domElement.width / this.domElement.height);
+          return render.call(this, scene, camera);
+        };
+        try { ctx.renderGarage(); } finally { renderer.render = render; }
+        return { before, after: state(), aspectError };
+      });
+      assert(projection.aspectError < 0.01, `showroom preserves car proportions at ${width}px`);
+      assert.deepEqual(projection.after, projection.before, 'showroom restores race renderer state');
+    }
+    await page.setViewportSize({ width: 1280, height: 720 });
+
     // Compare the same warmed-up car after each cycle, allowing shared caches
     // to populate once without mistaking them for unreleased preview meshes.
     const memory = [];

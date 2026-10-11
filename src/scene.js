@@ -50,10 +50,10 @@ const GRADE_GLSL = /* glsl */`
 vec3 ACESFilmicToneMapping( vec3 color ) {
   vec3 c = ACESFilmicToneMappingBase( color );
   float l = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );
-  c = max( vec3( 0.0 ), mix( vec3( l ), c, 1.05 ) );
+  c = max( vec3( 0.0 ), mix( vec3( l ), c, 1.025 ) );
   c *= mix( vec3( 0.975, 1.0, 1.035 ), vec3( 1.025, 1.0, 0.965 ), smoothstep( 0.04, 0.55, l ) );
   vec3 s = c * c * ( 3.0 - 2.0 * c );
-  c = mix( c, s, 0.14 );
+  c = mix( c, s, 0.18 );
   return clamp( c, 0.0, 1.0 );
 }
 `;
@@ -107,8 +107,9 @@ export function createScene(canvas) {
   // track.js sets the horizon to each circuit's haze through this.
   scene.userData.sky = sky;
 
-  // Sun — warm afternoon tint
-  const sun = new THREE.DirectionalLight(0xffe4c4, 2.7);
+  // Warm, near-neutral key light keeps white paint and concrete clean. A
+  // stronger key / softer fill gives bodywork and kerbs a readable profile.
+  const sun = new THREE.DirectionalLight(0xffefd9, 2.95);
   sun.position.copy(sunPos).multiplyScalar(800);
   sun.castShadow = true;
   sun.shadow.mapSize.set(1024, 1024);
@@ -144,12 +145,12 @@ export function createScene(canvas) {
   }
 
   // Sky-tinted hemisphere fill — keeps shadows from being pure black
-  const hemi = new THREE.HemisphereLight(0xb3c6da, 0x4a4632, 0.85);
+  const hemi = new THREE.HemisphereLight(0xb4c8d6, 0x4a483b, 0.72);
   scene.add(hemi);
 
   // Subtle cool fill from the opposite azimuth — gives shaded car panels
   // a blue-gray kick that reads as sky bounce rather than pure black.
-  const fill = new THREE.DirectionalLight(0x8cb4d4, 0.28);
+  const fill = new THREE.DirectionalLight(0x96b4ca, 0.24);
   fill.position.set(-sunPos.x * 300, 200, -sunPos.z * 300);
   scene.add(fill);
 

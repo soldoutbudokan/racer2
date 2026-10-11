@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Racer2 — Circuit Series</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2305060a'/%3E%3Ctext x='8' y='12' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='800' fill='%23e6ff76'%3ER%3C/text%3E%3C/svg%3E" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2305060a'/%3E%3Ctext x='8' y='12' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='800' fill='%23ff8055'%3ER%3C/text%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -21,41 +21,41 @@
       <div class="race-menu">
         <header class="menu-header">
           <a class="wordmark" href="./" aria-label="Racer2 home">RACER<span>2</span><i></i></a>
-          <span class="header-caption">THE CIRCUIT IS YOURS.</span>
-          <span class="edition">CIRCUIT SERIES <b>06</b></span>
+          <span class="header-caption">THE PURSUIT OF A PERFECT LAP</span>
+          <span class="edition"><span class="status-dot"></span> CIRCUIT SERIES <b>02</b></span>
         </header>
         <main class="menu-layout">
           <section class="garage-panel" aria-label="Your car">
-            <div class="eyebrow"><span class="status-dot"></span> READY TO RACE</div>
-            <h1>Find your<br><em>next limit.</em></h1>
-            <p class="hero-copy">Six circuits. Three ways to race.<br>One more lap.</p>
+            <div class="eyebrow"><span class="eyebrow-line"></span> YOUR NEXT SESSION STARTS HERE</div>
+            <h1>Every corner.<br><em>All yours.</em></h1>
+            <p class="hero-copy">Choose your machine. Make the circuit yours.</p>
             <div class="garage-stage"><canvas id="garage" aria-label="Red GT Coupe racing car"></canvas><span class="garage-caption" id="garage-caption">01 / GT COUPE</span></div>
             <fieldset class="car-selector" aria-describedby="car-selection-note">
-              <legend>Choose your car</legend>
+              <legend>Your machine <span>01 — 03</span></legend>
               <div class="car-options">
                 <label class="car-option"><input type="radio" name="car" value="gt" checked><span class="car-option-content"><i class="car-swatch car-swatch-gt" aria-hidden="true"></i><span class="car-option-name">GT Coupe</span><span class="car-option-color">Red</span></span></label>
                 <label class="car-option"><input type="radio" name="car" value="hatch"><span class="car-option-content"><i class="car-swatch car-swatch-hatch" aria-hidden="true"></i><span class="car-option-name">Rally Hatch</span><span class="car-option-color">Blue</span></span></label>
                 <label class="car-option"><input type="radio" name="car" value="open-wheel"><span class="car-option-content"><i class="car-swatch car-swatch-open-wheel" aria-hidden="true"></i><span class="car-option-name">Open Wheel</span><span class="car-option-color">Yellow</span></span></label>
               </div>
-              <p id="car-selection-note">Equal performance. Your choice is Player 1 in split screen.</p>
+              <p id="car-selection-note">Three distinct machines. Equal performance.</p>
             </fieldset>
             <div class="car-specs"><div><strong>480</strong><span>HORSEPOWER</span></div><div><strong>6</strong><span>SPEED AUTO</span></div><div><strong>RWD</strong><span>DRIVETRAIN</span></div></div>
             <div class="garage-footer"><span>DRIVE WITH <kbd>W A S D</kbd> OR <kbd>↑ ← ↓ →</kbd></span><span>CHASE / HOOD / CINEMATIC</span></div>
           </section>
           <section class="race-setup" aria-label="Race setup">
-            <div class="section-heading"><h2><span>01</span> Choose your circuit</h2><span>6 LOCATIONS</span></div>
+            <div class="section-heading"><h2><span>01 /</span> Choose a circuit</h2><span>THE WORLD AWAITS</span></div>
             <div id="track-list" class="track-list"></div>
             <div class="selected-circuit"><span id="circuit-description"></span><strong id="circuit-length"></strong></div>
-            <div class="section-heading mode-heading"><h2><span>02</span> Take the grid</h2></div>
+            <div class="section-heading mode-heading"><h2><span>02 /</span> Take the grid</h2></div>
             <div class="mode-list">
-              <button class="mode featured" data-mode="quick-race"><span class="mode-icon" aria-hidden="true">01</span><span><span class="mode-name">Quick race</span><span class="mode-desc">3 rivals · 3 laps · All in.</span></span><span class="mode-arrow" aria-hidden="true">↗</span></button>
+              <button class="mode featured" data-mode="quick-race"><span class="mode-icon" aria-hidden="true">▦</span><span><span class="mode-name">Start a race</span><span class="mode-desc">3 rivals · 3 laps · One chequered flag</span></span><span class="mode-arrow" aria-hidden="true">→</span></button>
               <button class="mode" data-mode="time-trial"><span class="mode-icon" aria-hidden="true">02</span><span><span class="mode-name">Time trial</span><span class="mode-desc">An open track. Your fastest lap.</span></span><span class="mode-arrow" aria-hidden="true">↗</span></button>
               <button class="mode" data-mode="two-player"><span class="mode-icon" aria-hidden="true">03</span><span><span class="mode-name">Two player</span><span class="mode-desc">Split screen · WASD vs. arrows</span></span><span class="mode-arrow" aria-hidden="true">↗</span></button>
             </div>
             <div class="graphics-settings"><div><label for="graphics-quality">GRAPHICS</label><p id="graphics-description">Adapts to keep your race smooth.</p></div><select id="graphics-quality"><option value="auto">Auto (recommended)</option><option value="performance">Performance</option><option value="balanced">Balanced</option><option value="high">High</option></select></div>
           </section>
         </main>
-        <footer class="menu-footer"><span>BUILT FOR THE NEXT LAP.</span><span>KEYBOARD CONTROLS <span aria-hidden="true">/</span> SOUND ON AT START <span aria-hidden="true">/</span> F FOR FULL SCREEN</span></footer>
+        <footer class="menu-footer"><span>PRECISION. PACE. ONE MORE LAP.</span><span>KEYBOARD CONTROLS <span aria-hidden="true">/</span> SOUND ON AT START <span aria-hidden="true">/</span> F FOR FULL SCREEN</span></footer>
       </div>
     </div>
 
