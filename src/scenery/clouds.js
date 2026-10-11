@@ -34,9 +34,10 @@
  * a different weather story per venue) — see SCENES below.
  */
 import * as THREE from 'three';
+import { SimplexNoise } from 'three/addons/math/SimplexNoise.js';
 import { hideFromOverridePasses } from './noise.js';
 
-// Must match the sun placed in scene.js (azimuth 128 deg, elevation 11 deg).
+// Must match the sun placed in scene.js (azimuth 128 deg, elevation 23 deg).
 const SUN_AZIM = THREE.MathUtils.degToRad(128);
 
 // Deterministic RNG — the same circuit builds the same sky every session, and
@@ -131,8 +132,8 @@ function makeCumulusTexture(rng) {
 
   // Union fill of the whole body, opaque, softly blurred so the silhouette
   // has a 1-2 px translucent rim instead of an aliased cut.
-  ctx.filter = 'blur(1.5px)';
-  ctx.fillStyle = 'rgb(214,217,228)';
+  ctx.filter = 'blur(2px)';
+  ctx.fillStyle = 'rgb(220,225,232)';
   ctx.beginPath();
   for (const p of [...bumps, ...florets]) {
     ctx.moveTo(p.x + p.r, p.y);
@@ -150,7 +151,7 @@ function makeCumulusTexture(rng) {
   const amb = ctx.createLinearGradient(0, 0, 0, yB);
   amb.addColorStop(0, 'rgba(255,251,242,0.42)');
   amb.addColorStop(0.55, 'rgba(214,217,228,0)');
-  amb.addColorStop(1, 'rgba(126,138,164,0.52)');
+  amb.addColorStop(1, 'rgba(143,157,177,0.44)');
   ctx.fillStyle = amb;
   ctx.fillRect(0, 0, w, h);
 
@@ -162,7 +163,7 @@ function makeCumulusTexture(rng) {
   ctx.fillRect(0, 0, w, h);
   const shd = ctx.createLinearGradient(x0, 0, x1, 0);
   shd.addColorStop(0.5, 'rgba(112,126,158,0)');
-  shd.addColorStop(1, 'rgba(112,126,158,0.42)');
+  shd.addColorStop(1, 'rgba(127,146,171,0.34)');
   ctx.fillStyle = shd;
   ctx.fillRect(0, 0, w, h);
 
@@ -186,7 +187,7 @@ function makeCumulusTexture(rng) {
   // Dark underbelly just above the base — that face sees no sky and no sun.
   const belly = ctx.createLinearGradient(0, yB - h * 0.15, 0, yB);
   belly.addColorStop(0, 'rgba(108,120,150,0)');
-  belly.addColorStop(1, 'rgba(104,116,148,0.55)');
+  belly.addColorStop(1, 'rgba(125,142,165,0.46)');
   ctx.fillStyle = belly;
   ctx.fillRect(0, yB - h * 0.15, w, h * 0.15);
   ctx.globalCompositeOperation = 'source-over';
@@ -215,12 +216,27 @@ function makeCumulusTexture(rng) {
   // already the hardest edge in the image and must stay that way.
   const img = ctx.getImageData(0, 0, w, h);
   const d = img.data;
+  const source = new Uint8ClampedArray(d);
+  const turbulence = new SimplexNoise({ random: rng });
   for (let y = 0; y < h; y++) {
     const fy = Math.min(1, y / (h * 0.08));
     for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      // Gentle domain warping breaks the perfect arcs of the authored cloud
+      // silhouette. Two noise scales also give its body soft billowing relief
+      // without another texture, material or per-frame shader lookup.
+      const broad = turbulence.noise(x * 0.024, y * 0.024);
+      const fine = turbulence.noise(x * 0.095 + 71, y * 0.095 + 29);
+      const sx = Math.max(0, Math.min(w - 1, Math.round(x + broad * 3.5)));
+      const sy = Math.max(0, Math.min(h - 1, Math.round(y + fine * 2.0)));
+      const sample = (sy * w + sx) * 4;
+      const relief = 1 + broad * 0.05 + fine * 0.018;
+      d[i] = source[sample] * relief;
+      d[i + 1] = source[sample + 1] * relief;
+      d[i + 2] = source[sample + 2] * relief;
       const fx = Math.min(1, Math.min(x, w - 1 - x) / (w * 0.07));
       const f = fx * fx * (3 - 2 * fx) * (fy * fy * (3 - 2 * fy));
-      d[(y * w + x) * 4 + 3] *= f;
+      d[i + 3] = source[sample + 3] * f;
     }
   }
   ctx.putImageData(img, 0, 0);

@@ -69,8 +69,10 @@ const fragmentShader = /* glsl */`
 
     // Forward scattering: a broad glow and a tight aureole.
     float c = max(cosT, 0.0);
-    col += uSunColor * (pow(c, 7.0) * 0.20 + pow(c, 60.0) * 0.55 + pow(c, 900.0) * 2.2);
-    col += uSunColor * smoothstep(0.99955, 0.99975, cosT) * uDisc;
+    col += uSunColor * (pow(c, 7.0) * 0.16 + pow(c, 60.0) * 0.42 + pow(c, 900.0) * 1.6);
+    // A small solar disc inside a broad atmospheric glow. The former 3°
+    // disc read as an oversized white spotlight in the driving view.
+    col += uSunColor * smoothstep(0.999975, 0.999989, cosT) * uDisc;
 
     // Below the horizon: ground bounce, reached quickly so reflections get a
     // crisp horizon line. Only the environment capture uses it; the visible
@@ -90,8 +92,8 @@ const fragmentShader = /* glsl */`
 `;
 
 export const SKY_DEFAULTS = {
-  zenith: 0x2d64b8,
-  mid: 0x6d9fd8,
+  zenith: 0x376a9f,
+  mid: 0x82aacb,
   horizon: 0xc9d3d6,
   ground: 0x6f7060,
   sun: 0xffe2bd,
