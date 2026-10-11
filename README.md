@@ -172,9 +172,11 @@ pass. `M` mutes; the choice is remembered.
   car paint to pick up, cool fill light and per-circuit atmospheric fog.
 - **Post-processing**: none in Performance; FXAA and output conversion in
   Balanced; optional half-resolution GTAO and restrained bloom in High.
-- **Menu**: responsive circuit maps with start markers and difficulty
-  ratings, a showroom-lit GT render, clear race modes and saved graphics
-  choices. No running 3D animation while choosing a race.
+- **Menu**: graphite panels with warm orange accents, responsive circuit maps
+  with location labels, start markers and difficulty ratings, clear race modes
+  and saved graphics choices. The selected car is framed in a studio with
+  softbox reflections and subtle turntable markings; the preview keeps correct
+  proportions at every screen size. No running 3D animation while choosing a race.
 - **HUD**: segmented tachometer with a shift light, timing bar, live race
   order, start lights mirroring the gantry, pace readout, a sharp minimap
   with a heading arrow, and a results card with the full classification.

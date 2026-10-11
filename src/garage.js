@@ -69,6 +69,8 @@ export function createGarage(renderer, environment) {
   let car = null;
   let currentChoice = getCarChoice();
   const bounds = new THREE.Box3();
+  const framingPoints = [];
+  const framingPoint = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
   function selectCar(choice) {
     if (car && choice.id === currentChoice.id) return;
@@ -90,8 +92,23 @@ export function createGarage(renderer, environment) {
       wheel.rotation.y += car.root.rotation.y;
       scene.add(wheel);
     }
-    bounds.setFromObject(car.root);
-    for (const wheel of car.wheels) bounds.expandByObject(wheel);
+    bounds.makeEmpty();
+    framingPoints.length = 0;
+    for (const part of [car.root, ...car.wheels]) {
+      part.updateMatrixWorld(true);
+      part.traverse(object => {
+        // The contact-shadow plane is larger than the body. Frame the actual
+        // silhouette, not its shadow or imaginary corners above the bumpers.
+        if (object === car.shadow) return;
+        const positions = object.geometry?.attributes.position;
+        if (!positions) return;
+        for (let i = 0; i < positions.count; i++) {
+          framingPoint.fromBufferAttribute(positions, i).applyMatrix4(object.matrixWorld);
+          bounds.expandByPoint(framingPoint);
+          framingPoints.push(framingPoint.x, framingPoint.y, framingPoint.z);
+        }
+      });
+    }
   }
 
   const floorTexture = paintTexture([1024, 1024], (g, w, h) => {
@@ -122,7 +139,7 @@ export function createGarage(renderer, environment) {
   scene.add(marker);
 
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 60);
-  const direction = new THREE.Vector3(0.82, 0.4, 1).normalize();
+  const direction = new THREE.Vector3(1.1, 0.32, 1).normalize();
   const right = new THREE.Vector3().crossVectors(up, direction).normalize();
   const cameraUp = new THREE.Vector3().crossVectors(direction, right).normalize();
   const target = new THREE.Vector3(0, 0.65, 0.1);
@@ -138,11 +155,12 @@ export function createGarage(renderer, environment) {
     const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
     canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     camera.aspect = width / height;
+    bounds.getCenter(target);
     const vertical = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     let distance = 0;
     // Fit every archetype to both dimensions, including wide open-wheel cars.
-    for (let x = 0; x < 2; x++) for (let y = 0; y < 2; y++) for (let z = 0; z < 2; z++) {
-      corner.set(x ? bounds.max.x : bounds.min.x, y ? bounds.max.y : bounds.min.y, z ? bounds.max.z : bounds.min.z).sub(target);
+    for (let i = 0; i < framingPoints.length; i += 3) {
+      corner.fromArray(framingPoints, i).sub(target);
       distance = Math.max(distance,
         Math.abs(corner.dot(right)) / (vertical * camera.aspect * 0.87) + corner.dot(direction),
         Math.abs(corner.dot(cameraUp)) / (vertical * 0.79) + corner.dot(direction));
