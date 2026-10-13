@@ -95,6 +95,7 @@ async function checkBrowser() {
         archetype: entry.car.archetype,
         color: entry.color,
         isPlayer: entry.isPlayer,
+        gridIdx: entry.gridIdx,
       })),
     }));
     assert.equal(state.mode, mode);
@@ -102,6 +103,11 @@ async function checkBrowser() {
     assert.equal(state.cars[0].archetype, choice.id, `${mode} uses the selected body`);
     assert.equal(state.cars[0].color, choice.color, `${mode} uses the selected paint`);
     assert.equal(state.cars[0].isPlayer, true);
+    const grid = state.cars.map(entry => entry.gridIdx);
+    assert.deepEqual([...grid].sort((a, b) => a - b), state.cars.map((_, index) => index),
+      `${mode} assigns one unique slot per car`);
+    if (mode !== 'quick-race') assert.deepEqual(grid, state.cars.map((_, index) => index),
+      `${mode} preserves its established starting order`);
     const otherCars = state.cars.slice(1).map(({ archetype, color, isPlayer }) => ({ archetype, color, isPlayer }));
     if (mode === 'quick-race') assert.deepEqual(otherCars, [
       { archetype: 'open-wheel', color: 0xfacc15, isPlayer: false },
@@ -241,8 +247,102 @@ async function checkBrowser() {
         await checkSelection(choice.id);
       }
     }
+
+    // Force three different grid draws through the real menu, finish button,
+    // and R-key reset. Only the three shuffle draws are stubbed; subsequent
+    // geometry UUIDs and other construction randomness use the native RNG.
+    const gridRuns = await page.evaluate(() => {
+      const ctx = window.__ctx;
+      const nativeRandom = Math.random;
+      const nativeRender = ctx.composer.render;
+      function draw(values, action) {
+        let next = 0;
+        Math.random = () => next < values.length ? values[next++] : nativeRandom();
+        try { action(); } finally { Math.random = nativeRandom; }
+        if (next !== values.length) throw new Error('Race did not draw a complete starting grid');
+      }
+      function snapshot() {
+        // A player in a rear slot must still drive the primary camera.
+        const primary = ctx.cars[0];
+        ctx.camera.position.set(50000, 50000, 50000);
+        const secondaryBefore = ctx.camera2.position.clone();
+        primary.chase.update(1 / 60, primary.car.body, 0);
+        return {
+          mode: ctx.mode,
+          primaryPlayerIdx: ctx.primaryPlayerIdx,
+          primaryCameraMoved: ctx.camera.position.distanceTo({ x: 50000, y: 50000, z: 50000 }) > 1,
+          secondaryCameraMoved: ctx.camera2.position.distanceTo(secondaryBefore),
+          position: Number(document.getElementById('pos-current').textContent),
+          standing: [...document.querySelectorAll('#standings li')].findIndex(li => li.classList.contains('me')) + 1,
+          cars: ctx.cars.map(entry => {
+            const spawn = window.__gridSpawn(ctx.track, entry.gridIdx);
+            const position = entry.car.body.position;
+            return {
+              id: entry.car.body.id, gridIdx: entry.gridIdx, isPlayer: entry.isPlayer,
+              label: entry.label, code: entry.code, reactionS: entry.reactionS,
+              skill: entry.skill, reverseT: entry.ai?.recovery.reverseT ?? 0,
+              spawnError: Math.hypot(position.x - spawn.position.x, position.y - spawn.position.y, position.z - spawn.position.z),
+            };
+          }),
+        };
+      }
+      try {
+        // No rendered frames are needed to verify the real reset and HUD path.
+        ctx.composer.render = () => {};
+        draw([0, 0, 0], () => document.querySelector('button.mode[data-mode="quick-race"]').click());
+        const started = snapshot();
+        window.__tick(0);
+        const countdown = snapshot();
+
+        document.getElementById('finish').classList.remove('hidden');
+        draw([0.99, 0.99, 0.99], () => document.getElementById('finish-restart').click());
+        const restarted = snapshot();
+        const previousAI = ctx.cars.slice(1).map(entry => entry.ai);
+        for (const ai of previousAI) ai.recovery.reverseT = 1;
+        draw([0.625, 0.5, 0.25], () => {
+          window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyR' }));
+          window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyR' }));
+          window.__tick(0);
+        });
+        return { started, countdown, restarted, reset: snapshot(),
+          resetFreshAI: ctx.cars.slice(1).every((entry, index) => entry.ai !== previousAI[index]),
+          resetStarted: ctx.state.started,
+        };
+      } finally {
+        Math.random = nativeRandom;
+        ctx.composer.render = nativeRender;
+      }
+    });
+    for (const [name, expected] of [
+      ['started', [1, 2, 3, 0]], ['countdown', [1, 2, 3, 0]],
+      ['restarted', [0, 1, 2, 3]], ['reset', [3, 0, 1, 2]],
+    ]) {
+      const run = gridRuns[name];
+      assert.equal(run.mode, 'quick-race');
+      assert.equal(run.primaryPlayerIdx, 0);
+      assert.deepEqual(run.cars.map(entry => entry.gridIdx), expected, `${name} applies its fresh starting-grid draw`);
+      assert(run.cars.every(entry => entry.spawnError < 0.01), `${name} places every car at its assigned grid slot`);
+      assert.equal(run.cars[0].isPlayer, true);
+      assert.equal(run.cars[0].label, 'P1', `${name} preserves player identity independently of grid slot`);
+      assert.deepEqual(run.cars.map(entry => entry.code), ['YOU', 'MOR', 'OKA', 'LIN']);
+      assert.equal(run.position, expected[0] + 1, `${name} shows the actual starting position`);
+      assert.equal(run.standing, expected[0] + 1, `${name} standings match the starting grid`);
+      assert.equal(run.primaryCameraMoved, true, `${name} follows the player with the primary camera`);
+      assert.equal(run.secondaryCameraMoved, 0, `${name} leaves the split-screen camera untouched`);
+    }
+    assert.notEqual(gridRuns.restarted.cars[0].id, gridRuns.started.cars[0].id, 'finish restart rebuilds the field');
+    assert.deepEqual(gridRuns.reset.cars.map(entry => entry.id), gridRuns.restarted.cars.map(entry => entry.id),
+      'R assigns new slots to the existing cars');
+    assert.deepEqual(gridRuns.reset.cars.map(entry => entry.reactionS), gridRuns.restarted.cars.map(entry => entry.reactionS),
+      'reaction times stay with each driver across a new grid');
+    assert.deepEqual(gridRuns.reset.cars.map(entry => entry.skill), gridRuns.restarted.cars.map(entry => entry.skill));
+    assert.equal(gridRuns.resetFreshAI, true, 'R clears the AI lane and recovery state');
+    assert(gridRuns.reset.cars.every(entry => entry.reverseT === 0), 'the reset grid has no inherited reversing state');
+    assert.equal(gridRuns.resetStarted, false, 'R starts a fresh countdown');
+    await page.keyboard.press('Escape');
+    await ready();
     assert.deepEqual(errors, [], 'no browser or WebGL errors');
-    console.log('PASS: keyboard selection, saved choice, distinct previews, preview memory, all cars in every mode, restart and menu');
+    console.log('PASS: keyboard selection, saved choice, previews, all modes, randomized grid, cameras, HUD and both restart paths');
   } finally {
     await browser.close();
   }
