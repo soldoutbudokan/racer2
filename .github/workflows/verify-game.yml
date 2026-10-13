@@ -23,7 +23,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: node scripts/graphics-test.mjs && node scripts/smoke-car.mjs
+      - run: node scripts/graphics-test.mjs && node scripts/smoke-car.mjs && node scripts/grid-test.mjs
       - name: Complete world geometry and resource audit
         if: matrix.check == 'visual'
         run: |

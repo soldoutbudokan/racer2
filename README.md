@@ -73,7 +73,8 @@ The rally hatch has a short hood, tall cabin, long roof, upright rear hatch
 and roof spoiler. Existing saved blue-car choices move to this new model.
 
 - **Time trial** — a single flying lap against the clock on an empty track.
-- **Quick race** — you vs. three AI over 3 laps.
+- **Quick race** — you vs. three AI over 3 laps. The starting grid is shuffled
+  for each new race and restart, giving you an equal chance of P1, P2, P3 or P4.
 - **Two player** — split-screen, WASD vs. arrows.
 
 Single-screen modes show the **perfect-line aid** (toggle with `L`): painted

@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { createGarage } from './garage.js';
 import { initCarSelector } from './carSelection.js';
+import { createStartingGrid } from './grid.js';
 import { createPhysicsWorld } from './physics.js';
 import { createTrack } from './track.js';
 import { TRACKS, DEFAULT_TRACK_ID, getTrackById } from './tracks.js';
@@ -51,14 +52,14 @@ const GRID_HOLD = { throttle: 0, brake: 0, steer: 0, handbrake: true };
 // regression in the launch is visible in a diff and physics-test can assert it.
 const REACTION_SLOW_S = 0.42; // at skill 0.70 — a sleepy getaway
 const REACTION_FAST_S = 0.18; // at skill 0.95 — sharp off the line
-// Per-slot offset, so the field does not launch in tidy skill order every race.
-const REACTION_SLOT_S = [-0.05, +0.09, -0.06, +0.03];
+// Driver offsets stay with each rival when the starting grid is shuffled.
+const REACTION_DRIVER_S = [-0.05, +0.09, -0.06, +0.03];
 
-function aiReactionS(gridIdx, skill) {
+function aiReactionS(driverIdx, skill) {
   const t = THREE.MathUtils.clamp((skill - 0.70) / 0.25, 0, 1);
   const centre = THREE.MathUtils.lerp(REACTION_SLOW_S, REACTION_FAST_S, t);
   return Math.max(
-    0.10, centre + REACTION_SLOT_S[gridIdx % REACTION_SLOT_S.length]);
+    0.10, centre + REACTION_DRIVER_S[driverIdx % REACTION_DRIVER_S.length]);
 }
 
 // Time trial is a single flying lap; the other modes run a full race distance.
@@ -384,11 +385,12 @@ function startMode(ctx, mode) {
     addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, playerCar.color, 0, playerCar.id);
     ctx.hud.hidePosition();
   } else if (mode === 'quick-race') {
-    addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, playerCar.color, 0, playerCar.id);
+    const grid = createStartingGrid(mode, 4);
+    addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, playerCar.color, grid[0], playerCar.id);
     for (let i = 0; i < 3; i++) {
-      addAICar(ctx, AI_COLORS[i], i + 1, 0.78 + i * 0.04, AI_ARCHETYPES[i], AI_DRIVERS[i]);
+      addAICar(ctx, AI_COLORS[i], grid[i + 1], 0.78 + i * 0.04, AI_ARCHETYPES[i], AI_DRIVERS[i], i + 1);
     }
-    ctx.hud.setPosition(1, ctx.cars.length);
+    showGridPositions(ctx);
   } else if (mode === 'two-player') {
     addPlayerCar(ctx, WASD_BINDINGS, playerCar.color, 0, playerCar.id);
     addPlayerCar(ctx, ARROW_BINDINGS, PLAYER2_COLOR, 1, PLAYER2_ARCH);
@@ -579,31 +581,32 @@ function carState() {
 }
 
 function addPlayerCar(ctx, bindings, color, gridIdx, archetype = 'gt') {
+  const playerIdx = ctx.cars.filter(entry => entry.isPlayer).length;
   const car = createCar(ctx.world, ctx.materials, { color, archetype });
   ctx.scene.add(car.visual.root);
   car.visual.wheels.forEach((w) => ctx.scene.add(w));
   const spawn = gridSpawn(ctx.track, gridIdx);
   car.reset(spawn.position, spawn.yaw);
   const input = createInput(bindings);
-  const chase = createChaseCamera(gridIdx === 0 ? ctx.camera : ctx.camera2, {
+  const chase = createChaseCamera(playerIdx === 0 ? ctx.camera : ctx.camera2, {
     hoodForward: archetype === 'hatch' ? 1.25 : 0.25,
   });
   ctx.cars.push({
-    car, color,
+    car, color, gridIdx,
     isPlayer: true,
     input, chase,
     // A player is released on the green itself — their reaction is whatever
     // their own hands do, and adding one on top would just read as input lag.
     reactionS: 0,
     state: carState(),
-    label: gridIdx === 0 ? 'P1' : 'P2',
-    code: ctx.mode === 'two-player' ? (gridIdx === 0 ? 'P1' : 'P2') : 'YOU',
-    name: ctx.mode === 'two-player' ? `Player ${gridIdx + 1}` : 'You',
+    label: playerIdx === 0 ? 'P1' : 'P2',
+    code: ctx.mode === 'two-player' ? (playerIdx === 0 ? 'P1' : 'P2') : 'YOU',
+    name: ctx.mode === 'two-player' ? `Player ${playerIdx + 1}` : 'You',
   });
   ctx.state.perCar.push(ctx.cars[ctx.cars.length - 1]);
 }
 
-function addAICar(ctx, color, gridIdx, skill, archetype = 'gt', driver = null) {
+function addAICar(ctx, color, gridIdx, skill, archetype = 'gt', driver = null, driverIdx = gridIdx) {
   const car = createCar(ctx.world, ctx.materials, { color, archetype });
   ctx.scene.add(car.visual.root);
   car.visual.wheels.forEach((w) => ctx.scene.add(w));
@@ -611,16 +614,23 @@ function addAICar(ctx, color, gridIdx, skill, archetype = 'gt', driver = null) {
   car.reset(spawn.position, spawn.yaw);
   const ai = createAIDriver(ctx.track, { skill });
   ctx.cars.push({
-    car, color,
+    car, color, gridIdx, skill,
     isPlayer: false,
     ai,
-    reactionS: aiReactionS(gridIdx, skill),
+    reactionS: aiReactionS(driverIdx, skill),
     state: carState(),
     label: 'AI',
     code: driver?.code ?? 'AI',
     name: driver?.name ?? 'AI',
   });
   ctx.state.perCar.push(ctx.cars[ctx.cars.length - 1]);
+}
+
+function showGridPositions(ctx) {
+  const sorted = [...ctx.cars].sort((a, b) => a.gridIdx - b.gridIdx);
+  const primary = ctx.cars[ctx.primaryPlayerIdx];
+  ctx.hud.setPosition(sorted.indexOf(primary) + 1, sorted.length);
+  ctx.hud.setStandings(sorted.map(c => ({ name: c.code, color: c.color, isPlayer: c.isPlayer })));
 }
 
 // Height to place a chassis at when it is being put ON the road rather than
@@ -737,11 +747,14 @@ function tick(ctx, dt, now) {
         ctx.hud.flashBanner(muted ? 'SOUND OFF' : 'SOUND ON', 900);
       }
       if (c.input.consumeReset()) {
-        for (const cc of ctx.cars) {
-          const idx = ctx.cars.indexOf(cc);
-          const sp = gridSpawn(ctx.track, idx);
+        const grid = createStartingGrid(ctx.mode, ctx.cars.length);
+        for (const [idx, cc] of ctx.cars.entries()) {
+          cc.gridIdx = grid[idx];
+          const sp = gridSpawn(ctx.track, cc.gridIdx);
           cc.car.reset(sp.position, sp.yaw);
           cc.state = carState();
+          // A new grid must not inherit a previous pass, lane or recovery.
+          if (cc.ai) cc.ai = createAIDriver(ctx.track, { skill: cc.skill });
         }
         ctx.state.finishOrder = [];
         ctx.state.finishShown = false;
@@ -753,6 +766,7 @@ function tick(ctx, dt, now) {
         ctx.hud.setBest(null);
         ctx.hud.setLapTime(0);
         ctx.hud.clearAnnouncements();
+        if (ctx.mode === 'quick-race') showGridPositions(ctx);
         hideFinish();
       }
       if (c.input.consumeRescue()) {
@@ -837,7 +851,9 @@ function tick(ctx, dt, now) {
 
   // Race positions
   if (ctx.mode === 'quick-race') {
-    const sorted = [...ctx.cars].sort((a, b) => b.state.progress - a.state.progress);
+    const sorted = [...ctx.cars].sort(ctx.state.started
+      ? (a, b) => b.state.progress - a.state.progress
+      : (a, b) => a.gridIdx - b.gridIdx);
     const playerPos = sorted.indexOf(primary) + 1;
     ctx.hud.setPosition(playerPos, ctx.cars.length);
     ctx.hud.setStandings(sorted.map((c) => ({ name: c.code, color: c.color, isPlayer: c.isPlayer })));
