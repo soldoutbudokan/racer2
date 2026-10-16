@@ -156,7 +156,9 @@ async function checkBrowser() {
       assert(rivals.every(entry => entry.archetype !== choice.id &&
         expectedChoices.some(choice => choice.id === entry.archetype)), 'rivals draw from the other five cars');
       assert(rivals.every(entry => !entry.isPlayer), 'each rival remains AI controlled');
-      assert.deepEqual(rivals.map(entry => entry.color), [0xfacc15, 0x059669, 0xea580c], 'rival paints stay distinct');
+      assert.deepEqual(rivals.map(entry => entry.color), rivals.map(entry => getCarChoice(entry.archetype).color),
+        'each rival uses its car model\'s paint');
+      assert.equal(new Set(state.cars.map(entry => entry.color)).size, 4, 'the player and rivals have distinct paints');
       assert.deepEqual(rivals.map(({ code, name }) => ({ code, name })), [
         { code: 'MOR', name: 'R. Moreau' }, { code: 'OKA', name: 'T. Okafor' }, { code: 'LIN', name: 'S. Lindqvist' },
       ], 'random cars preserve driver identities');
@@ -392,6 +394,8 @@ async function checkBrowser() {
       assert.deepEqual(run.cars.map(entry => entry.code), ['YOU', 'MOR', 'OKA', 'LIN']);
       assert.deepEqual(run.cars.map(entry => entry.name), ['You', 'R. Moreau', 'T. Okafor', 'S. Lindqvist']);
       assert(run.cars.every(entry => entry.specId === entry.archetype), `${name} gives every rival its matching physics`);
+      assert.deepEqual(run.cars.map(entry => entry.color), run.cars.map(entry => getCarChoice(entry.archetype).color),
+        `${name} gives every car its model's paint`);
       assert.equal(run.position, expected[0] + 1, `${name} shows the actual starting position`);
       assert.equal(run.standing, expected[0] + 1, `${name} standings match the starting grid`);
       assert.equal(run.primaryCameraMoved, true, `${name} follows the player with the primary camera`);
@@ -414,10 +418,12 @@ async function checkBrowser() {
     assert.deepEqual(gridRuns.reset.cars.map(entry => entry.reactionS), gridRuns.restarted.cars.map(entry => entry.reactionS),
       'reaction times stay with each driver across a new grid');
     assert.deepEqual(gridRuns.reset.cars.map(entry => entry.skill), gridRuns.restarted.cars.map(entry => entry.skill));
+    assert.deepEqual(gridRuns.reset.cars.map(entry => entry.color), gridRuns.restarted.cars.map(entry => entry.color),
+      'R preserves each participant\'s paint');
     for (const name of ['restarted', 'reset', 'fresh']) {
-      assert.deepEqual(gridRuns[name].cars.map(({ color, code, name, skill, reactionS }) => ({ color, code, name, skill, reactionS })),
-        gridRuns.started.cars.map(({ color, code, name, skill, reactionS }) => ({ color, code, name, skill, reactionS })),
-        `${name} preserves each driver's paint, identity, skill and reaction time`);
+      assert.deepEqual(gridRuns[name].cars.map(({ code, name, skill, reactionS }) => ({ code, name, skill, reactionS })),
+        gridRuns.started.cars.map(({ code, name, skill, reactionS }) => ({ code, name, skill, reactionS })),
+        `${name} preserves each driver's identity, skill and reaction time`);
     }
     assert.equal(gridRuns.resetFreshAI, true, 'R clears the AI lane and recovery state');
     assert(gridRuns.reset.cars.every(entry => entry.reverseT === 0), 'the reset grid has no inherited reversing state');

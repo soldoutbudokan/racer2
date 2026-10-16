@@ -71,7 +71,6 @@ function lapsFor(mode) {
 const MODE_NAMES = { 'time-trial': 'TIME TRIAL', 'quick-race': 'QUICK RACE', 'two-player': 'TWO PLAYER' };
 
 const PLAYER2_COLOR = 0x1f6cff;
-const AI_COLORS = [0xfacc15, 0x059669, 0xea580c];
 
 // Split-screen keeps Player 2's established car; Quick Race draws its rivals.
 const PLAYER2_ARCH = 'hatch';
@@ -391,7 +390,7 @@ function startMode(ctx, mode) {
     const opponents = createRaceRoster(playerCar.id, AI_DRIVERS.length);
     addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, playerCar.color, grid[0], playerCar.id);
     for (let i = 0; i < opponents.length; i++) {
-      addAICar(ctx, AI_COLORS[i], grid[i + 1], 0.78 + i * 0.04, opponents[i].id, AI_DRIVERS[i], i + 1);
+      addAICar(ctx, opponents[i].color, grid[i + 1], 0.78 + i * 0.04, opponents[i].id, AI_DRIVERS[i], i + 1);
     }
     showGridPositions(ctx);
   } else if (mode === 'two-player') {

@@ -89,7 +89,8 @@ or real-world vehicle specifications.
 
 - **Time trial** — a single flying lap against the clock on an empty track.
 - **Quick race** — you vs. three AI over 3 laps. Each new race and finish-screen
-  restart draws three different opponent cars from the other five models. The
+  restart draws three different opponent cars from the other five models, each
+  in its garage color. The
   starting grid is shuffled independently, giving you an equal chance of P1,
   P2, P3 or P4. Pressing R resets the current field and reshuffles its positions.
 - **Two player** — split-screen, WASD vs. arrows.
