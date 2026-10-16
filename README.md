@@ -64,17 +64,35 @@ the lap.
 
 ## Modes & driving aids
 
-Choose a **GT Coupe**, **Rally Hatch**, or **Open Wheel** car in the menu. Each has
-its own body shape, paint colour and engine sound, and the showroom previews
-your selection. The choice is remembered on this device and used for time
-trials, quick races, restarts and Player 1 in split screen. Player 2 keeps the
-blue rally hatch. All three choices share the same driving performance.
-The rally hatch has a short hood, tall cabin, long roof, upright rear hatch
-and roof spoiler. Existing saved blue-car choices move to this new model.
+Choose from **six cars**, each with its own body, colour, sound and driving
+setup. The showroom compares acceleration, top speed, handling and braking,
+and explains both the strength and the cost of each choice. Your selection is
+remembered and used in time trials, races, restarts and Player 1 in split screen.
+Player 2 uses the rally pickup. Saved choices still work: the previous GT and
+hatch slots now select the Touring Sedan and Rally Pickup.
+
+| Car | Best at | Trade-off |
+| --- | --- | --- |
+| **Touring Sedan** | Stable fast bends and dependable braking | Neither the fastest launch nor the highest top speed |
+| **Rally Pickup** | Launches, mechanical grip and rough-surface recovery | Lowest straight-line speed |
+| **Open Wheel** | High-speed grip and shortest stops | Slow on long straights; punishing off the asphalt |
+| **Classic V8** | Rolling acceleration and high straight-line speed | Heavy turn-in and long braking distances |
+| **Club Roadster** | Quick steering and tight direction changes | Modest power and little high-speed downforce |
+| **Apex Supercar** | Highest top speed | Slower launches, limited grip and longer stops |
+
+The first two cars are entirely new concepts: a four-door performance sedan
+with a separate trunk and a compact rally pickup with an upright cab and open
+cargo bed. The roadster has an open cockpit and twin roll
+hoops; the supercar has a low canopy, rear engine deck and recessed side intakes.
+These are original designs and game-balanced setups, not manufacturer replicas
+or real-world vehicle specifications.
 
 - **Time trial** — a single flying lap against the clock on an empty track.
-- **Quick race** — you vs. three AI over 3 laps. The starting grid is shuffled
-  for each new race and restart, giving you an equal chance of P1, P2, P3 or P4.
+- **Quick race** — you vs. three AI over 3 laps. Each new race and finish-screen
+  restart draws three different opponent cars from the other five models, each
+  in its garage color. The
+  starting grid is shuffled independently, giving you an equal chance of P1,
+  P2, P3 or P4. Pressing R resets the current field and reshuffles its positions.
 - **Two player** — split-screen, WASD vs. arrows.
 
 Single-screen modes show the **perfect-line aid** (toggle with `L`): painted
@@ -111,7 +129,9 @@ validates a layout's corner radii, section gaps and start straight.
 
 ## Driving model
 
-The car is a ~480 hp GT racer simulated on top of a Cannon `RaycastVehicle`:
+Each car uses a Cannon `RaycastVehicle` with its own immutable specification in
+`src/carSpecs.js`. The GT remains the reference setup; the other five change
+weight, torque, gearing, drag, downforce, tyre grip, steering response and brakes:
 
 - **Engine & flywheel** — a real torque curve through a 6-speed automatic with
   shift cuts, engine braking and reverse. The engine has rotating inertia, so
@@ -138,8 +158,9 @@ The car is a ~480 hp GT racer simulated on top of a Cannon `RaycastVehicle`:
   column, so turn-in has weight and full lock at speed means understeer, not
   a magic pivot.
 
-The AI runs the same physics through a pre-computed lap speed profile
-(corner speeds from curvature, anticipatory braking), pure-pursuit steering
+The AI runs the same per-car physics through a pre-computed lap speed profile
+(corner speeds from curvature and the selected car’s grip/aero, anticipatory
+braking from its brakes), pure-pursuit steering
 and stuck-recovery. In traffic a driver picks a clear lane past a slower car,
 checks it for cars alongside or closing from behind, and holds it until it is
 clear ahead. Gaps are measured along the track, so a car just over the start
@@ -155,8 +176,9 @@ samples to download. The engine note is the harmonic stack of a crankshaft
 turning at the flywheel's real RPM, so it flares with wheelspin, collapses
 through a shift cut and pops on the overrun; the throttle opens a filter the
 way a throttle opens an exhaust. Each body shape has its own character (a
-flat-plane V8 for the GT, a four-cylinder for the rally hatch, a cross-plane
-burble for the AI muscle car, a V10 for the open-wheeler). Tyres squeal from
+flat-plane V8 for the touring sedan, a four-cylinder for the rally pickup, a cross-plane
+burble for the classic V8, a V10 for the open-wheeler, a lighter four-cylinder
+roadster and a smooth V12 supercar). Tyres squeal from
 the physics' own per-wheel slide, the
 surface under the car hisses (grass), crunches (gravel) or rumbles at the
 rib rate (kerbs), wind builds with speed, and the chassis thumps on contact.
@@ -193,14 +215,12 @@ pass. `M` mutes; the choice is remembered.
   and hoodoos. Each circuit is a data
   definition; everything is parented to a disposable group so switching
   circuits tears down and rebuilds cleanly.
-- **Cars**: procedurally lofted bodies (GT coupe, rally hatch, AI muscle,
-  open-wheeler) sampled at 43 columns per section and 12 rings per station,
-  with rolled bumper edges instead of flat end walls, crowned hoods, roofs and
-  decks, noses that fall continuously into a low bumper face (GT, hatch),
-  lamps cut into the fender corners as real apertures with recessed housings,
-  lit elements and flush lenses, clear-coated paint, cut-out wheel arches with
-  painted returns, open window apertures with visible cabins, 48-segment
-  tyres and distinct alloy wheels — merged into material batches per car.
+- **Cars**: six procedural bodies with distinct silhouettes: four-door sedan,
+  rally pickup, single-seater, classic V8, open roadster and mid-engine supercar.
+  Each has clear-coated paint, fitted lamps, cut-out wheel arches and its own
+  cabin and body details. The pickup has a separate open bed; the sedan has
+  divided side windows and a short trunk. Detailed tyres and alloy wheels are
+  shared efficiently, with body details merged into material batches per car.
 - **Frame pacing**: the simulation steps at a fixed 120 Hz; every car is drawn
   interpolated between its last two steps, and the chase camera and shadow
   frustum follow that drawn pose, so a 60, 120 or 144 Hz display all see
@@ -254,7 +274,7 @@ the local Playwright install, and need `npm run dev` running first.
 `node scripts/world-audit.mjs` builds all six worlds and checks road winding,
 finite geometry, scenery clearance, resource budgets and complete disposal.
 The visual CI job captures every circuit before and after the change, plus
-all four car bodies from matching cameras. See `docs/VISUAL_AUDIT.md` for
+all six car bodies from matching cameras. See `docs/VISUAL_AUDIT.md` for
 the per-circuit findings and remaining limitations.
 
 `node scripts/graphics-test.mjs` checks render budgets, adaptation and tree
@@ -268,7 +288,9 @@ Timing uses software rendering in CI and is not a hardware FPS promise.
 `node scripts/car-selection-test.mjs` checks car previews, saved choices,
 keyboard selection, all race modes and restarts in Chromium. Use `--unit`
 to check choice validation and storage fallbacks without a browser.
-`node scripts/car-shapes.mjs` renders the GT and rally hatch in identical paint
+`node scripts/race-roster-test.mjs` exhaustively checks equally likely rival
+lineups, distinct opponent models and independence from the starting grid.
+`node scripts/car-shapes.mjs` renders all registered cars in identical paint
 from the side, front and rear so shape differences can be reviewed directly.
 
 `node scripts/ai-test.mjs` laps every circuit and runs the passing, queueing
@@ -279,3 +301,15 @@ to run one, for example `node scripts/ai-test.mjs gp`.
 The **Verify game** pull-request workflow runs these checks, the driving-model
 suite, the AI traffic suite, car geometry checks and a production build.
 Screenshots and render measurements are attached as a workflow artifact.
+
+## Car balance checks
+
+Run `node scripts/car-balance-test.mjs` (or add `--all-tracks` to cover every
+circuit) to measure the actual simulation on
+a flat road: 0–100 km/h, 80–160 km/h, terminal speed, 100–0 km/h stopping
+distance, turn-in response, fast-corner grip and rough-surface recovery. The
+suite checks meaningful differences and rejects a car that beats another in
+every measured discipline. It also exercises each setup on a full circuit and
+checks that the driving aid changes its recommendations with the selected car.
+The comparison ratings describe relative strengths within this field; they are
+not manufacturer performance claims.

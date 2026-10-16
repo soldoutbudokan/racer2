@@ -4,6 +4,7 @@ import { createScene } from './scene.js';
 import { createGarage } from './garage.js';
 import { initCarSelector } from './carSelection.js';
 import { createStartingGrid } from './grid.js';
+import { createRaceRoster } from './raceRoster.js';
 import { createPhysicsWorld } from './physics.js';
 import { createTrack } from './track.js';
 import { TRACKS, DEFAULT_TRACK_ID, getTrackById } from './tracks.js';
@@ -70,11 +71,9 @@ function lapsFor(mode) {
 const MODE_NAMES = { 'time-trial': 'TIME TRIAL', 'quick-race': 'QUICK RACE', 'two-player': 'TWO PLAYER' };
 
 const PLAYER2_COLOR = 0x1f6cff;
-const AI_COLORS = [0xfacc15, 0x059669, 0xea580c];
 
-// Visually distinct body shapes across the grid.
+// Split-screen keeps Player 2's established car; Quick Race draws its rivals.
 const PLAYER2_ARCH = 'hatch';
-const AI_ARCHETYPES = ['open-wheel', 'gt', 'muscle'];
 // Who the rivals are, for the timing tower and the results.
 const AI_DRIVERS = [
   { code: 'MOR', name: 'R. Moreau' },
@@ -386,9 +385,12 @@ function startMode(ctx, mode) {
     ctx.hud.hidePosition();
   } else if (mode === 'quick-race') {
     const grid = createStartingGrid(mode, 4);
+    // Draw before constructing any meshes, whose UUIDs also use randomness.
+    // A fresh race gets new cars; the R-key reset keeps this roster intact.
+    const opponents = createRaceRoster(playerCar.id, AI_DRIVERS.length);
     addPlayerCar(ctx, SINGLE_PLAYER_BINDINGS, playerCar.color, grid[0], playerCar.id);
-    for (let i = 0; i < 3; i++) {
-      addAICar(ctx, AI_COLORS[i], grid[i + 1], 0.78 + i * 0.04, AI_ARCHETYPES[i], AI_DRIVERS[i], i + 1);
+    for (let i = 0; i < opponents.length; i++) {
+      addAICar(ctx, opponents[i].color, grid[i + 1], 0.78 + i * 0.04, opponents[i].id, AI_DRIVERS[i], i + 1);
     }
     showGridPositions(ctx);
   } else if (mode === 'two-player') {
@@ -399,6 +401,7 @@ function startMode(ctx, mode) {
 
   // The perfect-line aid is for single-screen modes; in split-screen its
   // colours could only be right for one of the two players.
+  ctx.racingLine.setCarSpec(ctx.cars[ctx.primaryPlayerIdx].car.spec);
   ctx.lineAid = mode !== 'two-player';
   ctx.racingLine.setVisible(ctx.lineAid);
   if (!ctx.lineAid) ctx.hud.hidePace();

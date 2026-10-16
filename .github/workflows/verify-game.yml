@@ -23,7 +23,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: node scripts/graphics-test.mjs && node scripts/smoke-car.mjs && node scripts/grid-test.mjs
+      - run: node scripts/graphics-test.mjs && node scripts/smoke-car.mjs && node scripts/grid-test.mjs && node scripts/race-roster-test.mjs
       - name: Complete world geometry and resource audit
         if: matrix.check == 'visual'
         run: |
@@ -32,6 +32,9 @@ jobs:
       - name: AI laps and traffic regression suite
         if: matrix.check == 'physics'
         run: node scripts/ai-test.mjs
+      - name: Six-car performance and balance regression suite
+        if: matrix.check == 'physics'
+        run: node scripts/car-balance-test.mjs
       - run: npx playwright-core install --with-deps chromium
       - name: Start game
         run: |
@@ -55,6 +58,25 @@ jobs:
         run: |
           GAME_URL=http://localhost:5174/ QA_DIR=qa/before/cars node scripts/car-shapes.mjs
           QA_DIR=qa/after/cars node scripts/car-shapes.mjs
+      - name: Upload car design review
+        if: matrix.check == 'visual'
+        uses: actions/upload-artifact@v4
+        with:
+          name: racer2-car-design-review
+          path: |
+            qa/before/cars/
+            qa/after/cars/
+          retention-days: 14
+      - name: Car selection regression suite
+        if: matrix.check == 'visual'
+        run: node scripts/car-selection-test.mjs
+      - name: Upload car selection review
+        if: always() && matrix.check == 'visual'
+        uses: actions/upload-artifact@v4
+        with:
+          name: racer2-car-selection-review
+          path: qa/car-*.png
+          retention-days: 14
       - name: All-circuit before and after comparison
         if: matrix.check == 'visual'
         run: |
@@ -65,9 +87,6 @@ jobs:
         env:
           BASELINE_URL: http://localhost:5174/
         run: node scripts/browser-check.mjs
-      - name: Car selection regression suite
-        if: matrix.check == 'visual'
-        run: node scripts/car-selection-test.mjs
       - uses: actions/upload-artifact@v4
         if: always() && matrix.check == 'visual'
         with:

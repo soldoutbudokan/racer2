@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { hideFromOverridePasses } from './scenery/noise.js';
+import { getCarSpec, getCarPerformance, getCornerSpeed } from './carSpecs.js';
 
 /**
  * "Perfect line" driving aid: a ribbon drawn along the ideal racing line (the
@@ -14,21 +15,6 @@ import { hideFromOverridePasses } from './scenery/noise.js';
  * acceleration pass so the aid never demands speed the car cannot actually
  * build out of a corner.
  */
-
-// Reference car performance, calibrated against the measured behaviour of the
-// player car (SPEC in car.js, measured by scripts/physics-test.mjs):
-// lateral grip μ·g ≈ 14.2 m/s² (planned at 13 to leave a working margin),
-// straight-line braking measured ≈ 15 m/s² with downforce (planned at 10 so
-// the brake warning comes comfortably early), top speed ≈ 256 km/h, and the
-// wheel power that reproduces the measured acceleration curve.
-const A_LAT = 13.0;            // m/s² usable lateral acceleration
-const A_BRAKE = 10.0;          // m/s² planning deceleration
-const A_ACCEL_CAP = 7.5;       // m/s² traction-limited launch cap
-const V_MAX = 71;              // m/s drag-limited top speed
-const P_WHEELS = 215e3;        // W effective at the wheels
-const MASS = 1350;             // kg
-const HALF_RHO_CDA = 0.5 * 1.225 * 0.92;
-const ROLL_DRAG = 0.014 * MASS * 9.82;
 
 const LINE_WIDTH = 0.8;
 const LIFT = 0.045;            // above road (0.01) / edge lines (0.016) / skids (0.018)
@@ -133,27 +119,35 @@ export function createRacingLine(scene, track) {
 
   // --- Ideal speed profile (m/s per frame) ---
   const profile = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    profile[i] = Math.min(V_MAX, Math.sqrt(A_LAT / Math.max(1e-4, kSmooth[i])));
-  }
-  // Anticipatory braking: vᵢ ≤ √(vᵢ₊₁² + 2·a·ds). Two passes handle the wrap.
-  for (let pass = 0; pass < 2; pass++) {
-    for (let i = n - 1; i >= 0; i--) {
-      const next = profile[(i + 1) % n];
-      const cap = Math.sqrt(next * next + 2 * A_BRAKE * ds[i]);
-      if (profile[i] > cap) profile[i] = cap;
-    }
-  }
-  // Reachability: vᵢ₊₁ ≤ √(vᵢ² + 2·a(v)·ds) with engine/drag-limited a(v).
-  const accelAt = (v) => Math.min(A_ACCEL_CAP, Math.max(0,
-    (P_WHEELS / Math.max(8, v) - HALF_RHO_CDA * v * v - ROLL_DRAG) / MASS));
-  for (let pass = 0; pass < 2; pass++) {
+  let currentSpec;
+  function setCarSpec(spec = getCarSpec()) {
+    if (currentSpec === spec) return;
+    currentSpec = spec;
+    const { aLat, aBrake, aAccel, vMax, wheelPower, mass,
+      halfRhoCdA, rollingDrag } = getCarPerformance(spec);
     for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
-      const cap = Math.sqrt(profile[i] * profile[i] + 2 * accelAt(profile[i]) * ds[i]);
-      if (profile[j] > cap) profile[j] = cap;
+      profile[i] = Math.min(vMax, getCornerSpeed(spec, kSmooth[i], aLat));
+    }
+    // Braking begins earlier in heavier cars with weaker brakes.
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = n - 1; i >= 0; i--) {
+        const next = profile[(i + 1) % n];
+        profile[i] = Math.min(profile[i], Math.sqrt(next * next + 2 * aBrake * ds[i]));
+      }
+    }
+    // Reachability keeps the line's acceleration demand inside this engine's
+    // power, tyre and aerodynamic limits, including exits from slow corners.
+    const accelAt = v => Math.min(aAccel, Math.max(0,
+      (wheelPower / Math.max(8, v) - halfRhoCdA * v * v - rollingDrag) / mass));
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        profile[j] = Math.min(profile[j], Math.sqrt(
+          profile[i] * profile[i] + 2 * accelAt(profile[i]) * ds[i]));
+      }
     }
   }
+  setCarSpec();
 
   // --- Ribbon mesh: two vertices per frame, dynamic colours ---
   // The first frame is repeated at the end with the full lap length, so the
@@ -259,5 +253,5 @@ export function createRacingLine(scene, track) {
     mesh.material.dispose();
   }
 
-  return { profile, update, setVisible, mesh, dispose };
+  return { profile, update, setVisible, setCarSpec, mesh, dispose };
 }

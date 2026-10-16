@@ -19,9 +19,10 @@ try {
   page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
   await page.goto(process.env.GAME_URL || 'http://localhost:5173/');
   await page.waitForFunction(() => window.__ctx?.selectedCar, null, { timeout: 120000 });
-  await page.evaluate(async () => {
+  const reviewedCars = await page.evaluate(async () => {
     const THREE = window.__THREE;
-    const { buildVisualCar } = await import('/src/carModels/index.js');
+    const { buildVisualCar, ARCHETYPE_KEYS } = await import('/src/carModels/index.js');
+    const { CAR_CHOICES } = await import('/src/carSelection.js');
     const { STATIC_CHASSIS_HEIGHT, WHEEL_RADIUS } = await import('/src/stance.js');
     const { renderer, scene: gameScene } = window.__ctx;
     renderer.setPixelRatio(1);
@@ -41,8 +42,12 @@ try {
     document.body.appendChild(sheet);
     const silhouette = new THREE.MeshBasicMaterial({ color: 0xd9e1e6 });
     const views = [['Silhouette', [9, 1.0, 0]], ['Side', [9, 1.0, 0]], ['Front quarter', [6, 2.8, 7]], ['Rear quarter', [6, 2.8, -7]]];
-    const labels = ['GT COUPE', 'RALLY HATCH', 'MUSCLE', 'OPEN WHEEL'];
-    const cars = ['gt', 'hatch', 'muscle', 'open-wheel'].map(id => buildVisualCar(id, 0x71828b));
+    // Use the page's registry, not the current checkout's new ids: CI also
+    // runs this harness against the base revision, which has only four models.
+    const ids = [...CAR_CHOICES.map(choice => choice.id), ...ARCHETYPE_KEYS]
+      .filter((id, index, all) => ARCHETYPE_KEYS.includes(id) && all.indexOf(id) === index);
+    const labels = ids.map(id => (CAR_CHOICES.find(choice => choice.id === id)?.name || id.replaceAll('-', ' ')).toUpperCase());
+    const cars = ids.map(id => buildVisualCar(id, 0x71828b));
     for (const [label, position] of views) {
       scene.overrideMaterial = label === 'Silhouette' ? silhouette : null;
       for (const [index, car] of cars.entries()) {
@@ -67,10 +72,11 @@ try {
     }
     cars.forEach(car => car.dispose());
     silhouette.dispose();
+    return ids;
   });
   await page.locator('#car-shape-review').screenshot({ path: `${out}/car-shapes-same-paint.png` });
   assert.deepEqual(errors, [], 'shape comparison renders without browser errors');
-  console.log('PASS: all four cars rendered in identical paint from side, front and rear');
+  console.log(`PASS: all ${reviewedCars.length} cars rendered in identical paint from side, front and rear (${reviewedCars.join(', ')})`);
 } finally {
   await browser.close();
 }
