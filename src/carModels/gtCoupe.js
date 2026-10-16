@@ -5,312 +5,122 @@ import {
 import { makeGlass, makeShutline, makeTrim } from './carMaterials.js';
 import { buildApertureLamps } from './apertureLamps.js';
 import {
-  buildTaillights, buildMirrors, buildGrille, buildSplitter,
-  buildDiffuser, buildWing, buildExhaust, buildBadgesAndPlate, buildUnderbody,
-  buildArchLiners, buildInterior, buildDoorFurniture, buildBodyVents, buildWipers,
-  buildTowEye, buildAerial,
+  buildTaillights, buildMirrors, buildGrille, buildDiffuser, buildExhaust,
+  buildBadgesAndPlate, buildUnderbody, buildArchLiners, buildInterior,
+  buildDoorFurniture, buildWipers,
 } from './parts.js';
 
-// GT coupe — mid-engined supercar: cab-forward fastback, blistered wheel
-// arches, a deep inset rocker and a blunt bumper-height fascia.
-//
-// Authored in the AXLE-CENTRED frame: wheel centre = y 0, wheel radius 0.36
-// (so ground = -0.36), axles at z +/-1.45, tyre outer face at x 1.00.
-//
-// SHAPE RULES THIS TABLE OBEYS (they are not style choices — breaking one
-// produces a specific artefact that has bitten this car before):
-//
-//  * `hip` is the BELTLINE, not a low rubbing strip. It is the widest point of
-//    the section and IDX.shoulder is always a tangent break, so hip is where
-//    the shoulder crease runs. It used to sit at y 0.05-0.16, which put the
-//    body's widest line at ankle height and left the whole flank above it as
-//    one melted tumblehome — the "soap bar" read — and it also meant the
-//    greenhouse's belt fraction landed halfway down the door, which is why the
-//    old canopy swallowed the entire upper body.
-//  * Wheel openings are cut from the finished loft by wheelWells.js. The
-//    authored flank stays close to the tyre's outer face so the painted
-//    returns meet the liners without an oversized fender overhang.
-//  * The arch blister has to span the whole arch mouth (z +/-0.33 either side
-//    of the axle), not just the axle station, or the arch liner's rolled lip
-//    pokes outboard of the body and reads as a black crescent painted on the
-//    fender (the 2026-07-15 regression).
-//  * Nose: the hood falls continuously from the axle to a LOW bumper face —
-//    yt drops 0.455 -> 0.090 over the last 58 cm with no crease across the
-//    body — and only the lower bumper is a flat cap (z 2.36, 23 cm tall,
-//    rolled round its edge). The lamps do not sit on that cap: they are cut
-//    into the fender corners as apertures (LAMP_PANES below) with recessed
-//    housings behind them. The old nose ended in a 48 cm vertical wall with
-//    the lamp housings standing on it, which is the single thing that made
-//    the car read as a brick from every angle that mattered.
+// A grand tourer inspired by British front-engine coupes: a long, crowned
+// bonnet, rearward cabin and rounded rear haunches. The continuous roof and
+// restrained trim leave the painted silhouette readable at racing distance.
+// Axle-centred coordinates: hubs y=0, z=+/-1.45; tyre radius 0.36.
 export const keys = [
-  // z,      hw,     yb,     hip,   yt,    topW  + surface features
-  { z: -2.20, hw: 0.840, yb: -0.100, hip: 0.300, yt: 0.455, topW: 0.62, hard: true,
-    crown: 0.005 },
-  { z: -2.00, hw: 0.930, yb: -0.075, hip: 0.375, yt: 0.505, topW: 0.76,
-    crease: 0.007, creaseY: 0.78, crown: 0.007 },
-  { z: -1.76, hw: 0.960, yb: -0.040, hip: 0.445, yt: 0.545, topW: 0.85,
-    flare: 0.060, lipY: 0.70, crease: 0.011, creaseY: 0.80, sill: 0.010, crown: 0.009 },
-  { z: -1.45, hw: 0.965, yb:  0.050, hip: 0.465, yt: 0.585, topW: 0.86,
-    flare: 0.075, lipY: 0.715, crease: 0.010, creaseY: 0.79, crown: 0.010 },   // rear axle
-  { z: -1.14, hw: 0.970, yb: -0.095, hip: 0.465, yt: 0.720, topW: 0.80,
-    flare: 0.062, lipY: 0.66, sill: 0.022, crease: 0.011, creaseY: 0.755, crown: 0.012 },
-  // Roof: only its two ENDS are authored. Catmull carries the crown between
-  // them to y ~0.865 at z -0.32 on its own, so a third mid-roof station would
-  // cost 756 triangles to restate a curve the loft already draws.
-  { z: -0.80, hw: 0.962, yb: -0.180, hip: 0.455, yt: 0.840, topW: 0.72,
-    sill: 0.032, crease: 0.011, creaseY: 0.795, tuck: 0.30, crown: 0.016 },    // C-pillar top
-  { z:  0.16, hw: 0.958, yb: -0.195, hip: 0.445, yt: 0.850, topW: 0.70,
-    sill: 0.034, crease: 0.011, creaseY: 0.818, tuck: 0.31, crown: 0.016 },    // header rail
-  { z:  0.50, hw: 0.965, yb: -0.175, hip: 0.438, yt: 0.650, topW: 0.75,
-    sill: 0.030, crease: 0.011, creaseY: 0.823, tuck: 0.30, crown: 0.012 },    // cowl
-  { z:  1.12, hw: 0.968, yb: -0.070, hip: 0.440, yt: 0.515, topW: 0.83,
-    flare: 0.060, lipY: 0.66, sill: 0.012, crease: 0.010, creaseY: 0.82, crown: 0.013 },
-  { z:  1.45, hw: 0.960, yb:  0.050, hip: 0.450, yt: 0.495, topW: 0.85,
-    flare: 0.068, lipY: 0.72, crease: 0.009, creaseY: 0.80, crown: 0.014 },    // front axle
-  { z:  1.78, hw: 0.955, yb: -0.055, hip: 0.420, yt: 0.455, topW: 0.84,
-    flare: 0.055, lipY: 0.68, crease: 0.009, creaseY: 0.81, crown: 0.013 },
-  // The nose: four stations on one continuous curve down to the bumper. The
-  // lamps live in the fender corners between z 2.03 and 2.30 (LAMP_PANES).
-  { z:  2.08, hw: 0.940, yb: -0.140, hip: 0.335, yt: 0.395, topW: 0.80,
-    crease: 0.005, creaseY: 0.83, crown: 0.010 },
-  { z:  2.22, hw: 0.905, yb: -0.150, hip: 0.245, yt: 0.305, topW: 0.75, crown: 0.007 },
-  { z:  2.31, hw: 0.845, yb: -0.150, hip: 0.135, yt: 0.195, topW: 0.68, crown: 0.005 },
-  { z:  2.36, hw: 0.760, yb: -0.145, hip: 0.030, yt: 0.090, topW: 0.60, hard: true,
-    crown: 0.003 },                                                            // bumper face
+  { z: -2.22, hw: 0.810, yb: -0.120, hip: 0.275, yt: 0.420, topW: 0.62, hard: true, crown: 0.010 },
+  { z: -2.03, hw: 0.920, yb: -0.095, hip: 0.390, yt: 0.520, topW: 0.77, crown: 0.016 },
+  { z: -1.77, hw: 0.966, yb: -0.040, hip: 0.460, yt: 0.590, topW: 0.85,
+    flare: 0.045, lipY: 0.72, crease: 0.006, crown: 0.020 },
+  { z: -1.45, hw: 0.975, yb: 0.045, hip: 0.495, yt: 0.660, topW: 0.85,
+    flare: 0.055, lipY: 0.72, crease: 0.006, crown: 0.022 },
+  { z: -1.12, hw: 0.964, yb: -0.090, hip: 0.490, yt: 0.845, topW: 0.75,
+    flare: 0.042, lipY: 0.70, sill: 0.018, crease: 0.006, crown: 0.025 },
+  { z: -0.73, hw: 0.948, yb: -0.185, hip: 0.475, yt: 1.005, topW: 0.68,
+    sill: 0.026, crease: 0.006, tuck: 0.30, crown: 0.030 },
+  { z: -0.15, hw: 0.940, yb: -0.190, hip: 0.470, yt: 1.030, topW: 0.67,
+    sill: 0.026, crease: 0.006, tuck: 0.30, crown: 0.030 },
+  { z: 0.21, hw: 0.943, yb: -0.185, hip: 0.467, yt: 0.960, topW: 0.70,
+    sill: 0.025, crease: 0.006, tuck: 0.30, crown: 0.025 },
+  { z: 0.60, hw: 0.952, yb: -0.155, hip: 0.460, yt: 0.645, topW: 0.80,
+    sill: 0.023, crease: 0.006, crown: 0.022 },
+  { z: 1.12, hw: 0.962, yb: -0.065, hip: 0.470, yt: 0.575, topW: 0.83,
+    flare: 0.048, lipY: 0.69, sill: 0.010, crease: 0.006, crown: 0.026 },
+  { z: 1.45, hw: 0.965, yb: 0.045, hip: 0.485, yt: 0.565, topW: 0.85,
+    flare: 0.053, lipY: 0.72, crease: 0.006, crown: 0.028 },
+  { z: 1.78, hw: 0.954, yb: -0.055, hip: 0.445, yt: 0.520, topW: 0.83,
+    flare: 0.045, lipY: 0.70, crease: 0.005, crown: 0.025 },
+  { z: 2.06, hw: 0.920, yb: -0.135, hip: 0.355, yt: 0.440, topW: 0.78, crown: 0.018 },
+  { z: 2.24, hw: 0.860, yb: -0.145, hip: 0.245, yt: 0.320, topW: 0.70, crown: 0.012 },
+  { z: 2.35, hw: 0.755, yb: -0.140, hip: 0.130, yt: 0.200, topW: 0.60, hard: true, crown: 0.005 },
 ];
 
-// Bumper edge radii (loftBuilder capRoll). The end stations above describe
-// the fascia OUTLINE; the roll turns the skin round into it so the nose and
-// tail are bumpers rather than walls. The cap plane itself does not move,
-// so a part on it sits at the cap's z — just inboard of the inset outline.
-export const CAP_ROLL = { nose: 0.040, tail: 0.060 };
-
+export const CAP_ROLL = { nose: 0.055, tail: 0.065 };
 export const wheelStyle = 'gt';
-
-// Named landmark fractions of THIS car's cross-section. Every seam path,
-// glazing edge and seal below is authored against these — the old hard-coded
-// 0.27/0.53/0.60/0.80 were the LEGACY 16-point profile's landmarks and are
-// meaningless now that the surfaced profile has its own 22-point ladder. Stale
-// numbers here put a door cut through the middle of a window.
 const F = profileFractions(keys);
 
-// ---------------------------------------------------------------------------
-// Glazing. A real glasshouse, not a canopy: separate windshield, side glass
-// and backlight, each its own pane, with PAINTED structure between them.
-//
-// The side pane stops at F.topCorner (the roof rail), which is what leaves the
-// crown between the rails painted — the fix for the panoramic-glass-roof
-// Backlog item. The GT keeps one modest glass roof PANEL inboard of the rails
-// (F.crownEdge -> over the crown), which is a panel with a rubber surround, not
-// a bubble canopy.
-//
-// The windshield and backlight start at F.tumble rather than the glass sill:
-// a crown-crossing pane holds one fraction for its whole z range, so taking it
-// down to the sill would wrap the windshield back along the beltline and leave
-// no A-pillar to speak of. F.tumble puts their lower corners partway down the
-// tumblehome, exactly where a wrapped screen ends.
 const GLASS_PANES = [
-  { zStart: 0.50, zEnd: 0.20, beltFrac: F.tumble, topFrac: 1.0, steps: 8 },   // windshield
-  //                          z 0.20 -> 0.10 stays painted: the A-pillar/header
-  { zStart: 0.10, zEnd: -1.00, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 18 },
-  //                          z -1.00 -> -1.12 stays painted: the C-pillar
-  { zStart: -1.12, zEnd: -1.48, beltFrac: F.tumble, topFrac: 1.0, steps: 9 },  // backlight
-  { zStart: -0.70, zEnd: -0.14, beltFrac: F.crownEdge, topFrac: 1.0, steps: 9 }, // roof panel
+  { zStart: 0.575, zEnd: 0.255, beltFrac: F.tumble, topFrac: 1, steps: 10 },
+  { zStart: 0.140, zEnd: -0.965, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 18 },
+  { zStart: -1.085, zEnd: -1.560, beltFrac: F.tumble, topFrac: 1, steps: 12 },
 ];
-
-// Lamp apertures: slim openings wrapped over each fender corner, from just
-// above the beltline crease to the top corner, so the lamps are IN the
-// bodywork. The front pair runs down the falling nose and reads as the swept
-// DRL signature of a modern mid-engined car; the rear pair wraps the deck
-// corners above the tail cap. Both stop short of the bumper rolls.
-const HEADLAMP_PANES = [
-  { zStart: 2.30, zEnd: 2.03, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 9, side: 1 },
-  { zStart: 2.30, zEnd: 2.03, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 9, side: -1 },
-];
-const TAILLAMP_PANES = [
-  { zStart: -1.97, zEnd: -2.13, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 6, side: 1 },
-  { zStart: -1.97, zEnd: -2.13, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 6, side: -1 },
-];
-// Every opening the hull has to be cut for (index.js hands this to the loft).
+const HEADLAMP_PANES = [-1, 1].map(side => ({
+  zStart: 2.275, zEnd: 2.025, beltFrac: F.beltTuck, topFrac: F.crownEdge, steps: 10, side,
+}));
+const TAILLAMP_PANES = [-1, 1].map(side => ({
+  zStart: -1.995, zEnd: -2.155, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 6, side,
+}));
 export const PANES = [...GLASS_PANES, ...HEADLAMP_PANES, ...TAILLAMP_PANES];
 
-// Panel structure. Paths are (z, profile-fraction) waypoints on the skin.
 const SHUT_LINES = [
-  // Hood: cowl edge, leading edge just behind the z 2.08 fascia crease, and
-  // the fender seam down each flank at the top corner of the section.
-  { path: [[0.60, F.topCorner], [0.60, 1.00], [0.60, -F.topCorner]] },
-  { path: [[2.02, F.topCorner], [2.02, 1.00], [2.02, -F.topCorner]] },
-  { path: [[0.62, F.topCorner], [2.02, F.topCorner]], mirror: true },
-  // Door: one closed loop per side. Top edge on the shoulder crease (the belt),
-  // bottom edge on the rocker step, so the loop reads as a door under a window
-  // rather than a rectangle floating in the middle of the flank. Kept one
-  // profile index below F.beltTuck so it cannot collide with the window seal,
-  // which is centred exactly on the glass sill.
-  {
-    path: [[0.62, F.sillLip], [0.62, F.shoulder], [-0.78, F.shoulder],
-      [-0.78, F.sillLip], [0.62, F.sillLip]],
-    mirror: true,
-  },
-  // Engine/boot deck, behind the backlight and clear of the wing posts
-  // (which straddle z -1.89..-1.79).
-  { path: [[-1.56, F.topCorner], [-1.56, 1.00], [-1.56, -F.topCorner]] },
-  { path: [[-2.02, F.topCorner], [-2.02, 1.00], [-2.02, -F.topCorner]] },
-  { path: [[-1.56, F.topCorner], [-2.02, F.topCorner]], mirror: true },
+  { path: [[0.665, F.topCorner], [0.665, 1], [0.665, -F.topCorner]] },
+  { path: [[1.980, F.topCorner], [1.980, 1], [1.980, -F.topCorner]] },
+  { path: [[0.665, F.topCorner], [1.980, F.topCorner]], mirror: true },
+  { path: [[0.625, F.sillLip], [0.625, F.shoulder], [-0.850, F.shoulder],
+    [-0.850, F.sillLip], [0.625, F.sillLip]], mirror: true },
+  { path: [[-1.650, F.topCorner], [-1.650, 1], [-1.650, -F.topCorner]] },
+  { path: [[-1.650, F.topCorner], [-2.020, F.topCorner]], mirror: true },
 ];
 
-// parts.js builds every side-facing recess (door handles, fender gills, side
-// intakes) as a group yawed by `-sx * PI/2`. Three.js maps local +z to
-// (sin(theta), 0, cos(theta)), so that yaw points the opening's mouth INBOARD
-// on both flanks and the whole recess ends up buried inside the shell. Flip the
-// quarter-turns back until parts.js is fixed; every other rotation in those
-// builders is a half-turn or a small yaw and is left alone. (Cylindrical parts
-// that legitimately use a quarter-turn — the fuel flap ring — are symmetric
-// about their own axis, so flipping them is a no-op.)
+// The shared side recesses face inward; turn only their quarter-turn groups.
 function faceOutboard(group) {
-  group.traverse((o) => {
+  group.traverse(o => {
     if (Math.abs(Math.abs(o.rotation.y) - Math.PI / 2) < 1e-6) o.rotation.y = -o.rotation.y;
   });
   return group;
 }
 
 export function decorate(body, ctx) {
-  const glass = new THREE.Mesh(buildGreenhouseShell(keys, { panes: GLASS_PANES }), makeGlass());
-  body.add(glass);
+  body.add(new THREE.Mesh(buildGreenhouseShell(keys, { panes: GLASS_PANES }), makeGlass()));
+  const seals = buildWindowSeals(keys, { panes: GLASS_PANES, width: 0.011 });
+  if (seals) body.add(new THREE.Mesh(seals, makeTrim()));
+  const shut = buildPanelSeams(keys, SHUT_LINES);
+  if (shut) body.add(new THREE.Mesh(shut, makeShutline()));
 
-  // Rubber weatherstrip around every pane. This is what makes the glazing read
-  // as glazing: a hard shadowed border, and it hides the belt/rail edge where
-  // glass meets paint. It also replaces the old body-coloured pillar ribbon,
-  // which — laid on top of a canopy that covered the whole cabin — was the
-  // "red spider web over a bubble" read.
-  const seals = buildWindowSeals(keys, { panes: GLASS_PANES });
-  if (seals) {
-    const m = new THREE.Mesh(seals, makeTrim());
-    m.receiveShadow = true;
-    body.add(m);
-  }
-
-  // ---- Lamps in the fender apertures (see apertureLamps.js). The tail
-  // blade is baked into the pulsed brake mesh with the cap cluster below.
   const lamps = buildApertureLamps(keys, F, {
-    head: HEADLAMP_PANES, tail: TAILLAMP_PANES, projectorZ: [2.24, 2.13],
+    head: HEADLAMP_PANES, tail: TAILLAMP_PANES, projectorZ: [2.20, 2.10],
   });
   body.add(lamps.group);
-
-  const shut = buildPanelSeams(keys, SHUT_LINES);
-  if (shut) {
-    const m = new THREE.Mesh(shut, makeShutline());
-    m.receiveShadow = true;      // no castShadow: 10 mm ribbons only self-shadow
-    body.add(m);
-  }
-
-  // ---- Fascia parts. The hull's nose cap is a plane at z 2.27 spanning
-  // y -0.16..0.325 (half-width ~0.81 at bumper height), the tail cap a plane at
-  // z -2.20 spanning y -0.10..0.455. Recessed parts are placed ON those planes:
-  // addOpening builds its floor 10 mm out and its rim `depth` out, so the group
-  // origin belongs on the skin, never behind it (behind it the opaque cap plane
-  // occludes the whole recess).
-  //
-  // THE CAP IS A WALL, NOT A CURVE. Every number here follows from that:
-  //  * `z` is the cap plane exactly (2.270), not 5 mm in front of it. The
-  //    housing then stands `depth` proud and nothing more.
-  //  * `depth` is 35 mm, not 70. The old 70 mm housing plus yaw reached z 2.372
-  //    — a full 100 mm of tub hanging off a flat slab, which is the
-  //    "bolted-on box" read this file's own risk note anticipated. It was
-  //    survivable while the nose still curved forward past the lamp; it is not
-  //    now that the nose terminates in a wall.
-  //  * `x` is 0.550, so the top-outer corner of the bezel (0.550 + width/2 +
-  //    lipT = 0.773) stays inside the cap outline, which has already pulled in
-  //    to 0.789 by the lamp's top edge at y 0.273. At the old 0.575 the bezel
-  //    overhung the fascia silhouette into open space.
-  //  * `yaw` is nearly nothing. Wrapping a lamp around the nose needs a nose to
-  //    wrap around; on a plane it only levers the outer end further forward.
   const tail = buildTaillights({
-    z: -2.195, y: 0.245, width: 1.24, height: 0.120, depth: 0.056,
-    extraRed: [lamps.tailBlade],
+    z: -2.224, y: 0.255, width: 1.22, height: 0.095, depth: 0.030,
+    barH: 0.028, extraRed: [lamps.tailBlade], fog: false, indicator: false,
   });
   body.add(tail.group);
-  // The bumper face is the z 2.36 cap: 23 cm tall (y -0.145..0.090) before
-  // its 40 mm roll, so the flat is y -0.105..0.050 and ~0.72 wide at the
-  // intake. Everything here keeps inside that.
   body.add(buildGrille({
-    z: 2.365, y: -0.030, w: 0.62, h: 0.105, depth: 0.045,
-    ductW: 0.15, ductH: 0.080, ductX: 0.415, ductY: -0.030,
+    z: 2.353, y: 0.025, w: 0.84, h: 0.140, depth: 0.026,
+    ductW: 0.125, ductH: 0.075, ductX: 0.565, ductY: 0.005,
   }));
-  body.add(buildTowEye({ z: 2.365, y: -0.035, x: 0.60, r: 0.024, style: 'cover' }));
-  body.add(buildSplitter({
-    z: 2.28, y: -0.175, w: 1.28, canardX: 0.86, canardLen: 0.14,
-  }));
-  // rearZ is 12 mm BEHIND the tail cap plane (-2.200), not 5 mm in front of it.
-  // buildBadgesAndPlate hangs the plate at rearZ-0.005 and the recess tub's lip
-  // face at rearZ-0.006, so at the old -2.195 the plate landed at exactly
-  // z -2.200 — a 0.42 x 0.13 textured quad sharing a depth value with the flat
-  // opaque cap, i.e. stipple across the number plate that swims with the
-  // camera. The badge disc (rearZ .. rearZ+0.010) was buried in the same plane.
-  // The front badge lies flat on the falling hood just behind the bumper.
   body.add(buildBadgesAndPlate({
-    frontPose: sampleSkin(keys, 2.27, 1.0),
-    rearZ: -2.212, rearY: 0.135, plateY: -0.005,
+    frontPose: sampleSkin(keys, 2.28, 1), rearZ: -2.232, rearY: 0.130, plateY: -0.015,
   }));
-  body.add(buildDiffuser({ z: -1.98, y: -0.27, w: 1.38 }));
-  body.add(buildExhaust({ z: -2.24, y: 0.02, x: 0.40, count: 2, r: 0.050 }));
-  // deck top at z -1.86 is y ~0.530, so the posts have something to stand on
-  body.add(buildWing({ z: -1.86, y: 0.79, span: 1.48, deckY: 0.530, style: 'gt' }));
+  body.add(buildDiffuser({ z: -2.02, y: -0.245, w: 1.24, strakes: 3, fences: false }));
+  body.add(buildExhaust({ z: -2.255, y: -0.035, x: 0.52, count: 2, r: 0.043 }));
 
-  // ---- Body surface details, each placed against the actual flank at its
-  // station (the flank is no longer a constant radius, so these numbers come
-  // off the profile at that z, not off `hw`).
-  // y 0.48 sat the pod ON the beltline crease (hip runs 0.44-0.50 here), so it
-  // poked up into the glass line at the A-pillar base. A door mirror mounts on
-  // the door skin just BELOW the belt.
-  body.add(buildMirrors({ z: 0.30, y: 0.415, x: 0.918, color: ctx.color }));
-  // Both sit on crowned panels (the cowl domes 12 mm, the roof 16 mm).
-  body.add(buildWipers({ z: 0.56, y: 0.643, x: 0.24, len: 0.44, tilt: 0.10, rake: 0.06 }));
-  body.add(buildAerial({ z: -0.86, y: 0.848, style: 'fin', color: ctx.color, len: 0.22 }));
-  // buildDoorFurniture presses handle AND repeater against the same `x`, but
-  // the flank is no longer a cylinder: at the door shoulder it is 0.957 and out
-  // on the front fender blister it is 0.984. One x for both would leave one of
-  // them 27 mm proud or 27 mm buried, so they get a call each.
+  body.add(buildMirrors({ z: 0.405, y: 0.445, x: 0.915, color: ctx.color }));
+  const cowl = sampleSkin(keys, 0.595, 1).position;
+  body.add(buildWipers({ z: 0.595, y: cowl.y + 0.006, x: 0.24, len: 0.42, tilt: 0.075, rake: 0.08 }));
   body.add(faceOutboard(buildDoorFurniture({
-    x: 0.957, handleY: 0.40, handleZ: -0.28, handleW: 0.16,
-    repeater: false, fuel: false,
+    x: 0.938, handleY: 0.417, handleZ: -0.53, handleW: 0.14, repeater: false, fuel: false,
   })));
   body.add(faceOutboard(buildDoorFurniture({
-    handles: false, x: 0.984, repeaterY: 0.32, repeaterZ: 0.98,
-    fuelX: 0.978, fuelY: 0.44, fuelZ: -1.25, fuelSide: -1, fuelR: 0.068,
-    color: ctx.color,
-  })));
-  body.add(faceOutboard(buildBodyVents({
-    // On the crowned hood: skin is y ~0.522 here, the recess origin sits 6 mm
-    // under it so the louvres stand just proud.
-    bonnetZ: 1.20, bonnetY: 0.516, bonnetX: 0.27, bonnetW: 0.26, bonnetL: 0.24,
-    // Measured: the flank at gill height falls from 0.980 at z 0.90 to 0.967
-    // at z 0.75, so the stack steps in 7 mm a slot, not the default 4.
-    gillZ: 0.90, gillY: 0.26, gillX: 0.980, gillCount: 3, gillGap: 0.075,
-    gillStep: 0.007,
-    // Engine intake high on the quarter, not down on the door: at door height
-    // the flank ramps 49 mm across this z span as the rear arch blister comes
-    // in, which would leave one end of the recess buried in paint. Just under
-    // the shoulder it only moves 11 mm. Top edge stops below the glass sill
-    // (y 0.494) and below the belt, where the tumblehome starts pulling in.
-    intakeZ: -0.95, intakeY: 0.385, intakeX: 0.968, intakeW: 0.18, intakeH: 0.11,
+    handles: false, repeater: false, fuelX: 0.978, fuelY: 0.435,
+    fuelZ: -1.48, fuelR: 0.060, color: ctx.color,
   })));
 
-  // ---- Cabin. Two seats, a wheel and a dash behind smoked glazing. The loft
-  // leaves each pane open so this interior can be seen through the glass.
-  // Head restraints deliberately clear the beltline
-  // (y ~0.49) so something is visible through the side glass at eye level.
   body.add(buildInterior({
-    floorY: -0.02, dashZ: 0.40, dashH: 0.16, seatZ: -0.44, bulkheadZ: -1.05,
-    seatX: 0.34, seatBackH: 0.52, halfWidth: 0.62,
-    wheelR: 0.15, wheelZ: 0.22, wheelY: 0.46, driverX: -0.32,
-    seats: 2, cage: false, harness: true,
+    floorY: -0.015, dashZ: 0.49, dashH: 0.16, seatZ: -0.44, bulkheadZ: -1.10,
+    seatX: 0.34, seatBackH: 0.57, halfWidth: 0.62,
+    wheelR: 0.15, wheelZ: 0.27, wheelY: 0.49, driverX: -0.32,
+    seats: 2, cage: false, harness: false,
   }));
-
-  body.add(buildUnderbody({ y: -0.255, w: 1.20, len: 3.6 }));
-  // Liner width/x chosen so its rolled lip (outer extent ~0.978) stays inboard
-  // of the flank at the arch mouths (~0.984 front, ~0.99 rear). A lip outboard
-  // of the body is the black-crescent-on-the-fender failure.
-  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.845, r: 0.413, width: 0.26, lip: false }));
-
+  body.add(buildUnderbody({ y: -0.250, w: 1.20, len: 3.60 }));
+  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.840, r: 0.413, width: 0.26, lip: false }));
   return { brakeLights: tail.brakeMesh };
 }

@@ -189,12 +189,17 @@ h1 em { font-style: italic; color: var(--accent); padding-right: 0.06em; }
 .car-option input:checked + .car-option-content { border-color: var(--accent); background: #30231e; }
 .car-option input:focus-visible + .car-option-content { outline: 2px solid var(--accent); outline-offset: 3px; }
 .car-swatch { display: block; width: 30px; height: 5px; margin: 3px 0 10px; border-radius: 2px; }
-.car-swatch-gt { background: #c8161d; }
-.car-swatch-hatch { background: #2588d1; }
-.car-swatch-open-wheel { background: #f0b82f; }
 .car-option-name { display: block; color: var(--text); font-size: 11px; font-weight: 700; }
 .car-option-color { display: block; margin-top: 4px; color: var(--muted); font-size: 9px; }
 .car-selector p { margin: 6px 0 0; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.car-performance { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 20px; margin: 15px 0 11px; }
+.car-rating { display: grid; grid-template-columns: 74px minmax(30px, 1fr) 28px; align-items: center; gap: 7px; font-size: 10px; color: var(--muted); }
+.car-rating strong { color: var(--text); font-size: 9px; text-align: right; font-variant-numeric: tabular-nums; }
+.car-rating meter { appearance: none; width: 100%; height: 6px; border: 0; border-radius: 4px; background: #34383c; }
+.car-rating meter::-webkit-meter-bar { height: 6px; border: 0; background: #34383c; border-radius: 4px; }
+.car-rating meter::-webkit-meter-optimum-value { background: var(--accent); border-radius: 4px; }
+.car-rating meter::-moz-meter-bar { background: var(--accent); border-radius: 4px; }
+.car-selector .rating-note { font-size: 9px; color: #85949b; }
 .car-specs { display: flex; padding: 18px 0; border-bottom: 1px solid var(--line); }
 .car-specs > div { flex: 1; padding-left: 22px; border-left: 1px solid var(--line); }
 .car-specs > div:first-child { padding-left: 0; border: 0; }
@@ -643,7 +648,7 @@ button:disabled { opacity: 0.45; cursor: wait; }
   .car-selector { margin-top: 12px; }
   .car-selector legend { margin-bottom: 7px; }
   .car-option-content { padding-top: 8px; padding-bottom: 8px; }
-  .car-option-color { display: none; }
+  .car-swatch { margin-bottom: 6px; }
   .car-specs { padding: 16px 0; }
   .garage-footer { padding: 13px 0; }
   .section-heading { margin-bottom: 12px; }
@@ -682,7 +687,9 @@ button:disabled { opacity: 0.45; cursor: wait; }
   .garage-stage::after { display: none; }
   .garage-caption { font-size: 7px; left: 8px; bottom: 8px; }
   .car-selector { grid-column: 1 / -1; margin-top: 14px; }
-  .car-option-content { padding-left: 9px; padding-right: 9px; }
+  .car-option-content { padding-left: 9px; padding-right: 9px; min-height: 84px; }
+  .car-performance { gap: 9px 12px; }
+  .car-rating { grid-template-columns: 68px minmax(20px, 1fr) 25px; gap: 4px; font-size: 9px; }
   .car-specs { grid-column: 1 / -1; padding: 12px 0; }
   .car-specs strong { font-size: 20px; }
   .car-specs span { font-size: 8px; }

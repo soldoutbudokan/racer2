@@ -1,84 +1,17 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { buildVisualCar } from './carModels/index.js';
+import { getCarSpec, getSteerCap } from './carSpecs.js';
 import {
   WHEEL_RADIUS, SUSPENSION_REST, SUSPENSION_STIFFNESS, SUSPENSION_ANCHOR_Y,
   STATIC_CHASSIS_HEIGHT,
 } from './stance.js';
 
 const CHASSIS_HALF = { x: 0.92, y: 0.32, z: 2.18 };
-const WHEELBASE = 2.9;
 
-// ---------------------------------------------------------------------------
-// Vehicle specification — a ~480 hp GT racer. All the driving feel lives here:
-// a real torque curve through a 6-speed box, aerodynamic drag + downforce,
-// finite tyre grip per surface, and tyre-scrub losses. Top speed is drag-
-// limited around 285 km/h; cornering hard genuinely bleeds speed.
-// ---------------------------------------------------------------------------
-const SPEC = {
-  massKg: 1350,
 
-  // Engine
-  idleRpm: 1100,
-  redlineRpm: 7600,
-  shiftUpRpm: 7250,
-  shiftDownRpm: 3300,
-  shiftTime: 0.22,            // s of torque cut while the box swaps cogs
-  torqueCurve: [              // [rpm, Nm]
-    [1000, 320], [2200, 430], [3500, 505], [4900, 540],
-    [5900, 525], [6800, 500], [7300, 472], [7600, 440],
-  ],
-  gears: [3.45, 2.28, 1.71, 1.34, 1.08, 0.90],
-  reverseRatio: 3.3,
-  finalDrive: 3.55,
-  drivelineEff: 0.88,
-  engineBrakeNm: 36,          // drag torque at redline when off throttle
-
-  // Rotating inertia — gives the engine a real flywheel so RPM is a state, not
-  // a readout of road speed. When the driven tyres can't take all the torque
-  // the surplus spins the engine up: that's wheelspin, shown live on the tach.
-  engineInertia: 0.15,        // kg·m² (crank + flywheel + clutch, crank-referred)
-  wheelInertia: 0.9,          // kg·m² per driven wheel/tyre/brake assembly
-
-  // Aerodynamics
-  airDensity: 1.225,
-  cdA: 0.92,                  // drag area (m²) → ~285 km/h terminal
-  clA: 2.1,                   // downforce area (m²) → ~0.45 g extra grip @ 250
-  downforcePos: -0.25,        // applied slightly aft of CoM (wing bias)
-
-  // Rolling resistance
-  crr: 0.014,
-
-  // Tyres: frictionSlip in cannon's RaycastVehicle is effectively μ.
-  mu: { road: 1.45, kerb: 1.22, grass: 0.55, gravel: 0.50 },
-  // Extra longitudinal drag on soft surfaces, as a fraction of wheel load.
-  surfaceDrag: { road: 0, kerb: 0, grass: 0.12, gravel: 0.20 },
-  scrubCoef: 0.38,            // tyre scrub when the body runs at a slip angle
-  // Load sensitivity: a tyre carrying more than its share of the load makes
-  // less grip per newton. This is what makes weight transfer matter — diving
-  // onto the fronts under braking, unloading the inside in a corner, squatting
-  // the rears on power — so balance shifts the way a real car's does. It is
-  // measured relative to the average wheel load, so pure downforce (which
-  // loads all four evenly) still adds grip; only *transfer* trades it away.
-  loadSensitivity: 0.14,     // μ change per unit of load above/below the mean
-  loadMuClamp: 0.22,         // cap the swing to ±22%
-  // Once a driven tyre is spinning, grip eases from its static peak toward this
-  // kinetic fraction, so lighting up the rears genuinely costs you drive.
-  slipGripFloor: 0.86,
-
-  // Brakes — cannon brake values are impulse clamps (N·s per 1/120 s step).
-  brakeFront: 50,
-  brakeRear: 28,
-  handbrake: 55,
-
-  maxSteer: 0.62,             // rad at standstill
-  steerSlipMargin: 2.0,       // allow this × the no-slip steady-state angle
-  steerFloor: 0.02,           // rad of authority that always remains
-  maxReverseSpeed: 8.5,       // m/s
-};
-
-function torqueAt(rpm) {
-  const c = SPEC.torqueCurve;
+function torqueAt(spec, rpm) {
+  const c = spec.torqueCurve;
   if (rpm <= c[0][0]) return c[0][1];
   for (let i = 1; i < c.length; i++) {
     if (rpm <= c[i][0]) {
@@ -92,26 +25,28 @@ function torqueAt(rpm) {
 // Load-sensitive grip: a tyre loaded above the car's average wheel load gives
 // up some μ; a lightly loaded one gains a little. Referenced to the mean so a
 // uniform load change (downforce) doesn't move μ — only redistribution does.
-function loadMu(baseMu, load, avgLoad) {
+function loadMu(spec, baseMu, load, avgLoad) {
   if (avgLoad <= 1) return baseMu;
-  const f = 1 - SPEC.loadSensitivity * (load / avgLoad - 1);
-  const lo = 1 - SPEC.loadMuClamp;
-  const hi = 1 + SPEC.loadMuClamp;
+  const f = 1 - spec.loadSensitivity * (load / avgLoad - 1);
+  const lo = 1 - spec.loadMuClamp;
+  const hi = 1 + spec.loadMuClamp;
   return baseMu * Math.min(hi, Math.max(lo, f));
 }
 
 // The rev band the HUD tachometer is drawn against.
-export const ENGINE_BAND = {
-  idleRpm: SPEC.idleRpm, redlineRpm: SPEC.redlineRpm, shiftUpRpm: SPEC.shiftUpRpm,
-};
+const defaultSpec = getCarSpec();
+export const ENGINE_BAND = Object.freeze({
+  idleRpm: defaultSpec.idleRpm, redlineRpm: defaultSpec.redlineRpm, shiftUpRpm: defaultSpec.shiftUpRpm,
+});
 
 /**
- * Builds a GT car: lofted PBR visual + Cannon RaycastVehicle, with a
+ * Builds a car with its own driving specification: lofted PBR visual + Cannon RaycastVehicle, with a
  * realistic longitudinal model (engine/gears/aero) layered on top.
  */
 export function createCar(world, materials, options = {}) {
   const bodyColor = options.color ?? 0xc8161d;
-  const archetype = options.archetype ?? 'gt';
+  const SPEC = getCarSpec(options.archetype);
+  const archetype = SPEC.id;
   const visual = buildVisualCar(archetype, bodyColor);
 
   // Chassis body
@@ -156,7 +91,7 @@ export function createCar(world, materials, options = {}) {
     forwardAcceleration: 0.55,
   };
 
-  const wb = WHEELBASE / 2;        // wheelbase half
+  const wb = SPEC.wheelbase / 2;        // wheelbase half
   const tw = 0.86;                 // track half
   const wy = SUSPENSION_ANCHOR_Y;  // suspension anchor y in chassis space
   // Front-left, Front-right, Rear-left, Rear-right.
@@ -379,7 +314,7 @@ export function createCar(world, materials, options = {}) {
     // --- Crank torque the engine is making right now, from its *own* RPM. ---
     let crankTq;
     if (onThrottle) {
-      crankTq = torqueAt(drive.engineRpm) * throttle;
+      crankTq = torqueAt(SPEC, drive.engineRpm) * throttle;
     } else {
       // Off throttle (or during a shift cut) the engine is a brake.
       crankTq = -SPEC.engineBrakeNm * (drive.engineRpm / SPEC.redlineRpm)
@@ -399,8 +334,8 @@ export function createCar(world, materials, options = {}) {
     const nRL = loads[2];
     const nRR = loads[3];
     const gripRear =
-      loadMu(SPEC.mu[drive.surfaces[2]] ?? SPEC.mu.road, nRL, avgLoad) * nRL +
-      loadMu(SPEC.mu[drive.surfaces[3]] ?? SPEC.mu.road, nRR, avgLoad) * nRR;
+      loadMu(SPEC, SPEC.mu[drive.surfaces[2]] ?? SPEC.mu.road, nRL, avgLoad) * nRL +
+      loadMu(SPEC, SPEC.mu[drive.surfaces[3]] ?? SPEC.mu.road, nRR, avgLoad) * nRR;
     // 1.3 margin: v·yawRate understates true tyre demand while ploughing.
     const fLatRear = SPEC.massKg * aLat * 0.5 * 1.3;
     let fCap = (gripRear * gripRear) - (fLatRear * fLatRear);
@@ -477,13 +412,10 @@ export function createCar(world, materials, options = {}) {
     // margin so you can still provoke the car; at low speed it opens up to
     // full lock. This is why a flat-out corner now washes wide instead of
     // pivoting on rails.
-    const aLatMax = SPEC.mu.road * 9.82 * SPEC.steerSlipMargin;
-    const vv = Math.max(1, speed * speed);
-    const steerCap = Math.min(SPEC.maxSteer,
-      aLatMax * WHEELBASE / vv + SPEC.steerFloor);
+    const steerCap = getSteerCap(SPEC, speed);
     const steerTarget = -ctrl.steer * steerCap;
     // Rate-limit the column so turn-in has realistic weight.
-    const steerRate = 4.0 * Math.max(steerCap, 0.12);
+    const steerRate = SPEC.steerRate * Math.max(steerCap, 0.12);
     const dSteer = THREE.MathUtils.clamp(
       steerTarget - drive.steer, -steerRate * dt, steerRate * dt);
     drive.steer += dSteer;
@@ -494,7 +426,7 @@ export function createCar(world, materials, options = {}) {
     //     (load sensitivity) so weight transfer redistributes grip the way it
     //     does on a real car. ---
     for (let i = 0; i < 4; i++) {
-      let mu = loadMu(SPEC.mu[drive.surfaces[i]] ?? SPEC.mu.road, loads[i], avgLoad);
+      let mu = loadMu(SPEC, SPEC.mu[drive.surfaces[i]] ?? SPEC.mu.road, loads[i], avgLoad);
       // Handbrake breaks the rears loose.
       if (ctrl.handbrake && i >= 2) mu *= 0.55;
       vehicle.wheelInfos[i].frictionSlip = mu;

@@ -9,6 +9,9 @@ const expectedChoices = [
   { id: 'gt', color: 0xc8161d },
   { id: 'hatch', color: 0x2588d1 },
   { id: 'open-wheel', color: 0xf0b82f },
+  { id: 'muscle', color: 0xd86632 },
+  { id: 'roadster', color: 0x248b76 },
+  { id: 'supercar', color: 0x7462d9 },
 ];
 assert.deepEqual(CAR_CHOICES.map(({ id, color }) => ({ id, color })), expectedChoices);
 const storageDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
@@ -23,11 +26,11 @@ try {
     setItem: (key, value) => values.set(key, String(value)),
   } });
   assert.equal(loadCarChoice().id, 'gt', 'a new player starts with the red GT');
-  assert.equal(getCarChoice('muscle').id, 'hatch', 'the previous blue car id maps to the rally hatch');
+  assert.equal(getCarChoice('muscle').id, 'muscle', 'the muscle car is its own selectable choice');
   values.set('racer2.car', 'muscle');
-  assert.equal(loadCarChoice().id, 'hatch', 'a saved blue muscle preference restores the rally hatch');
+  assert.equal(loadCarChoice().id, 'muscle', 'a saved muscle preference restores the muscle car');
   saveCarChoice('muscle');
-  assert.equal(values.get('racer2.car'), 'hatch', 'saving the previous blue car id stores the current hatch id');
+  assert.equal(values.get('racer2.car'), 'muscle', 'saving the muscle car preserves its own id');
   for (const id of [undefined, null, '', 'unknown-car', '__proto__']) {
     assert.equal(getCarChoice(id).id, 'gt', `unknown choice ${String(id)} falls back to GT`);
     values.set('racer2.car', id);
@@ -50,7 +53,7 @@ try {
   if (storageDescriptor) Object.defineProperty(globalThis, 'localStorage', storageDescriptor);
   else delete globalThis.localStorage;
 }
-console.log('PASS: car defaults, blue car migration, invalid preferences, persistence and unavailable storage');
+console.log('PASS: six car choices, invalid preferences, persistence and unavailable storage');
 
 if (!process.argv.includes('--unit')) await checkBrowser();
 
@@ -67,6 +70,7 @@ async function checkBrowser() {
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   page.setDefaultTimeout(120000);
+  const physicsSignatures = new Map();
 
   async function ready() {
     await page.waitForFunction(() => window.__ctx?.selectedCar &&
@@ -85,6 +89,16 @@ async function checkBrowser() {
     const choice = getCarChoice(id);
     assert.match(await page.locator('#garage').getAttribute('aria-label'), new RegExp(choice.name, 'i'));
     assert.match(await page.locator('#garage-caption').innerText(), new RegExp(choice.name, 'i'));
+    assert.equal(await page.locator('#car-performance meter').count(), 4, 'four performance ratings are visible');
+    for (const [key, label] of [
+      ['acceleration', 'Acceleration'], ['speed', 'Top speed'], ['handling', 'Handling'], ['braking', 'Braking'],
+    ]) {
+      const meter = page.getByRole('meter', { name: label, exact: true });
+      assert.equal(await meter.evaluate(element => element.value), choice.ratings[key], `${choice.name} shows its ${label} rating`);
+    }
+    const note = await page.locator('#car-selection-note').innerText();
+    assert(note.includes(choice.strength), `${choice.name} explains its strength`);
+    assert(note.includes(choice.tradeoff), `${choice.name} explains its trade-off`);
   }
 
   async function checkRace(choice, mode) {
@@ -96,12 +110,33 @@ async function checkBrowser() {
         color: entry.color,
         isPlayer: entry.isPlayer,
         gridIdx: entry.gridIdx,
+        mass: entry.car.body.mass,
+        spec: {
+          id: entry.car.spec.id,
+          massKg: entry.car.spec.massKg,
+          peakTorque: Math.max(...entry.car.spec.torqueCurve.map(([, torque]) => torque)),
+          finalDrive: entry.car.spec.finalDrive,
+          dragArea: entry.car.spec.cdA,
+          downforceArea: entry.car.spec.clA,
+          maxSteer: entry.car.spec.maxSteer,
+          steerRate: entry.car.spec.steerRate,
+          brakeFront: entry.car.spec.brakeFront,
+          brakeRear: entry.car.spec.brakeRear,
+          roadGrip: entry.car.spec.mu.road,
+        },
       })),
     }));
     assert.equal(state.mode, mode);
     assert.equal(state.cars.length, { 'time-trial': 1, 'quick-race': 4, 'two-player': 2 }[mode]);
     assert.equal(state.cars[0].archetype, choice.id, `${mode} uses the selected body`);
     assert.equal(state.cars[0].color, choice.color, `${mode} uses the selected paint`);
+    assert.equal(state.cars[0].spec.id, choice.id, `${mode} uses the selected physics package`);
+    assert.equal(state.cars[0].mass, state.cars[0].spec.massKg, `${mode} applies the selected chassis mass`);
+    const { id: specId, ...physicalValues } = state.cars[0].spec;
+    const signature = JSON.stringify(physicalValues);
+    if (physicsSignatures.has(choice.id)) {
+      assert.equal(signature, physicsSignatures.get(choice.id), `${mode} preserves the physics package after restart`);
+    } else physicsSignatures.set(specId, signature);
     assert.equal(state.cars[0].isPlayer, true);
     const grid = state.cars.map(entry => entry.gridIdx);
     assert.deepEqual([...grid].sort((a, b) => a - b), state.cars.map((_, index) => index),
@@ -138,7 +173,7 @@ async function checkBrowser() {
     await page.evaluate(() => localStorage.setItem('racer2.car', 'muscle'));
     await page.reload({ waitUntil: 'load' });
     await ready();
-    await checkSelection('hatch');
+    await checkSelection('muscle');
     await page.evaluate(() => localStorage.setItem('racer2.car', 'removed-car'));
     await page.reload({ waitUntil: 'load' });
     await ready();
@@ -148,23 +183,29 @@ async function checkBrowser() {
     for (const choice of CAR_CHOICES) {
       await select(choice.id);
       await checkSelection(choice.id);
-      const pixels = await page.evaluate(() => {
+      const pixels = await page.evaluate(paint => {
         const canvas = document.getElementById('garage');
         const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-        let hash = 2166136261, red = 0, blue = 0, yellow = 0;
+        function hue(r, g, b) {
+          const max = Math.max(r, g, b), min = Math.min(r, g, b), delta = max - min;
+          if (!delta) return 0;
+          const h = max === r ? (g - b) / delta : max === g ? 2 + (b - r) / delta : 4 + (r - g) / delta;
+          return ((h / 6) + 1) % 1;
+        }
+        const targetHue = hue((paint >> 16) & 255, (paint >> 8) & 255, paint & 255);
+        let hash = 2166136261, paintPixels = 0;
         for (let i = 0; i < data.length; i += 4) {
           const [r, g, b] = [data[i], data[i + 1], data[i + 2]];
           hash = Math.imul(hash ^ r, 16777619);
           hash = Math.imul(hash ^ g, 16777619);
           hash = Math.imul(hash ^ b, 16777619);
-          if (r > 50 && r > g * 1.4 && r > b * 1.2) red++;
-          if (b > 50 && b > r * 1.25 && b > g * 1.05) blue++;
-          if (r > 75 && g > 60 && r > b * 1.4 && g > b * 1.4) yellow++;
+          const max = Math.max(r, g, b), min = Math.min(r, g, b);
+          const hueDistance = Math.abs(hue(r, g, b) - targetHue);
+          if (max > 40 && (max - min) / max > 0.3 && Math.min(hueDistance, 1 - hueDistance) < 0.08) paintPixels++;
         }
-        return { hash, red, blue, yellow };
-      });
-      const channel = { gt: 'red', hatch: 'blue', 'open-wheel': 'yellow' }[choice.id];
-      assert(pixels[channel] > 100, `${choice.name} preview contains its selected paint`);
+        return { hash, paintPixels };
+      }, choice.color);
+      assert(pixels.paintPixels > 100, `${choice.name} preview contains its selected paint`);
       previews.push(pixels.hash);
       await page.locator('#garage').screenshot({ path: `${out}/car-${choice.id}.png` });
     }
@@ -247,6 +288,8 @@ async function checkBrowser() {
         await checkSelection(choice.id);
       }
     }
+    assert.equal(physicsSignatures.size, 6, 'all six physics packages were exercised in the actual race');
+    assert.equal(new Set(physicsSignatures.values()).size, 6, 'all six cars have different physical values');
 
     // Force three different grid draws through the real menu, finish button,
     // and R-key reset. Only the three shuffle draws are stubbed; subsequent

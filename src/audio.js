@@ -50,6 +50,8 @@ const ENGINES = {
   gt:           { cylinders: 8,  halfOrder: 0.12, brightness: 1.00, level: 1.00, whine: 0.012 },
   muscle:       { cylinders: 8,  halfOrder: 0.55, brightness: 0.72, level: 1.05, whine: 0.0 },
   hatch:        { cylinders: 4,  halfOrder: 0.16, brightness: 1.15, level: 0.95, whine: 0.016 },
+  roadster:     { cylinders: 4,  halfOrder: 0.10, brightness: 1.20, level: 0.90, whine: 0.006 },
+  supercar:     { cylinders: 12, halfOrder: 0.06, brightness: 1.12, level: 0.94, whine: 0.018 },
   'open-wheel': { cylinders: 10, halfOrder: 0.05, brightness: 1.30, level: 0.90, whine: 0.020 },
 };
 

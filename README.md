@@ -64,13 +64,27 @@ the lap.
 
 ## Modes & driving aids
 
-Choose a **GT Coupe**, **Rally Hatch**, or **Open Wheel** car in the menu. Each has
-its own body shape, paint colour and engine sound, and the showroom previews
-your selection. The choice is remembered on this device and used for time
-trials, quick races, restarts and Player 1 in split screen. Player 2 keeps the
-blue rally hatch. All three choices share the same driving performance.
-The rally hatch has a short hood, tall cabin, long roof, upright rear hatch
-and roof spoiler. Existing saved blue-car choices move to this new model.
+Choose from **six cars**, each with its own body, colour, sound and driving
+setup. The showroom compares acceleration, top speed, handling and braking,
+and explains both the strength and the cost of each choice. Your selection is
+remembered and used in time trials, races, restarts and Player 1 in split screen.
+Player 2 uses the rally hatch. Previously saved GT, hatch and open-wheel choices
+still work; the classic V8 is now selectable too.
+
+| Car | Best at | Trade-off |
+| --- | --- | --- |
+| **GT Coupe** | Stable fast bends and dependable braking | Neither the fastest launch nor the highest top speed |
+| **Rally Hatch** | Launches, mechanical grip and rough-surface recovery | Lowest straight-line speed |
+| **Open Wheel** | High-speed grip and shortest stops | Slow on long straights; punishing off the asphalt |
+| **Classic V8** | Rolling acceleration and high straight-line speed | Heavy turn-in and long braking distances |
+| **Club Roadster** | Quick steering and tight direction changes | Modest power and little high-speed downforce |
+| **Apex Supercar** | Highest top speed | Slower launches, limited grip and longer stops |
+
+The GT and hatch have new, cleaner bodywork inspired by grand tourers and
+compact three-door road cars. The roadster has an open cockpit and twin roll
+hoops; the supercar has a low canopy, rear engine deck and recessed side intakes.
+These are original designs and game-balanced setups, not manufacturer replicas
+or real-world vehicle specifications.
 
 - **Time trial** — a single flying lap against the clock on an empty track.
 - **Quick race** — you vs. three AI over 3 laps. The starting grid is shuffled
@@ -111,7 +125,9 @@ validates a layout's corner radii, section gaps and start straight.
 
 ## Driving model
 
-The car is a ~480 hp GT racer simulated on top of a Cannon `RaycastVehicle`:
+Each car uses a Cannon `RaycastVehicle` with its own immutable specification in
+`src/carSpecs.js`. The GT remains the reference setup; the other five change
+weight, torque, gearing, drag, downforce, tyre grip, steering response and brakes:
 
 - **Engine & flywheel** — a real torque curve through a 6-speed automatic with
   shift cuts, engine braking and reverse. The engine has rotating inertia, so
@@ -138,8 +154,9 @@ The car is a ~480 hp GT racer simulated on top of a Cannon `RaycastVehicle`:
   column, so turn-in has weight and full lock at speed means understeer, not
   a magic pivot.
 
-The AI runs the same physics through a pre-computed lap speed profile
-(corner speeds from curvature, anticipatory braking), pure-pursuit steering
+The AI runs the same per-car physics through a pre-computed lap speed profile
+(corner speeds from curvature and the selected car’s grip/aero, anticipatory
+braking from its brakes), pure-pursuit steering
 and stuck-recovery. In traffic a driver picks a clear lane past a slower car,
 checks it for cars alongside or closing from behind, and holds it until it is
 clear ahead. Gaps are measured along the track, so a car just over the start
@@ -156,7 +173,8 @@ turning at the flywheel's real RPM, so it flares with wheelspin, collapses
 through a shift cut and pops on the overrun; the throttle opens a filter the
 way a throttle opens an exhaust. Each body shape has its own character (a
 flat-plane V8 for the GT, a four-cylinder for the rally hatch, a cross-plane
-burble for the AI muscle car, a V10 for the open-wheeler). Tyres squeal from
+burble for the classic V8, a V10 for the open-wheeler, a lighter four-cylinder
+roadster and a smooth V12 supercar). Tyres squeal from
 the physics' own per-wheel slide, the
 surface under the car hisses (grass), crunches (gravel) or rumbles at the
 rib rate (kerbs), wind builds with speed, and the chassis thumps on contact.
@@ -279,3 +297,14 @@ to run one, for example `node scripts/ai-test.mjs gp`.
 The **Verify game** pull-request workflow runs these checks, the driving-model
 suite, the AI traffic suite, car geometry checks and a production build.
 Screenshots and render measurements are attached as a workflow artifact.
+
+## Car balance checks
+
+Run `node scripts/car-balance-test.mjs` to measure the actual simulation on
+a flat road: 0–100 km/h, 80–160 km/h, terminal speed, 100–0 km/h stopping
+distance, turn-in response, fast-corner grip and rough-surface recovery. The
+suite checks meaningful differences and rejects a car that beats another in
+every measured discipline. It also exercises each setup on a full circuit and
+checks that the driving aid changes its recommendations with the selected car.
+The comparison ratings describe relative strengths within this field; they are
+not manufacturer performance claims.

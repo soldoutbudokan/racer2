@@ -12,12 +12,16 @@ import * as gtCoupe from './gtCoupe.js';
 import * as muscle from './muscle.js';
 import * as rallyHatch from './rallyHatch.js';
 import * as openWheel from './openWheel.js';
+import * as roadster from './roadster.js';
+import * as supercar from './supercar.js';
 
 const ARCHETYPES = {
   gt: gtCoupe,
   muscle,
   hatch: rallyHatch,
   'open-wheel': openWheel,
+  roadster,
+  supercar,
 };
 
 // Body is authored in an axle-centred frame (wheel centre = y 0, ground = -0.36)
@@ -62,7 +66,10 @@ function getHull(key, def) {
  *   { root: THREE.Group, wheels: [4 THREE.Group], brakeLights: Mesh, _brakeLevel }
  */
 export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d) {
-  const def = ARCHETYPES[archetypeKey] || ARCHETYPES.gt;
+  // Normalize before caching or adding details, so stale/invalid saved IDs
+  // consistently use the GT (including keys inherited from Object.prototype).
+  const key = Object.hasOwn(ARCHETYPES, archetypeKey) ? archetypeKey : 'gt';
+  const def = ARCHETYPES[key];
   const root = new THREE.Group();
   // Everything except the physics-driven wheels lives in the dropped body group.
   const body = new THREE.Group();
@@ -70,7 +77,7 @@ export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d) {
   root.add(body);
 
   const paint = makePaint(bodyColor);
-  const hullGeo = getHull(archetypeKey, def);
+  const hullGeo = getHull(key, def);
   if (hullGeo) {
     const hull = new THREE.Mesh(hullGeo, paint);
     hull.castShadow = true;
@@ -80,7 +87,7 @@ export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d) {
   }
 
   const deco = def.decorate(body, { color: bodyColor });
-  addLivery(body, def.keys, archetypeKey);
+  addLivery(body, def.keys, key);
 
   // Collapse the many small decoration meshes into one mesh per material.
   // Hull (shared geo), glass/lenses (transparent) and the brake light are

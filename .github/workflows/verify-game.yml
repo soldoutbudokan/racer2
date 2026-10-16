@@ -32,6 +32,9 @@ jobs:
       - name: AI laps and traffic regression suite
         if: matrix.check == 'physics'
         run: node scripts/ai-test.mjs
+      - name: Six-car performance and balance regression suite
+        if: matrix.check == 'physics'
+        run: node scripts/car-balance-test.mjs
       - run: npx playwright-core install --with-deps chromium
       - name: Start game
         run: |

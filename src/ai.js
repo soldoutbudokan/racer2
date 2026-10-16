@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { getCarSpec, getCarPerformance, getSteerCap, getCornerSpeed, getLateralAcceleration } from './carSpecs.js';
 
 /**
  * Racing-line AI built for the realistic driving model.
@@ -13,9 +14,8 @@ import * as THREE from 'three';
  */
 export function createAIDriver(track, options = {}) {
   const skill = THREE.MathUtils.clamp(options.skill ?? 0.85, 0, 1);
-  const aLatMax = 9.82 * 1.45 * (0.65 + 0.3 * skill);   // usable lateral g
-  const aBrake = 8.5;                                   // planning decel m/s²
-  const vMax = 52 + 18 * skill;                         // m/s straight-line cap
+  let spec = options.spec ?? getCarSpec();
+  let aLatMax, aBrake, vMax;
 
   const ctrl = {
     throttle: 0,
@@ -53,17 +53,24 @@ export function createAIDriver(track, options = {}) {
 
   // --- speed profile ---
   const profile = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    profile[i] = Math.min(vMax, Math.sqrt(aLatMax / Math.max(1e-4, kSmooth[i])));
-  }
-  // Backward passes: vᵢ ≤ √(vᵢ₊₁² + 2·a·ds). Two loops handle the wrap.
-  for (let pass = 0; pass < 2; pass++) {
-    for (let i = n - 1; i >= 0; i--) {
-      const next = profile[(i + 1) % n];
-      const cap = Math.sqrt(next * next + 2 * aBrake * ds[i]);
-      if (profile[i] > cap) profile[i] = cap;
+  function planFor(nextSpec) {
+    spec = nextSpec;
+    const capability = getCarPerformance(spec);
+    aLatMax = spec.mu.road * 9.82 * (0.65 + 0.3 * skill);
+    aBrake = capability.aBrake * 0.85;
+    vMax = capability.vMax * ((52 + 18 * skill) / 71);
+    for (let i = 0; i < n; i++) {
+      profile[i] = Math.min(vMax, getCornerSpeed(spec, kSmooth[i], aLatMax));
+    }
+    // Backward passes: each driver's braking distance follows their car.
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = n - 1; i >= 0; i--) {
+        const next = profile[(i + 1) % n];
+        profile[i] = Math.min(profile[i], Math.sqrt(next * next + 2 * aBrake * ds[i]));
+      }
     }
   }
+  planFor(spec);
 
   const tmpV = new THREE.Vector3();
   const tmpFwd = new THREE.Vector3();
@@ -134,6 +141,7 @@ export function createAIDriver(track, options = {}) {
    * @param dt       seconds since last update (for the stuck timers)
    */
   function update(car, others, dt = 1 / 60) {
+    if (car.spec && car.spec !== spec) planFor(car.spec);
     const pos = car.body.position;
     const nearest = nearestFrameIndex(frames, pos);
     const speed = Math.hypot(car.body.velocity.x, car.body.velocity.z);
@@ -255,9 +263,8 @@ export function createAIDriver(track, options = {}) {
 
     // Pure pursuit: κ = 2·sin(α)/Ld → needed steer angle δ = κ·wheelbase.
     // Same traction-limited cap the car itself applies, so |ctrl.steer| maps
-    // to what the front axle can actually do. (Mirrors SPEC in car.js.)
-    const vv = Math.max(1, speed * speed);
-    const cap = Math.min(0.62, 1.45 * 9.82 * 2.0 * 2.9 / vv + 0.02);
+    // to what this particular front axle can actually do.
+    const cap = getSteerCap(spec, speed);
     if (ang > Math.PI / 2) {
       // The target is behind the front axle. sin(α) folds back past 90°, so
       // plain pure pursuit asks for *less* lock the more wrong the car is
@@ -266,18 +273,19 @@ export function createAIDriver(track, options = {}) {
       // A driver facing away from where they need to go uses all of it.
       ctrl.steer = signed < 0 ? -1 : 1;
     } else {
-      ctrl.steer = THREE.MathUtils.clamp(needK * 2.9 / cap, -1, 1);
+      ctrl.steer = THREE.MathUtils.clamp(needK * spec.wheelbase / cap, -1, 1);
     }
 
     // A passing line or a correction after contact can turn more sharply
     // than the centreline profile. Respect the grip needed by that path too.
-    target = Math.min(target, Math.sqrt(aLatMax / Math.max(1e-4, Math.abs(needK))));
+    target = Math.min(target, getCornerSpeed(spec, Math.abs(needK), aLatMax));
 
     // --- Longitudinal ---
     if (speed < target - 0.5) {
       // Use full power on exit; ease only as the requested lateral force
       // consumes the tyre budget, rather than penalising steering at any speed.
-      const lateralLoad = speed * speed * 2 * Math.sin(ang) / Ld / aLatMax;
+      const lateralLoad = speed * speed * 2 * Math.sin(ang) / Ld /
+        getLateralAcceleration(spec, speed, aLatMax);
       ctrl.throttle = THREE.MathUtils.lerp(1, 0.82,
         THREE.MathUtils.clamp((lateralLoad - 0.6) / 0.4, 0, 1));
       ctrl.brake = 0;

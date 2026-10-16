@@ -10,8 +10,9 @@ function stripeMaterial() {
 // Surface-following ribbons use the same sampled skin as panel seams. Each
 // livery merges into one draw call, rather than floating decals or extra FX.
 export function addLivery(body, keys, archetype) {
-  // The rally hatch has its own roof and body details.
-  if (!keys || archetype === 'hatch') return;
+  // Clean paint lets the new road-car surfaces read; the classic V8 keeps
+  // its period twin-stripe treatment.
+  if (!keys || archetype !== 'muscle') return;
   const f = profileFractions(keys);
   const gt = archetype === 'gt';
   const stripes = buildPanelSeams(keys, [

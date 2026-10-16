@@ -399,6 +399,7 @@ function startMode(ctx, mode) {
 
   // The perfect-line aid is for single-screen modes; in split-screen its
   // colours could only be right for one of the two players.
+  ctx.racingLine.setCarSpec(ctx.cars[ctx.primaryPlayerIdx].car.spec);
   ctx.lineAid = mode !== 'two-player';
   ctx.racingLine.setVisible(ctx.lineAid);
   if (!ctx.lineAid) ctx.hud.hidePace();
