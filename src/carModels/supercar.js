@@ -3,7 +3,7 @@ import {
   buildGreenhouseShell, buildPaneWells, buildPanelSeams, buildWindowSeals,
   profileFractions, sampleSkin,
 } from './loftBuilder.js';
-import { makeGlass, makeShutline, makeTrim, makeWell } from './carMaterials.js';
+import { makeGlass, makeHeadlight, makeSatin, makeShutline, makeTrim, makeWell } from './carMaterials.js';
 import { buildApertureLamps } from './apertureLamps.js';
 import {
   buildTaillights, buildMirrors, buildGrille, buildSplitter, buildDiffuser,
@@ -39,7 +39,7 @@ const GLASS = [
   { zStart: -0.82, zEnd: -1.24, beltFrac: F.tumble, topFrac: 1, steps: 12 },
 ];
 const HEADLAMPS = [-1, 1].map(side => ({
-  zStart: 2.25, zEnd: 1.91, beltFrac: F.tumble, topFrac: F.crownEdge, steps: 11, side,
+  zStart: 2.26, zEnd: 1.88, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 13, side,
 }));
 const TAILLAMPS = [-1, 1].map(side => ({
   zStart: -2.10, zEnd: -2.26, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 6, side,
@@ -48,6 +48,37 @@ const INTAKES = [-1, 1].map(side => ({
   zStart: -0.55, zEnd: -1.01, beltFrac: F.flankFoot, topFrac: F.shoulder, steps: 14, side,
 }));
 export const PANES = [...GLASS, ...HEADLAMPS, ...TAILLAMPS, ...INTAKES];
+
+function buildSweptHeadlamps() {
+  const group = new THREE.Group();
+  const wells = buildPaneWells(keys, { panes: HEADLAMPS, depth: 0.026 });
+  if (wells) group.add(new THREE.Mesh(wells, makeWell()));
+  const seals = buildWindowSeals(keys, { panes: HEADLAMPS, width: 0.009, proud: 0.003 });
+  if (seals) group.add(new THREE.Mesh(seals, makeTrim()));
+
+  // A narrow white blade follows each fender, then hooks toward the outside.
+  // Keep the backing black: a broad satin plate reflected the studio sky and
+  // erased the individual projectors, making the entire lamp look white.
+  const drl = buildPanelSeams(keys, [{
+    path: [[2.23, F.topCorner - 0.025], [2.04, F.topCorner - 0.025],
+      [1.91, F.tumble + 0.010]],
+    width: 0.012, proud: -0.006, mirror: true,
+  }]);
+  if (drl) group.add(new THREE.Mesh(drl, makeHeadlight()));
+  const forward = new THREE.Vector3(0, 0, 1);
+  for (const side of [-1, 1]) for (const z of [2.15, 2.04]) {
+    const { position, normal } = sampleSkin(keys, z, side * (F.beltTuck + 0.055));
+    const surround = new THREE.Mesh(new THREE.TorusGeometry(0.023, 0.005, 5, 16), makeSatin());
+    surround.quaternion.setFromUnitVectors(forward, normal);
+    surround.position.copy(position).addScaledVector(normal, -0.012);
+    group.add(surround);
+    const projector = new THREE.Mesh(new THREE.CircleGeometry(0.016, 16), makeHeadlight());
+    projector.quaternion.copy(surround.quaternion);
+    projector.position.copy(position).addScaledVector(normal, -0.011);
+    group.add(projector);
+  }
+  return group;
+}
 
 export function decorate(body, ctx) {
   body.add(new THREE.Mesh(buildGreenhouseShell(keys, { panes: GLASS }), makeGlass()));
@@ -61,9 +92,9 @@ export function decorate(body, ctx) {
   const scoopEdges = buildWindowSeals(keys, { panes: INTAKES, width: 0.018, proud: 0.004 });
   if (scoopEdges) body.add(new THREE.Mesh(scoopEdges, makeTrim()));
   const lamps = buildApertureLamps(keys, F, {
-    head: HEADLAMPS, tail: TAILLAMPS, projectorZ: [2.13, 2.01], depth: 0.030,
+    tail: TAILLAMPS, depth: 0.030,
   });
-  body.add(lamps.group);
+  body.add(lamps.group, buildSweptHeadlamps());
 
   const seams = buildPanelSeams(keys, [
     { path: [[0.73, F.topCorner], [0.73, 1], [0.73, -F.topCorner]] },

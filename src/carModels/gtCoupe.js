@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import {
-  buildGreenhouseShell, buildPanelSeams, buildWindowSeals, profileFractions, sampleSkin,
+  buildGreenhouseShell, buildPanelSeams, buildPaneWells, buildWindowSeals, profileFractions, sampleSkin,
 } from './loftBuilder.js';
-import { makeGlass, makeShutline, makeTrim } from './carMaterials.js';
+import { makeGlass, makeHeadlight, makeShutline, makeTrim, makeWell } from './carMaterials.js';
 import { buildApertureLamps } from './apertureLamps.js';
 import {
   buildTaillights, buildMirrors, buildGrille, buildDiffuser, buildExhaust,
@@ -52,7 +52,7 @@ const GLASS_PANES = [
   { zStart: -1.085, zEnd: -1.560, beltFrac: F.tumble, topFrac: 1, steps: 12 },
 ];
 const HEADLAMP_PANES = [-1, 1].map(side => ({
-  zStart: 2.275, zEnd: 2.025, beltFrac: F.beltTuck, topFrac: F.crownEdge, steps: 10, side,
+  zStart: 2.235, zEnd: 2.145, beltFrac: F.beltTuck, topFrac: F.crownEdge, steps: 7, side,
 }));
 const TAILLAMP_PANES = [-1, 1].map(side => ({
   zStart: -1.995, zEnd: -2.155, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 6, side,
@@ -77,17 +77,41 @@ function faceOutboard(group) {
   return group;
 }
 
+let cabinGlass;
+function makeCabinGlass() {
+  if (!cabinGlass) {
+    cabinGlass = makeGlass().clone();
+    cabinGlass.opacity = 0.94;
+    cabinGlass.roughness = 0.12;
+    cabinGlass.envMapIntensity = 0.65;
+  }
+  return cabinGlass;
+}
+
+function buildSweptHeadlights() {
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(buildPaneWells(keys, { panes: HEADLAMP_PANES, depth: 0.022 }), makeWell()));
+  group.add(new THREE.Mesh(buildWindowSeals(keys, { panes: HEADLAMP_PANES, width: 0.008, proud: 0.003 }), makeTrim()));
+  // A transverse LED follows the fender curve inside a shallow, dark opening.
+  // No full-area silver reflector or white lens to become a bright rectangle.
+  const blade = buildPanelSeams(keys, [{
+    path: [[2.207, F.beltTuck + 0.012], [2.207, F.crownEdge - 0.012]],
+    mirror: true, width: 0.014, proud: -0.006,
+  }]);
+  group.add(new THREE.Mesh(blade, makeHeadlight()));
+  return group;
+}
+
 export function decorate(body, ctx) {
-  body.add(new THREE.Mesh(buildGreenhouseShell(keys, { panes: GLASS_PANES }), makeGlass()));
+  body.add(new THREE.Mesh(buildGreenhouseShell(keys, { panes: GLASS_PANES }), makeCabinGlass()));
   const seals = buildWindowSeals(keys, { panes: GLASS_PANES, width: 0.011 });
   if (seals) body.add(new THREE.Mesh(seals, makeTrim()));
   const shut = buildPanelSeams(keys, SHUT_LINES);
   if (shut) body.add(new THREE.Mesh(shut, makeShutline()));
 
-  const lamps = buildApertureLamps(keys, F, {
-    head: HEADLAMP_PANES, tail: TAILLAMP_PANES, projectorZ: [2.20, 2.10],
-  });
+  const lamps = buildApertureLamps(keys, F, { tail: TAILLAMP_PANES });
   body.add(lamps.group);
+  body.add(buildSweptHeadlights());
   const tail = buildTaillights({
     z: -2.224, y: 0.255, width: 1.22, height: 0.095, depth: 0.030,
     barH: 0.028, extraRed: [lamps.tailBlade], fog: false, indicator: false,

@@ -1,14 +1,13 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  buildGreenhouseShell, buildPanelSeams, buildWindowSeals, profileFractions, sampleSkin,
+  buildGreenhouseShell, buildPanelSeams, buildPaneWells, buildWindowSeals, profileFractions, sampleSkin,
 } from './loftBuilder.js';
-import { makeGlass, makeTrim, makePaint, makeShutline, makeHeadlight, makeTaillight } from './carMaterials.js';
+import { makeGlass, makeTrim, makePaint, makeShutline, makeHeadlight, makeTaillight, makeSatin, makeWell } from './carMaterials.js';
 import {
   addOpening, buildMirrors, buildGrille, buildExhaust, buildBadgesAndPlate,
   buildUnderbody, buildArchLiners, buildInterior, buildDoorFurniture, buildWipers,
 } from './parts.js';
-import { buildApertureLamps } from './apertureLamps.js';
 
 // Three-door hot hatch: compact GR Yaris / Delta-inspired proportions, broad
 // shoulders, a tapered dark roof and a short raked tail. The roof is 27 cm
@@ -52,7 +51,7 @@ const GLASS_PANES = [
   { zStart: -1.665, zEnd: -1.925, beltFrac: F.tumble, topFrac: 1, steps: 9 },
 ];
 const HEADLAMP_PANES = [-1, 1].map(side => ({
-  zStart: 2.185, zEnd: 1.965, beltFrac: F.beltTuck, topFrac: F.crownEdge, steps: 9, side,
+  zStart: 2.175, zEnd: 2.025, beltFrac: F.beltTuck + 0.025, topFrac: F.crownEdge, steps: 9, side,
 }));
 export const PANES = [...GLASS_PANES, ...HEADLAMP_PANES];
 const SHUT_LINES = [
@@ -74,6 +73,40 @@ function faceOutboard(group) {
   group.traverse(o => {
     if (Math.abs(Math.abs(o.rotation.y) - Math.PI / 2) < 1e-6) o.rotation.y = -o.rotation.y;
   });
+  return group;
+}
+
+let cabinGlass;
+function makeCabinGlass() {
+  if (!cabinGlass) {
+    cabinGlass = makeGlass().clone();
+    cabinGlass.opacity = 0.94;
+    cabinGlass.roughness = 0.12;
+    cabinGlass.envMapIntensity = 0.65;
+  }
+  return cabinGlass;
+}
+
+function buildTwinHeadlights() {
+  const group = new THREE.Group();
+  group.add(new THREE.Mesh(buildPaneWells(keys, { panes: HEADLAMP_PANES, depth: 0.024 }), makeWell()));
+  group.add(new THREE.Mesh(buildWindowSeals(keys, { panes: HEADLAMP_PANES, width: 0.008, proud: 0.003 }), makeTrim()));
+  // Two small round projectors per corner recall classic rally road cars.
+  // Each assembly sits on the sampled fender rather than a flat nose slab.
+  const forward = new THREE.Vector3(0, 0, 1);
+  for (const side of [-1, 1]) {
+    for (const fraction of [0.755, 0.855]) {
+      const { position, normal } = sampleSkin(keys, 2.105, side * fraction);
+      const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.026, 0.004, 4, 16), makeSatin());
+      bezel.quaternion.setFromUnitVectors(forward, normal);
+      bezel.position.copy(position).addScaledVector(normal, -0.007);
+      group.add(bezel);
+      const projector = new THREE.Mesh(new THREE.CircleGeometry(0.019, 16), makeHeadlight());
+      projector.quaternion.copy(bezel.quaternion);
+      projector.position.copy(position).addScaledVector(normal, -0.008);
+      group.add(projector);
+    }
+  }
   return group;
 }
 
@@ -109,10 +142,10 @@ function buildHatchTaillights() {
 }
 
 export function decorate(body, ctx) {
-  body.add(new THREE.Mesh(buildGreenhouseShell(keys, { panes: GLASS_PANES }), makeGlass()));
+  body.add(new THREE.Mesh(buildGreenhouseShell(keys, { panes: GLASS_PANES }), makeCabinGlass()));
   const seals = buildWindowSeals(keys, { panes: GLASS_PANES, width: 0.012 });
   if (seals) body.add(new THREE.Mesh(seals, makeTrim()));
-  body.add(buildApertureLamps(keys, F, { head: HEADLAMP_PANES, projectorZ: [2.115, 2.025] }).group);
+  body.add(buildTwinHeadlights());
   const shut = buildPanelSeams(keys, SHUT_LINES);
   if (shut) body.add(new THREE.Mesh(shut, makeShutline()));
 
