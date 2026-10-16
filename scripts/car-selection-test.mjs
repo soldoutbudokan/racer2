@@ -25,16 +25,16 @@ try {
     getItem: key => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, String(value)),
   } });
-  assert.equal(loadCarChoice().id, 'gt', 'a new player starts with the red GT');
+  assert.equal(loadCarChoice().id, 'gt', 'a new player starts with the red touring sedan');
   assert.equal(getCarChoice('muscle').id, 'muscle', 'the muscle car is its own selectable choice');
   values.set('racer2.car', 'muscle');
   assert.equal(loadCarChoice().id, 'muscle', 'a saved muscle preference restores the muscle car');
   saveCarChoice('muscle');
   assert.equal(values.get('racer2.car'), 'muscle', 'saving the muscle car preserves its own id');
   for (const id of [undefined, null, '', 'unknown-car', '__proto__']) {
-    assert.equal(getCarChoice(id).id, 'gt', `unknown choice ${String(id)} falls back to GT`);
+    assert.equal(getCarChoice(id).id, 'gt', `unknown choice ${String(id)} falls back to the default car`);
     values.set('racer2.car', id);
-    assert.equal(loadCarChoice().id, 'gt', `invalid saved choice ${String(id)} falls back to GT`);
+    assert.equal(loadCarChoice().id, 'gt', `invalid saved choice ${String(id)} falls back to the default car`);
   }
   for (const choice of CAR_CHOICES) {
     saveCarChoice(choice.id);
@@ -110,6 +110,10 @@ async function checkBrowser() {
         color: entry.color,
         isPlayer: entry.isPlayer,
         gridIdx: entry.gridIdx,
+        code: entry.code,
+        name: entry.name,
+        skill: entry.skill,
+        reactionS: entry.reactionS,
         mass: entry.car.body.mass,
         spec: {
           id: entry.car.spec.id,
@@ -130,8 +134,10 @@ async function checkBrowser() {
     assert.equal(state.cars.length, { 'time-trial': 1, 'quick-race': 4, 'two-player': 2 }[mode]);
     assert.equal(state.cars[0].archetype, choice.id, `${mode} uses the selected body`);
     assert.equal(state.cars[0].color, choice.color, `${mode} uses the selected paint`);
-    assert.equal(state.cars[0].spec.id, choice.id, `${mode} uses the selected physics package`);
-    assert.equal(state.cars[0].mass, state.cars[0].spec.massKg, `${mode} applies the selected chassis mass`);
+    for (const entry of state.cars) {
+      assert.equal(entry.spec.id, entry.archetype, `${mode} uses the ${entry.archetype} physics package`);
+      assert.equal(entry.mass, entry.spec.massKg, `${mode} applies the ${entry.archetype} chassis mass`);
+    }
     const { id: specId, ...physicalValues } = state.cars[0].spec;
     const signature = JSON.stringify(physicalValues);
     if (physicsSignatures.has(choice.id)) {
@@ -144,14 +150,24 @@ async function checkBrowser() {
     if (mode !== 'quick-race') assert.deepEqual(grid, state.cars.map((_, index) => index),
       `${mode} preserves its established starting order`);
     const otherCars = state.cars.slice(1).map(({ archetype, color, isPlayer }) => ({ archetype, color, isPlayer }));
-    if (mode === 'quick-race') assert.deepEqual(otherCars, [
-      { archetype: 'open-wheel', color: 0xfacc15, isPlayer: false },
-      { archetype: 'gt', color: 0x059669, isPlayer: false },
-      { archetype: 'muscle', color: 0xea580c, isPlayer: false },
-    ], 'selecting a car preserves the rival grid');
+    if (mode === 'quick-race') {
+      const rivals = state.cars.slice(1);
+      assert.equal(new Set(rivals.map(entry => entry.archetype)).size, 3, 'the three rivals use different car types');
+      assert(rivals.every(entry => entry.archetype !== choice.id &&
+        expectedChoices.some(choice => choice.id === entry.archetype)), 'rivals draw from the other five cars');
+      assert(rivals.every(entry => !entry.isPlayer), 'each rival remains AI controlled');
+      assert.deepEqual(rivals.map(entry => entry.color), [0xfacc15, 0x059669, 0xea580c], 'rival paints stay distinct');
+      assert.deepEqual(rivals.map(({ code, name }) => ({ code, name })), [
+        { code: 'MOR', name: 'R. Moreau' }, { code: 'OKA', name: 'T. Okafor' }, { code: 'LIN', name: 'S. Lindqvist' },
+      ], 'random cars preserve driver identities');
+      for (const [index, rival] of rivals.entries()) {
+        assert(Math.abs(rival.skill - [0.78, 0.82, 0.86][index]) < 1e-12, 'skill stays with the driver');
+        assert(Math.abs(rival.reactionS - [0.4332, 0.2448, 0.2964][index]) < 1e-12, 'reaction time stays with the driver');
+      }
+    }
     if (mode === 'two-player') assert.deepEqual(otherCars, [
       { archetype: 'hatch', color: 0x1f6cff, isPlayer: true },
-    ], 'Player 2 uses the blue rally hatch');
+    ], 'Player 2 uses the blue rally pickup');
     return state.cars[0].id;
   }
 
@@ -273,8 +289,8 @@ async function checkBrowser() {
               new THREE.Vector3(body.position.x, body.position.y, body.position.z));
             return { mode: entry.chase.getMode(), forward: offset.dot(forward) };
           });
-          assert.equal(hoodForward.mode, 1, 'the hatch camera switches from chase to hood');
-          assert(hoodForward.forward > 1.0, 'the hatch hood camera sits ahead of its taller cabin');
+          assert.equal(hoodForward.mode, 1, 'the pickup camera switches from chase to hood');
+          assert(hoodForward.forward > 1.0, 'the pickup hood camera sits ahead of its taller cabin');
           await page.screenshot({ path: `${out}/car-hatch-hood.png` });
         }
         if (mode === 'quick-race') {
@@ -291,18 +307,20 @@ async function checkBrowser() {
     assert.equal(physicsSignatures.size, 6, 'all six physics packages were exercised in the actual race');
     assert.equal(new Set(physicsSignatures.values()).size, 6, 'all six cars have different physical values');
 
-    // Force three different grid draws through the real menu, finish button,
-    // and R-key reset. Only the three shuffle draws are stubbed; subsequent
-    // geometry UUIDs and other construction randomness use the native RNG.
+    // Force known grid and roster draws through the real menu, finish button,
+    // and R-key reset. Fresh races draw three grid values then three roster
+    // values before building cars. Geometry UUIDs still use the native RNG.
+    await select('gt');
     const gridRuns = await page.evaluate(() => {
       const ctx = window.__ctx;
       const nativeRandom = Math.random;
       const nativeRender = ctx.composer.render;
-      function draw(values, action) {
+      function draw(gridValues, rosterValues, action) {
+        const values = [...gridValues, ...rosterValues];
         let next = 0;
         Math.random = () => next < values.length ? values[next++] : nativeRandom();
         try { action(); } finally { Math.random = nativeRandom; }
-        if (next !== values.length) throw new Error('Race did not draw a complete starting grid');
+        if (next !== values.length) throw new Error('Race did not draw its complete grid and roster');
       }
       function snapshot() {
         // A player in a rear slot must still drive the primary camera.
@@ -322,7 +340,8 @@ async function checkBrowser() {
             const position = entry.car.body.position;
             return {
               id: entry.car.body.id, gridIdx: entry.gridIdx, isPlayer: entry.isPlayer,
-              label: entry.label, code: entry.code, reactionS: entry.reactionS,
+              archetype: entry.car.archetype, specId: entry.car.spec.id,
+              color: entry.color, label: entry.label, code: entry.code, name: entry.name, reactionS: entry.reactionS,
               skill: entry.skill, reverseT: entry.ai?.recovery.reverseT ?? 0,
               spawnError: Math.hypot(position.x - spawn.position.x, position.y - spawn.position.y, position.z - spawn.position.z),
             };
@@ -332,25 +351,28 @@ async function checkBrowser() {
       try {
         // No rendered frames are needed to verify the real reset and HUD path.
         ctx.composer.render = () => {};
-        draw([0, 0, 0], () => document.querySelector('button.mode[data-mode="quick-race"]').click());
+        draw([0, 0, 0], [0, 0, 0], () => document.querySelector('button.mode[data-mode="quick-race"]').click());
         const started = snapshot();
         window.__tick(0);
         const countdown = snapshot();
 
         document.getElementById('finish').classList.remove('hidden');
-        draw([0.99, 0.99, 0.99], () => document.getElementById('finish-restart').click());
+        draw([0.99, 0.99, 0.99], [0.99, 0.99, 0.99], () => document.getElementById('finish-restart').click());
         const restarted = snapshot();
         const previousAI = ctx.cars.slice(1).map(entry => entry.ai);
         for (const ai of previousAI) ai.recovery.reverseT = 1;
-        draw([0.625, 0.5, 0.25], () => {
+        draw([0.625, 0.5, 0.25], [], () => {
           window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyR' }));
           window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyR' }));
           window.__tick(0);
         });
-        return { started, countdown, restarted, reset: snapshot(),
-          resetFreshAI: ctx.cars.slice(1).every((entry, index) => entry.ai !== previousAI[index]),
-          resetStarted: ctx.state.started,
-        };
+        const reset = snapshot();
+        const resetFreshAI = ctx.cars.slice(1).every((entry, index) => entry.ai !== previousAI[index]);
+        const resetStarted = ctx.state.started;
+        document.getElementById('finish').classList.remove('hidden');
+        document.getElementById('finish-menu').click();
+        draw([0, 0, 0], [0.4, 0.4, 0.4], () => document.querySelector('button.mode[data-mode="quick-race"]').click());
+        return { started, countdown, restarted, reset, fresh: snapshot(), resetFreshAI, resetStarted };
       } finally {
         Math.random = nativeRandom;
         ctx.composer.render = nativeRender;
@@ -358,7 +380,7 @@ async function checkBrowser() {
     });
     for (const [name, expected] of [
       ['started', [1, 2, 3, 0]], ['countdown', [1, 2, 3, 0]],
-      ['restarted', [0, 1, 2, 3]], ['reset', [3, 0, 1, 2]],
+      ['restarted', [0, 1, 2, 3]], ['reset', [3, 0, 1, 2]], ['fresh', [1, 2, 3, 0]],
     ]) {
       const run = gridRuns[name];
       assert.equal(run.mode, 'quick-race');
@@ -368,24 +390,42 @@ async function checkBrowser() {
       assert.equal(run.cars[0].isPlayer, true);
       assert.equal(run.cars[0].label, 'P1', `${name} preserves player identity independently of grid slot`);
       assert.deepEqual(run.cars.map(entry => entry.code), ['YOU', 'MOR', 'OKA', 'LIN']);
+      assert.deepEqual(run.cars.map(entry => entry.name), ['You', 'R. Moreau', 'T. Okafor', 'S. Lindqvist']);
+      assert(run.cars.every(entry => entry.specId === entry.archetype), `${name} gives every rival its matching physics`);
       assert.equal(run.position, expected[0] + 1, `${name} shows the actual starting position`);
       assert.equal(run.standing, expected[0] + 1, `${name} standings match the starting grid`);
       assert.equal(run.primaryCameraMoved, true, `${name} follows the player with the primary camera`);
       assert.equal(run.secondaryCameraMoved, 0, `${name} leaves the split-screen camera untouched`);
     }
+    const roster = run => run.cars.slice(1).map(entry => entry.archetype);
+    assert.deepEqual(roster(gridRuns.started), ['hatch', 'open-wheel', 'muscle'], 'the first roster follows its own random draw');
+    assert.deepEqual(roster(gridRuns.countdown), roster(gridRuns.started), 'countdown preserves the drawn roster');
+    assert.deepEqual(roster(gridRuns.restarted), ['supercar', 'hatch', 'open-wheel'], 'finish restart draws fresh opponents');
+    assert.deepEqual(roster(gridRuns.reset), roster(gridRuns.restarted), 'R preserves the participants while shuffling their grid');
+    assert.deepEqual(roster(gridRuns.fresh), ['muscle', 'hatch', 'roadster'], 'a new race from the menu draws fresh opponents');
+    assert.notDeepEqual([...roster(gridRuns.started)].sort(), [...roster(gridRuns.restarted)].sort(),
+      'controlled restart draws change the opponent types, not just their order');
+    assert.notDeepEqual([...roster(gridRuns.restarted)].sort(), [...roster(gridRuns.fresh)].sort(),
+      'controlled menu-start draws change the opponent types');
     assert.notEqual(gridRuns.restarted.cars[0].id, gridRuns.started.cars[0].id, 'finish restart rebuilds the field');
+    assert.notEqual(gridRuns.fresh.cars[0].id, gridRuns.reset.cars[0].id, 'a new menu start rebuilds the field');
     assert.deepEqual(gridRuns.reset.cars.map(entry => entry.id), gridRuns.restarted.cars.map(entry => entry.id),
       'R assigns new slots to the existing cars');
     assert.deepEqual(gridRuns.reset.cars.map(entry => entry.reactionS), gridRuns.restarted.cars.map(entry => entry.reactionS),
       'reaction times stay with each driver across a new grid');
     assert.deepEqual(gridRuns.reset.cars.map(entry => entry.skill), gridRuns.restarted.cars.map(entry => entry.skill));
+    for (const name of ['restarted', 'reset', 'fresh']) {
+      assert.deepEqual(gridRuns[name].cars.map(({ color, code, name, skill, reactionS }) => ({ color, code, name, skill, reactionS })),
+        gridRuns.started.cars.map(({ color, code, name, skill, reactionS }) => ({ color, code, name, skill, reactionS })),
+        `${name} preserves each driver's paint, identity, skill and reaction time`);
+    }
     assert.equal(gridRuns.resetFreshAI, true, 'R clears the AI lane and recovery state');
     assert(gridRuns.reset.cars.every(entry => entry.reverseT === 0), 'the reset grid has no inherited reversing state');
     assert.equal(gridRuns.resetStarted, false, 'R starts a fresh countdown');
     await page.keyboard.press('Escape');
     await ready();
     assert.deepEqual(errors, [], 'no browser or WebGL errors');
-    console.log('PASS: keyboard selection, saved choice, previews, all modes, randomized grid, cameras, HUD and both restart paths');
+    console.log('PASS: keyboard selection, saved choice, previews, all modes, randomized rivals and grids, cameras, HUD and both restart paths');
   } finally {
     await browser.close();
   }

@@ -4,11 +4,11 @@ import { getCarSpec } from './carSpecs.js';
 // The balance probe exercises the same physics used in a race.
 const choice = (data) => Object.freeze({ ...data, ratings: Object.freeze(data.ratings) });
 export const CAR_CHOICES = Object.freeze([
-  choice({ id: 'gt', name: 'GT Coupe', color: 0xc8161d, colorName: 'Rosso', role: 'All-rounder',
+  choice({ id: 'gt', name: 'Touring Sedan', color: 0xc8161d, colorName: 'Rosso', role: 'All-rounder',
     strength: 'Composed through fast bends with dependable braking.',
     tradeoff: 'Gives away launch pace and outright speed to the specialists.',
     ratings: { acceleration: 8, speed: 7, handling: 7, braking: 8 } }),
-  choice({ id: 'hatch', name: 'Rally Hatch', color: 0x2588d1, colorName: 'Glacier blue', role: 'Grip & recovery',
+  choice({ id: 'hatch', name: 'Rally Pickup', color: 0x2588d1, colorName: 'Glacier blue', role: 'Grip & recovery',
     strength: 'Quick off the line and forgiving over kerbs and loose surfaces.',
     tradeoff: 'Short gearing and drag limit its speed on long straights.',
     ratings: { acceleration: 10, speed: 5, handling: 8, braking: 8 } }),

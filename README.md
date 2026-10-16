@@ -68,27 +68,30 @@ Choose from **six cars**, each with its own body, colour, sound and driving
 setup. The showroom compares acceleration, top speed, handling and braking,
 and explains both the strength and the cost of each choice. Your selection is
 remembered and used in time trials, races, restarts and Player 1 in split screen.
-Player 2 uses the rally hatch. Previously saved GT, hatch and open-wheel choices
-still work; the classic V8 is now selectable too.
+Player 2 uses the rally pickup. Saved choices still work: the previous GT and
+hatch slots now select the Touring Sedan and Rally Pickup.
 
 | Car | Best at | Trade-off |
 | --- | --- | --- |
-| **GT Coupe** | Stable fast bends and dependable braking | Neither the fastest launch nor the highest top speed |
-| **Rally Hatch** | Launches, mechanical grip and rough-surface recovery | Lowest straight-line speed |
+| **Touring Sedan** | Stable fast bends and dependable braking | Neither the fastest launch nor the highest top speed |
+| **Rally Pickup** | Launches, mechanical grip and rough-surface recovery | Lowest straight-line speed |
 | **Open Wheel** | High-speed grip and shortest stops | Slow on long straights; punishing off the asphalt |
 | **Classic V8** | Rolling acceleration and high straight-line speed | Heavy turn-in and long braking distances |
 | **Club Roadster** | Quick steering and tight direction changes | Modest power and little high-speed downforce |
 | **Apex Supercar** | Highest top speed | Slower launches, limited grip and longer stops |
 
-The GT and hatch have new, cleaner bodywork inspired by grand tourers and
-compact three-door road cars. The roadster has an open cockpit and twin roll
+The first two cars are entirely new concepts: a four-door performance sedan
+with a separate trunk and a compact rally pickup with an upright cab and open
+cargo bed. The roadster has an open cockpit and twin roll
 hoops; the supercar has a low canopy, rear engine deck and recessed side intakes.
 These are original designs and game-balanced setups, not manufacturer replicas
 or real-world vehicle specifications.
 
 - **Time trial** — a single flying lap against the clock on an empty track.
-- **Quick race** — you vs. three AI over 3 laps. The starting grid is shuffled
-  for each new race and restart, giving you an equal chance of P1, P2, P3 or P4.
+- **Quick race** — you vs. three AI over 3 laps. Each new race and finish-screen
+  restart draws three different opponent cars from the other five models. The
+  starting grid is shuffled independently, giving you an equal chance of P1,
+  P2, P3 or P4. Pressing R resets the current field and reshuffles its positions.
 - **Two player** — split-screen, WASD vs. arrows.
 
 Single-screen modes show the **perfect-line aid** (toggle with `L`): painted
@@ -172,7 +175,7 @@ samples to download. The engine note is the harmonic stack of a crankshaft
 turning at the flywheel's real RPM, so it flares with wheelspin, collapses
 through a shift cut and pops on the overrun; the throttle opens a filter the
 way a throttle opens an exhaust. Each body shape has its own character (a
-flat-plane V8 for the GT, a four-cylinder for the rally hatch, a cross-plane
+flat-plane V8 for the touring sedan, a four-cylinder for the rally pickup, a cross-plane
 burble for the classic V8, a V10 for the open-wheeler, a lighter four-cylinder
 roadster and a smooth V12 supercar). Tyres squeal from
 the physics' own per-wheel slide, the
@@ -211,14 +214,12 @@ pass. `M` mutes; the choice is remembered.
   and hoodoos. Each circuit is a data
   definition; everything is parented to a disposable group so switching
   circuits tears down and rebuilds cleanly.
-- **Cars**: procedurally lofted bodies (GT coupe, rally hatch, AI muscle,
-  open-wheeler) sampled at 43 columns per section and 12 rings per station,
-  with rolled bumper edges instead of flat end walls, crowned hoods, roofs and
-  decks, noses that fall continuously into a low bumper face (GT, hatch),
-  lamps cut into the fender corners as real apertures with recessed housings,
-  lit elements and flush lenses, clear-coated paint, cut-out wheel arches with
-  painted returns, open window apertures with visible cabins, 48-segment
-  tyres and distinct alloy wheels — merged into material batches per car.
+- **Cars**: six procedural bodies with distinct silhouettes: four-door sedan,
+  rally pickup, single-seater, classic V8, open roadster and mid-engine supercar.
+  Each has clear-coated paint, fitted lamps, cut-out wheel arches and its own
+  cabin and body details. The pickup has a separate open bed; the sedan has
+  divided side windows and a short trunk. Detailed tyres and alloy wheels are
+  shared efficiently, with body details merged into material batches per car.
 - **Frame pacing**: the simulation steps at a fixed 120 Hz; every car is drawn
   interpolated between its last two steps, and the chase camera and shadow
   frustum follow that drawn pose, so a 60, 120 or 144 Hz display all see
@@ -286,6 +287,8 @@ Timing uses software rendering in CI and is not a hardware FPS promise.
 `node scripts/car-selection-test.mjs` checks car previews, saved choices,
 keyboard selection, all race modes and restarts in Chromium. Use `--unit`
 to check choice validation and storage fallbacks without a browser.
+`node scripts/race-roster-test.mjs` exhaustively checks equally likely rival
+lineups, distinct opponent models and independence from the starting grid.
 `node scripts/car-shapes.mjs` renders all registered cars in identical paint
 from the side, front and rear so shape differences can be reviewed directly.
 
