@@ -246,8 +246,32 @@ function buildScreen(z0, z1) {
 function fasciaPatch(points, front, material, proud = 0.008) {
   const contour = points.map(([x, y]) => new THREE.Vector2(x, y));
   const triangles = THREE.ShapeUtils.triangulateShape(contour, []);
-  const positions = points.flatMap(([x, y]) => [x, y, (front ? noseZ(x, y) + proud : tailZ(x, y) - proud)]);
-  const indices = triangles.flatMap(triangle => front ? triangle : [...triangle].reverse());
+  const positions = [], indices = [];
+  // A contour-only polygon chords through the convex bumper and disappears
+  // in the middle. Subdivide in XY first, then seat every interior vertex on
+  // the fascia; the same surface contract applies to the rear lamp housings.
+  for (const triangle of triangles) {
+    const [a, b, c] = triangle.map(index => contour[index]);
+    const steps = Math.max(1, Math.ceil(Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a)) / 0.045));
+    const base = positions.length / 3;
+    const rowStart = row => row * (steps + 1) - row * (row - 1) / 2;
+    for (let row = 0; row <= steps; row++) {
+      for (let column = 0; column <= steps - row; column++) {
+        const u = row / steps, v = column / steps;
+        const x = a.x + (b.x - a.x) * u + (c.x - a.x) * v;
+        const y = a.y + (b.y - a.y) * u + (c.y - a.y) * v;
+        positions.push(x, y, front ? noseZ(x, y) + proud : tailZ(x, y) - proud);
+      }
+    }
+    const addTriangle = (a, b, c) => indices.push(...(front ? [a, b, c] : [a, c, b]));
+    for (let row = 0; row < steps; row++) {
+      for (let column = 0; column < steps - row; column++) {
+        const a = base + rowStart(row) + column, b = base + rowStart(row + 1) + column;
+        addTriangle(a, b, a + 1);
+        if (column < steps - row - 1) addTriangle(b, b + 1, a + 1);
+      }
+    }
+  }
   return makeMesh(positions, indices, material);
 }
 function fasciaLine(points, front, radius, material, proud = 0.012) {
@@ -261,12 +285,12 @@ function buildFront() {
     group.add(fasciaPatch([[0.36, 0.425], [0.74, 0.445], [0.82, 0.405], [0.78, 0.357], [0.38, 0.370]].map(([x, y]) => [side * x, y]), true, makeTrim()));
     group.add(fasciaLine([[0.395, 0.413], [0.735, 0.431], [0.787, 0.402]].map(([x, y]) => [side * x, y]), true, 0.008, makeHeadlight()));
     // Two quiet, narrow grille openings; no oversized mouth or race aero.
-    group.add(fasciaPatch([[0.045, 0.350], [0.215, 0.335], [0.225, 0.177], [0.085, 0.160]].map(([x, y]) => [side * x, y]), true, makeTrim()));
-    for (const x of [0.095, 0.140, 0.185]) {
-      group.add(fasciaLine([[side * x, 0.190], [side * x, 0.315]], true, 0.004, makeSatin()));
+    group.add(fasciaPatch([[0.035, 0.355], [0.290, 0.350], [0.305, 0.145], [0.070, 0.125]].map(([x, y]) => [side * x, y]), true, makeTrim()));
+    for (const x of [0.095, 0.150, 0.205, 0.260]) {
+      group.add(fasciaLine([[side * x, 0.165], [side * x, 0.325]], true, 0.004, makeSatin()));
     }
   }
-  group.add(fasciaPatch([[-0.57, 0.075], [0.57, 0.075], [0.51, -0.015], [-0.51, -0.015]], true, makeTrim()));
+  group.add(fasciaPatch([[-0.57, 0.090], [0.57, 0.090], [0.51, -0.020], [-0.51, -0.020]], true, makeTrim()));
   return group;
 }
 function buildRear() {

@@ -189,8 +189,7 @@ export function decorate(body, ctx) {
     body.add(box(0.055, 0.07, 1.32, makeTrim(), side * 0.95, -0.095, 0.02));
   }
   body.add(box(1.65, 0.095, 0.14, makeTrim(), 0, -0.035, -2.24));
-  // Tailgate stamp and handle sit between the vertical light pods.
-  body.add(box(1.13, 0.008, 0.012, makeShutline(), 0, 0.16, -2.244));
+  // Keep the tailgate face clear around the number plate.
   body.add(box(0.21, 0.045, 0.022, makeTrim(), 0, 0.51, -2.252));
   body.add(buildBadgesAndPlate({ frontZ: 2.276, frontY: 0.405,
     rearZ: -2.258, rearY: 0.365, plateY: 0.165 }));
