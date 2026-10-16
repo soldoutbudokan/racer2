@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import * as CANNON from 'cannon-es';
 import { createPhysicsWorld } from '../src/physics.js';
 import { CAR_SPECS, getCarSpec } from '../src/carSpecs.js';
+import { CAR_CHOICES } from '../src/carSelection.js';
 
 const canvasContext = new Proxy({}, {
   get(_target, key) {
@@ -98,6 +99,18 @@ for (const a of results) for (const b of results) {
   assert.ok(scores(a).some((value, i) => value < scores(b)[i] - Math.abs(scores(b)[i]) * 0.005),
     `${a.id} must give up a measurable capability to ${b.id}`);
 }
+// The menu's ratings must continue to describe the measured cars after tuning.
+// Handling combines turn-in and fast-corner grip, so its two distinct strengths
+// are checked below rather than reduced to a single misleading physical unit.
+const ratings = Object.fromEntries(CAR_CHOICES.map(choice => [choice.id, choice.ratings]));
+for (const a of results) for (const b of results) {
+  if (a.zero100 < b.zero100 - 0.05) assert.ok(ratings[a.id].acceleration >= ratings[b.id].acceleration,
+    `${a.id}/${b.id}: launch ratings agree with acceleration`);
+  if (a.topSpeed > b.topSpeed + 3) assert.ok(ratings[a.id].speed >= ratings[b.id].speed,
+    `${a.id}/${b.id}: speed ratings agree with terminal speed`);
+  if (a.stopping < b.stopping - 1) assert.ok(ratings[a.id].braking >= ratings[b.id].braking,
+    `${a.id}/${b.id}: brake ratings agree with stopping distance`);
+}
 assert.ok(byId.supercar.topSpeed > byId.hatch.topSpeed + 35, 'long straights reward the supercar');
 assert.ok(byId.hatch.zero100 < byId.supercar.zero100 - 0.4, 'short exits reward the hatch');
 assert.ok(byId['open-wheel'].stopping < byId.muscle.stopping - 6, 'late braking rewards the single-seater');
@@ -116,51 +129,51 @@ const { wheelSurfaces, nearestFrameIndex } = await import('../src/surfaces.js');
 const circuitIds = process.argv.includes('--all-tracks')
   ? TRACKS.map(track => track.id) : ['gp', 'sprint'];
 for (const circuitId of circuitIds) {
-const { world, materials } = createPhysicsWorld();
-const scene = new THREE.Scene();
-const track = createTrack(scene, world, materials, TRACKS.find(t => t.id === circuitId));
-const line = createRacingLine(scene, track);
-const gtProfile = Array.from(line.profile);
-line.setCarSpec(CAR_SPECS.muscle);
-assert.ok(line.profile.some((v, i) => Math.abs(v - gtProfile[i]) > 1),
-  'the driving aid changes its speed and braking advice for a different car');
-line.setCarSpec(CAR_SPECS.gt);
-assert.deepEqual(Array.from(line.profile), gtProfile, 'changing back restores the GT advice');
-line.dispose();
-const laps = [];
-for (const id of ids) {
-  const car = createCar(world, materials, { archetype: id });
-  const f = track.frames[0], n = track.frames.length;
-  car.reset({ x: f.pos.x, y: f.pos.y + 0.7, z: f.pos.z }, Math.atan2(f.tan.x, f.tan.z));
-  for (let i = 0; i < 90; i++) { car.applyControls(COAST, DT); world.step(DT); }
-  const driver = createAIDriver(track, { skill: 0.85 });
-  let previous = nearestFrameIndex(track, car.body.position), progress = 0;
-  let lapTime = null, offRoad = 0, reverse = 0;
-  for (let i = 0; i < 140 / DT; i++) {
-    car.applyControls(driver.update(car, [], DT), DT, wheelSurfaces(track, car));
-    world.step(DT);
-    if (car.telemetry.gearLabel === 'R') reverse += DT;
-    if (i % 12 !== 0) continue;
-    const index = nearestFrameIndex(track, car.body.position), f = track.frames[index], p = car.body.position;
-    let advance = index - previous;
-    if (advance < -n / 2) advance += n;
-    if (advance > n / 2) advance -= n;
-    progress += advance;
-    previous = index;
-    const offset = Math.abs((p.x - f.pos.x) * f.left.x + (p.z - f.pos.z) * f.left.z);
-    if (offset > track.width / 2 - 1) offRoad += DT * 12;
-    if (progress >= n) { lapTime = i * DT; break; }
+  const { world, materials } = createPhysicsWorld();
+  const scene = new THREE.Scene();
+  const track = createTrack(scene, world, materials, TRACKS.find(t => t.id === circuitId));
+  const line = createRacingLine(scene, track);
+  const gtProfile = Array.from(line.profile);
+  line.setCarSpec(CAR_SPECS.muscle);
+  assert.ok(line.profile.some((v, i) => Math.abs(v - gtProfile[i]) > 1),
+    'the driving aid changes its speed and braking advice for a different car');
+  line.setCarSpec(CAR_SPECS.gt);
+  assert.deepEqual(Array.from(line.profile), gtProfile, 'changing back restores the GT advice');
+  line.dispose();
+  const laps = [];
+  for (const id of ids) {
+    const car = createCar(world, materials, { archetype: id });
+    const f = track.frames[0], n = track.frames.length;
+    car.reset({ x: f.pos.x, y: f.pos.y + 0.7, z: f.pos.z }, Math.atan2(f.tan.x, f.tan.z));
+    for (let i = 0; i < 90; i++) { car.applyControls(COAST, DT); world.step(DT); }
+    const driver = createAIDriver(track, { skill: 0.85 });
+    let previous = nearestFrameIndex(track, car.body.position), progress = 0;
+    let lapTime = null, offRoad = 0, reverse = 0;
+    for (let i = 0; i < 140 / DT; i++) {
+      car.applyControls(driver.update(car, [], DT), DT, wheelSurfaces(track, car));
+      world.step(DT);
+      if (car.telemetry.gearLabel === 'R') reverse += DT;
+      if (i % 12 !== 0) continue;
+      const index = nearestFrameIndex(track, car.body.position), f = track.frames[index], p = car.body.position;
+      let advance = index - previous;
+      if (advance < -n / 2) advance += n;
+      if (advance > n / 2) advance -= n;
+      progress += advance;
+      previous = index;
+      const offset = Math.abs((p.x - f.pos.x) * f.left.x + (p.z - f.pos.z) * f.left.z);
+      if (offset > track.width / 2 - 1) offRoad += DT * 12;
+      if (progress >= n) { lapTime = i * DT; break; }
+    }
+    laps.push({ track: circuitId, id, lapTime, offRoad: +offRoad.toFixed(2), reverse: +reverse.toFixed(2) });
+    console.log(JSON.stringify(laps.at(-1)));
+    assert.ok(lapTime !== null, `${circuitId}/${id}: completes a lap`);
+    assert.equal(offRoad, 0, `${circuitId}/${id}: keeps all four wheels on road`);
+    assert.equal(reverse, 0, `${circuitId}/${id}: no recovery needed on a clear lap`);
+    car.dispose();
   }
-  laps.push({ track: circuitId, id, lapTime, offRoad: +offRoad.toFixed(2), reverse: +reverse.toFixed(2) });
-  console.log(JSON.stringify(laps.at(-1)));
-  assert.ok(lapTime !== null, `${circuitId}/${id}: completes a lap`);
-  assert.equal(offRoad, 0, `${circuitId}/${id}: keeps all four wheels on road`);
-  assert.equal(reverse, 0, `${circuitId}/${id}: no recovery needed on a clear lap`);
-  car.dispose();
-}
-const times = laps.map(lap => lap.lapTime);
-assert.ok(Math.max(...times) / Math.min(...times) < 1.18,
-  `${circuitId}: no package is uncompetitive: complete lap times stay within 18%`);
-track.dispose?.();
+  const times = laps.map(lap => lap.lapTime);
+  assert.ok(Math.max(...times) / Math.min(...times) < 1.18,
+    `${circuitId}: no package is uncompetitive: complete lap times stay within 18%`);
+  track.dispose?.();
 }
 console.log('PASS: every package laps cleanly, remains competitive, and changes the driving aid');

@@ -9,7 +9,6 @@ import {
 
 const CHASSIS_HALF = { x: 0.92, y: 0.32, z: 2.18 };
 
-
 function torqueAt(spec, rpm) {
   const c = spec.torqueCurve;
   if (rpm <= c[0][0]) return c[0][1];
@@ -40,8 +39,8 @@ export const ENGINE_BAND = Object.freeze({
 });
 
 /**
- * Builds a car with its own driving specification: lofted PBR visual + Cannon RaycastVehicle, with a
- * realistic longitudinal model (engine/gears/aero) layered on top.
+ * Builds a car with its own driving specification: lofted PBR visual and a
+ * Cannon RaycastVehicle with engine, gearbox and aerodynamic simulation.
  */
 export function createCar(world, materials, options = {}) {
   const bodyColor = options.color ?? 0xc8161d;

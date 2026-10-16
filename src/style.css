@@ -145,7 +145,7 @@ kbd {
 .header-caption { color: #9ca7ad; }
 .edition { gap: 10px; margin-left: auto; color: #8d999f; display: flex; align-items: center; }
 .edition b { margin-left: 12px; font-size: 18px; color: #eff0e9; font-style: italic; }
-.menu-layout { flex: 1; display: grid; grid-template-columns: 1.12fr 1fr; align-content: center; align-items: center; gap: 66px; padding: 30px 0 24px; }
+.menu-layout { flex: 1; display: grid; grid-template-columns: 1.12fr 1fr; align-content: center; align-items: start; gap: 66px; padding: 30px 0 24px; }
 .garage-panel { min-width: 0; position: relative; padding-top: 0; }
 .eyebrow-line { width: 24px; height: 2px; background: var(--accent); }
 .eyebrow { color: #b7c6cd; display: flex; gap: 8px; align-items: center; }
@@ -642,15 +642,14 @@ button:disabled { opacity: 0.45; cursor: wait; }
 @media (min-width: 761px) and (max-height: 850px) {
   .menu-header { height: 64px; flex-shrink: 0; }
   .menu-layout { padding: 20px 0 18px; gap: 48px; }
-  h1 { margin: 14px 0 8px; font-size: clamp(44px, 4.3vw, 60px); }
-  .hero-copy { font-size: 12px; }
-  .garage-stage { height: 235px; margin-top: 10px; }
+  h1 { margin: 10px 0 8px; font-size: 36px; }
+  .hero-copy { display: none; }
+  .garage-stage { height: 190px; margin-top: 10px; }
   .car-selector { margin-top: 12px; }
   .car-selector legend { margin-bottom: 7px; }
-  .car-option-content { padding-top: 8px; padding-bottom: 8px; }
+  .car-option-content { padding-top: 6px; padding-bottom: 6px; }
   .car-swatch { margin-bottom: 6px; }
-  .car-specs { padding: 16px 0; }
-  .garage-footer { padding: 13px 0; }
+  .car-specs, .garage-footer { display: none; }
   .section-heading { margin-bottom: 12px; }
   .track-card { padding: 9px 10px 10px; }
   .track-card svg { height: 64px; margin-bottom: 6px; }

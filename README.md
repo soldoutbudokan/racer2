@@ -300,7 +300,8 @@ Screenshots and render measurements are attached as a workflow artifact.
 
 ## Car balance checks
 
-Run `node scripts/car-balance-test.mjs` to measure the actual simulation on
+Run `node scripts/car-balance-test.mjs` (or add `--all-tracks` to cover every
+circuit) to measure the actual simulation on
 a flat road: 0–100 km/h, 80–160 km/h, terminal speed, 100–0 km/h stopping
 distance, turn-in response, fast-corner grip and rough-surface recovery. The
 suite checks meaningful differences and rejects a car that beats another in

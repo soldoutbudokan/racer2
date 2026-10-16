@@ -58,6 +58,15 @@ jobs:
         run: |
           GAME_URL=http://localhost:5174/ QA_DIR=qa/before/cars node scripts/car-shapes.mjs
           QA_DIR=qa/after/cars node scripts/car-shapes.mjs
+      - name: Upload car design review
+        if: matrix.check == 'visual'
+        uses: actions/upload-artifact@v4
+        with:
+          name: racer2-car-design-review
+          path: |
+            qa/before/cars/
+            qa/after/cars/
+          retention-days: 14
       - name: All-circuit before and after comparison
         if: matrix.check == 'visual'
         run: |
