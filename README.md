@@ -272,7 +272,7 @@ the local Playwright install, and need `npm run dev` running first.
 `node scripts/world-audit.mjs` builds all six worlds and checks road winding,
 finite geometry, scenery clearance, resource budgets and complete disposal.
 The visual CI job captures every circuit before and after the change, plus
-all four car bodies from matching cameras. See `docs/VISUAL_AUDIT.md` for
+all six car bodies from matching cameras. See `docs/VISUAL_AUDIT.md` for
 the per-circuit findings and remaining limitations.
 
 `node scripts/graphics-test.mjs` checks render budgets, adaptation and tree
@@ -286,7 +286,7 @@ Timing uses software rendering in CI and is not a hardware FPS promise.
 `node scripts/car-selection-test.mjs` checks car previews, saved choices,
 keyboard selection, all race modes and restarts in Chromium. Use `--unit`
 to check choice validation and storage fallbacks without a browser.
-`node scripts/car-shapes.mjs` renders the GT and rally hatch in identical paint
+`node scripts/car-shapes.mjs` renders all registered cars in identical paint
 from the side, front and rear so shape differences can be reviewed directly.
 
 `node scripts/ai-test.mjs` laps every circuit and runs the passing, queueing
