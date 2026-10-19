@@ -1,221 +1,180 @@
 import * as THREE from 'three';
 import {
-  buildGreenhouseShell, buildPanelSeams, buildWindowSeals, profileFractions,
+  buildGreenhouseShell, buildPanelSeams, buildWindowSeals, profileFractions, sampleSkin,
 } from './loftBuilder.js';
-import { makeGlass, makeTrim, makeCarbon, makeShutline } from './carMaterials.js';
+import { makeGlass, makeTrim, makeCarbon, makeSatin, makeShutline, makeHeadlight } from './carMaterials.js';
 import {
-  buildHeadlights, buildTaillights, buildMirrors, buildGrille, buildSplitter,
-  buildDiffuser, buildWing, buildExhaust, buildBadgesAndPlate, buildUnderbody,
-  buildArchLiners, buildInterior, buildDoorFurniture, buildBodyVents, buildWipers,
-  buildTowEye, buildAerial,
+  addOpening, buildTaillights, buildMirrors, buildGrille, buildSplitter, buildWing,
+  buildBadgesAndPlate, buildUnderbody, buildArchLiners, buildInterior, buildDoorFurniture,
+  buildWipers, buildAerial,
 } from './parts.js';
 
-// Muscle car — long flat hood, cabin set well rearward, upright notchback with
-// a distinct rear deck shelf, high shoulder haunches, hood scoop, ducktail,
-// quad exhaust and a roll cage you can see through the big upright glass.
+// ---------------------------------------------------------------------------
+// Classic V8 — a late-sixties fastback: a bonnet almost two metres long with
+// a power bulge, the cabin pushed back over the rear axle, a long shallow
+// fastback into a short deck with a ducktail, hips over the rear wheels, a
+// full-width tail lamp, quad round headlamps in an upright grille and side
+// pipes under the doors. Twin stripes nose to tail (livery.js).
 //
-// Deliberately NOT the GT at a different scale. The two cars differ in the
-// things the eye actually reads at race distance:
-//   roofline   1.30 m tall upright notchback  vs the GT's 1.22 m fastback
-//   hood       1.78 m from cowl to fascia     vs 1.52 m
-//   cabin      centred at z -0.21             vs z -0.07 (cab-forward)
-//   width cue  widest at the SHOULDER crease  vs widest at the ARCH lip
-//   roof       fully painted (mandatory here) vs one inset glass panel
-//
-// Axle-centred frame (wheel centre y 0, ground -0.36, axles z +/-1.45, tyre
-// outer face x 1.00). See gtCoupe.js for the shape rules this table obeys —
-// they are the same, and the reasons are recorded there.
+// Axle-centred frame: wheel centre y 0, ground -0.36, axles z ±1.475 (2.95 m
+// wheelbase), tyres' outer faces at x 1.03 (1.78 m track).
+// ---------------------------------------------------------------------------
+
+const CABIN = { beltIn: 0.14, beltY: 0.05, tumbleK: 0.60, tumbleY: 0.52, railIn: 0.040 };
+const LINE = { crease: 0.020, creaseY: 0.82 };
+
 export const keys = [
-  // z,      hw,     yb,     hip,   yt,    topW  + surface features
-  { z: -2.24, hw: 0.900, yb: -0.085, hip: 0.360, yt: 0.560, topW: 0.70, hard: true,
-    crown: 0.005 },
-  { z: -2.04, hw: 0.975, yb: -0.060, hip: 0.430, yt: 0.625, topW: 0.83,
-    crease: 0.012, creaseY: 0.80, crown: 0.007 },
-  { z: -1.78, hw: 1.000, yb: -0.030, hip: 0.480, yt: 0.650, topW: 0.88,
-    flare: 0.040, lipY: 0.68, crease: 0.017, creaseY: 0.82, sill: 0.010, crown: 0.009 },
-  { z: -1.45, hw: 1.005, yb:  0.060, hip: 0.500, yt: 0.660, topW: 0.90,
-    flare: 0.030, lipY: 0.70, crease: 0.018, creaseY: 0.83, crown: 0.011 },    // rear axle
-  { z: -1.16, hw: 1.000, yb: -0.085, hip: 0.495, yt: 0.760, topW: 0.82,
-    flare: 0.040, lipY: 0.66, sill: 0.022, crease: 0.016, creaseY: 0.79, crown: 0.013 },
-  // Roof authored at its two ends only — Catmull carries the crown to y ~0.940
-  // between them (see gtCoupe.js).
-  { z: -0.86, hw: 0.992, yb: -0.170, hip: 0.490, yt: 0.905, topW: 0.75,
-    sill: 0.032, crease: 0.014, creaseY: 0.815, tuck: 0.30, crown: 0.020 },    // C-pillar
-  { z:  0.00, hw: 0.988, yb: -0.188, hip: 0.480, yt: 0.930, topW: 0.74,
-    sill: 0.034, crease: 0.013, creaseY: 0.830, tuck: 0.30, crown: 0.020 },    // header rail
-  { z:  0.36, hw: 0.995, yb: -0.175, hip: 0.475, yt: 0.715, topW: 0.79,
-    sill: 0.030, crease: 0.013, creaseY: 0.833, crown: 0.012 },                // cowl
-  { z:  1.10, hw: 1.005, yb: -0.060, hip: 0.480, yt: 0.565, topW: 0.87,
-    flare: 0.042, lipY: 0.66, sill: 0.012, crease: 0.012, creaseY: 0.84, crown: 0.018 },
-  { z:  1.45, hw: 1.005, yb:  0.060, hip: 0.490, yt: 0.555, topW: 0.88,
-    flare: 0.030, lipY: 0.70, crease: 0.014, creaseY: 0.83, crown: 0.020 },    // front axle
-  { z:  1.80, hw: 1.002, yb: -0.050, hip: 0.470, yt: 0.550, topW: 0.87,
-    flare: 0.038, lipY: 0.68, crease: 0.012, creaseY: 0.84, crown: 0.018 },
-  { z:  2.14, hw: 0.985, yb: -0.125, hip: 0.395, yt: 0.535, topW: 0.85,
-    hard: true, crease: 0.007, creaseY: 0.85, crown: 0.012 },                  // leading edge
-  { z:  2.24, hw: 0.965, yb: -0.140, hip: 0.350, yt: 0.480, topW: 0.82, crown: 0.007 },
-  { z:  2.32, hw: 0.900, yb: -0.145, hip: 0.300, yt: 0.420, topW: 0.74, hard: true,
-    crown: 0.004 },
+  //   z,     hw,    yb,     hip,   yt,    topW
+  { z: -2.45, hw: 0.930, yb: -0.160, hip: 0.390, yt: 0.560, topW: 0.80, hard: true, crown: 0.006, ...LINE, crease: 0.008 },
+  { z: -2.20, hw: 0.995, yb: -0.170, hip: 0.440, yt: 0.580, topW: 0.86, crown: 0.010, ...LINE },
+  { z: -1.85, hw: 1.045, yb: -0.150, hip: 0.465, yt: 0.580, topW: 0.86, crown: 0.012, ...LINE, flare: 0.050, lipY: 0.84 },
+  { z: -1.475, hw: 1.065, yb: -0.020, hip: 0.475, yt: 0.610, topW: 0.84, crown: 0.012, ...LINE, flare: 0.065, lipY: 0.86 },  // rear axle
+  { z: -1.10, hw: 1.030, yb: -0.170, hip: 0.465, yt: 0.730, topW: 0.74, sill: 0.022, crown: 0.016, ...LINE, flare: 0.045, lipY: 0.82, ...CABIN, beltIn: 0.10 },
+  { z: -0.60, hw: 0.980, yb: -0.190, hip: 0.465, yt: 0.930, topW: 0.68, sill: 0.030, crown: 0.020, ...LINE, ...CABIN },  // C-pillar
+  { z: -0.15, hw: 0.975, yb: -0.190, hip: 0.460, yt: 0.985, topW: 0.66, sill: 0.030, crown: 0.020, ...LINE, ...CABIN },  // roof
+  { z:  0.02, hw: 0.975, yb: -0.190, hip: 0.460, yt: 0.975, topW: 0.66, sill: 0.030, crown: 0.020, ...LINE, ...CABIN },  // header
+  { z:  0.45, hw: 0.980, yb: -0.185, hip: 0.460, yt: 0.610, topW: 0.80, sill: 0.028, crown: 0.030, ...LINE, beltIn: 0.08, hard: true },  // cowl
+  { z:  1.00, hw: 0.990, yb: -0.170, hip: 0.450, yt: 0.580, topW: 0.86, crown: 0.034, ...LINE, flare: 0.025, lipY: 0.82 },
+  { z:  1.475, hw: 1.010, yb: -0.020, hip: 0.440, yt: 0.560, topW: 0.86, crown: 0.034, ...LINE, flare: 0.040, lipY: 0.84 },  // front axle
+  { z:  1.85, hw: 0.995, yb: -0.160, hip: 0.420, yt: 0.540, topW: 0.86, crown: 0.030, ...LINE, flare: 0.025, lipY: 0.82 },
+  { z:  2.20, hw: 0.975, yb: -0.165, hip: 0.390, yt: 0.515, topW: 0.86, crown: 0.020, ...LINE, hard: true },
+  { z:  2.45, hw: 0.930, yb: -0.165, hip: 0.330, yt: 0.470, topW: 0.82, crown: 0.010, hard: true },
 ];
-
-// Bumper edge radii — see gtCoupe.js. A classic chrome-era bumper is a touch
-// crisper than the GT's moulded fascia.
-export const CAP_ROLL = { nose: 0.050, tail: 0.050 };
-
+// Chrome-era edges: tight rolls front and rear; the bonnet just turns down.
+export const CAP_ROLL = { nose: { top: 0.06, bottom: 0.04 }, tail: { top: 0.05, bottom: 0.04 } };
 export const wheelStyle = 'muscle';
-
-// Landmark fractions of THIS car's cross-section — see gtCoupe.js.
 const F = profileFractions(keys);
 
-// Glazing: windshield, door glass, quarter light, backlight. Every side pane
-// stops at F.topCorner (the roof rail), so THE ROOF CROWN STAYS PAINTED. That
-// is mandatory on this car: a panoramic glass roof was defensible on a concept
-// GT and plainly wrong here, and it was the single worst-looking thing on the
-// model. There is no roof panel at all — the crown is one continuous pressing
-// from header to backlight.
-export const PANES = [
-  { zStart: 0.36, zEnd: 0.10, beltFrac: F.tumble, topFrac: 1.0, steps: 7 },   // windshield
-  //                          z 0.10 -> 0.00 painted: A-pillar / header
-  { zStart: 0.00, zEnd: -0.56, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 10 },
-  //                          z -0.56 -> -0.64 painted: B-pillar
-  { zStart: -0.64, zEnd: -0.94, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 6 },
-  //                          z -0.94 -> -1.08 painted: C-pillar
-  { zStart: -1.08, zEnd: -1.42, beltFrac: F.tumble, topFrac: 1.0, steps: 9 },  // backlight
+const GLASS = [
+  { zStart: 0.44, zStartTop: 0.38, zEnd: 0.03, beltFrac: F.topCorner, topFrac: 1, steps: 12 },
+  { zStart: 0.33, zStartTop: -0.06, zEnd: -0.66, zEndTop: -0.62, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 14 },
+  { zStart: -0.74, zEnd: -1.22, zEndTop: -0.96, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 10 },
+  { zStart: -0.78, zEnd: -1.52, beltFrac: F.topCorner, topFrac: 1, steps: 14 },
 ];
+export const PANES = GLASS;
 
-// Panel structure — see gtCoupe.js for the (z, profile-fraction) convention.
-// The long flat hood and the upright cabin make the shut lines matter more here
-// than on the GT: without them the whole flank is one pressing.
 const SHUT_LINES = [
-  { path: [[0.46, F.topCorner], [0.46, 1.00], [0.46, -F.topCorner]] },
-  { path: [[2.06, F.topCorner], [2.06, 1.00], [2.06, -F.topCorner]] },
-  { path: [[0.48, F.topCorner], [2.06, F.topCorner]], mirror: true },
-  // Door — long, as a two-door coupe's is; top edge on the shoulder crease,
-  // bottom on the rocker step.
+  { path: [[2.14, F.topCorner], [2.14, 1.0], [2.14, -F.topCorner]] },
+  { path: [[2.14, F.topCorner], [0.44, F.topCorner]], mirror: true },
   {
-    path: [[0.44, F.sillLip], [0.44, F.shoulder], [-0.86, F.shoulder],
-      [-0.86, F.sillLip], [0.44, F.sillLip]],
+    path: [[0.36, F.sillLip], [0.36, F.shoulder], [-0.86, F.shoulder],
+      [-0.86, F.sillLip], [0.36, F.sillLip]],
     mirror: true,
   },
-  // Boot lid, starting behind the backlight and running under the ducktail lip
-  // (which sits on it, z -1.89..-1.59).
-  { path: [[-1.48, F.topCorner], [-1.48, 1.00], [-1.48, -F.topCorner]] },
-  { path: [[-2.08, F.topCorner], [-2.08, 1.00], [-2.08, -F.topCorner]] },
-  { path: [[-1.48, F.topCorner], [-2.08, F.topCorner]], mirror: true },
+  { path: [[-1.56, F.topCorner], [-1.56, 1.0], [-1.56, -F.topCorner]] },
+  { path: [[-1.56, F.topCorner], [-2.26, F.topCorner]], mirror: true },
 ];
 
-// See the identical note in gtCoupe.js: parts.js yaws its side-facing recesses
-// the wrong way (`-sx * PI/2` sends local +z inboard on BOTH flanks), so every
-// door handle / gill / side intake would be buried inside the shell. Flip the
-// quarter-turns until parts.js is fixed.
+function box(w, h, d, material, x = 0, y = 0, z = 0) {
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+  mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true;
+  return mesh;
+}
 function faceOutboard(group) {
-  group.traverse((o) => {
+  group.traverse(o => {
     if (Math.abs(Math.abs(o.rotation.y) - Math.PI / 2) < 1e-6) o.rotation.y = -o.rotation.y;
   });
   return group;
 }
 
+// Quad round headlamps either side of the grille, in a black panel recessed
+// into the upright nose face. Nose cap plane z 2.45; face y -0.125 .. 0.41.
+function buildFace() {
+  const g = new THREE.Group();
+  const trim = makeTrim(), satin = makeSatin(), lamp = makeHeadlight();
+  for (const side of [-1, 1]) {
+    const panel = new THREE.Group();
+    panel.position.set(side * 0.60, 0.20, 2.452);
+    addOpening(panel, { w: 0.50, h: 0.24, depth: 0.030, wall: 0.010, lipT: 0.010,
+      floorMat: trim, wallMat: trim, lipMat: satin });
+    for (const x of [-0.125, 0.125]) {
+      const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.084, 0.010, 6, 28), satin);
+      bezel.position.set(x, 0, 0.030); panel.add(bezel);
+      const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.078, 0.078, 0.014, 24), satin);
+      dish.geometry.rotateX(Math.PI / 2); dish.position.set(x, 0, 0.024); panel.add(dish);
+      const bulb = new THREE.Mesh(new THREE.CircleGeometry(0.052, 24), lamp);
+      bulb.position.set(x, 0, 0.034); panel.add(bulb);
+    }
+    g.add(panel);
+  }
+  return g;
+}
+
+// Side pipes: a satin exhaust under each rocker with a slotted heat shield.
+function buildSidePipes() {
+  const g = new THREE.Group();
+  const satin = makeSatin(), trim = makeTrim();
+  for (const side of [-1, 1]) {
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.052, 1.55, 14, 1, true), satin);
+    pipe.geometry.rotateX(Math.PI / 2);
+    pipe.position.set(side * 0.99, -0.215, -0.30);
+    g.add(pipe);
+    const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.052, 0.16, 14, 1, true), satin);
+    tip.geometry.rotateX(Math.PI / 2);
+    tip.position.set(side * 0.99, -0.215, -1.13);
+    g.add(tip);
+    // heat shield with slots
+    g.add(box(0.03, 0.12, 1.10, trim, side * 1.015, -0.18, -0.20));
+    for (let i = 0; i < 6; i++) g.add(box(0.012, 0.07, 0.11, satin, side * 1.034, -0.18, -0.70 + i * 0.20));
+    // header pipes rising into the sill
+    g.add(box(0.06, 0.09, 0.30, trim, side * 0.96, -0.17, 0.60));
+  }
+  return g;
+}
+
 export function decorate(body, ctx) {
-  const glass = new THREE.Mesh(buildGreenhouseShell(keys, { panes: PANES }), makeGlass());
-  body.add(glass);
-
-  const seals = buildWindowSeals(keys, { panes: PANES });
-  if (seals) {
-    const m = new THREE.Mesh(seals, makeTrim());
-    m.receiveShadow = true;
-    body.add(m);
-  }
-
+  body.add(new THREE.Mesh(buildGreenhouseShell(keys, { panes: GLASS }), makeGlass()));
+  const seals = buildWindowSeals(keys, { panes: GLASS, width: 0.024 });
+  if (seals) body.add(new THREE.Mesh(seals, makeTrim()));
   const shut = buildPanelSeams(keys, SHUT_LINES);
-  if (shut) {
-    const m = new THREE.Mesh(shut, makeShutline());
-    m.receiveShadow = true;
-    body.add(m);
+  if (shut) body.add(new THREE.Mesh(shut, makeShutline()));
+
+  // Nose: grille between the lamp panels, satin bumper blade, chin spoiler.
+  body.add(buildFace());
+  body.add(buildGrille({ z: 2.452, y: 0.20, w: 0.62, h: 0.24, depth: 0.036, bar: true, ducts: false }));
+  body.add(box(1.80, 0.07, 0.06, makeSatin(), 0, -0.02, 2.46));
+  body.add(buildSplitter({ z: 2.37, y: -0.19, w: 1.70, canards: false, rods: false, fins: false }));
+  // Bonnet pins and the power bulge's scoop mouth.
+  const pin = sampleSkin(keys, 1.98, F.crownEdge);
+  for (const side of [-1, 1]) {
+    const disc = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.030, 0.008, 16), makeSatin());
+    disc.position.set(side * pin.position.x, pin.position.y + 0.004, 1.98);
+    body.add(disc);
   }
-
-  // Power-bulge hood scoop, half-sunk into the flat hood plane (yt ~0.55 there).
-  // This car gets a scoop instead of the GT's bonnet extractors — the vents
-  // would fight it for the same panel.
-  const scoop = new THREE.Mesh(new THREE.BoxGeometry(0.60, 0.11, 0.90), makeTrim());
-  scoop.position.set(0, 0.575, 1.10);
-  scoop.castShadow = true;
+  const scoopAt = sampleSkin(keys, 1.20, 1);
+  const scoop = box(0.64, 0.055, 0.96, makeTrim(), 0, scoopAt.position.y + 0.018, 1.10);
   body.add(scoop);
-  const scoopMouth = new THREE.Mesh(new THREE.BoxGeometry(0.50, 0.075, 0.10), makeCarbon());
-  scoopMouth.position.set(0, 0.590, 1.56);
-  body.add(scoopMouth);
+  body.add(box(0.56, 0.040, 0.02, makeCarbon(), 0, scoopAt.position.y + 0.024, 1.585));
 
-  // ---- Fascia parts. Nose cap plane at z 2.32 spanning y -0.145..0.42
-  // (half-width ~0.87 at grille height); tail cap plane at z -2.24 spanning
-  // y -0.085..0.56. Group origins sit ON those planes — see gtCoupe.js.
-  // See the long note in gtCoupe.js: the cap is a flat wall, so the cluster
-  // origin sits ON it (2.320) and the housing is 36 mm deep instead of 72 —
-  // otherwise the whole tub, 105 mm of it, hangs off the fascia as a box.
-  // x 0.58 already keeps the bezel's top-outer corner (0.813) inside the cap
-  // outline (0.822 at the lamp's top edge y 0.353), so it is unchanged.
-  body.add(buildHeadlights({
-    z: 2.320, y: 0.26, x: 0.58, width: 0.44, height: 0.16,
-    depth: 0.036, yaw: 0.04, pitch: -0.04,
-  }));
+  // Tail cap plane z -2.45; face y -0.12 .. 0.51: full-width lamp, plate,
+  // ducktail on the deck, satin bumper blade below.
   const tail = buildTaillights({
-    z: -2.235, y: 0.32, width: 1.44, height: 0.16, depth: 0.058, segments: 8,
+    z: -2.445, y: 0.33, width: 1.62, height: 0.15, depth: 0.040, barH: 0.060,
+    segments: 8, fog: false, reverse: true,
   });
   body.add(tail.group);
-  // Grille 10 mm up and 40 mm shorter, tow eye smaller: the lower edge of
-  // the cap now turns away round a 50 mm bumper roll, so nothing may reach
-  // the bottom 20 mm of the old outline.
-  body.add(buildGrille({ z: 2.325, y: 0.07, w: 1.05, h: 0.16 }));
-  body.add(buildTowEye({ z: 2.325, y: -0.090, x: 0.34, r: 0.032 }));
-  body.add(buildSplitter({
-    z: 2.26, y: -0.165, w: 1.36, canardX: 0.88, canardLen: 0.14,
-  }));
-  // rearZ sits 12 mm behind the tail cap plane (-2.240) — see the note in
-  // gtCoupe.js. At the old -2.235 the plate quad and the badge disc both landed
-  // exactly ON the cap and z-fought it.
-  // Plate 30 mm up out of the tail's bumper roll; the badge moves with it.
   body.add(buildBadgesAndPlate({
-    frontZ: 2.325, frontY: 0.30, rearZ: -2.252, rearY: 0.19, plateY: 0.05,
+    frontPose: sampleSkin(keys, 2.30, 1), rearZ: -2.458, rearY: 0.47, plateY: 0.14,
   }));
-  body.add(buildDiffuser({ z: -2.00, y: -0.26, w: 1.46 }));
-  body.add(buildExhaust({ z: -2.28, y: 0.06, x: 0.46, count: 4, r: 0.048 }));
-  // deck top at z -1.74 is y ~0.650; the ducktail lip lands on it, not above it
-  body.add(buildWing({ z: -1.90, deckY: 0.640, span: 1.56, style: 'ducktail' }));
+  body.add(box(1.80, 0.07, 0.06, makeSatin(), 0, -0.03, -2.46));
+  body.add(buildWing({ z: -2.10, deckY: 0.575, span: 1.60, style: 'ducktail' }));
 
-  // ---- Body surface details, measured off the flank at each station.
-  body.add(buildMirrors({ z: 0.32, y: 0.450, x: 0.938, color: ctx.color }));
-  // Both sit on crowned panels (cowl 12 mm, roof 20 mm).
-  body.add(buildWipers({ z: 0.41, y: 0.712, x: 0.28, len: 0.50, tilt: 0.10, rake: 0.06 }));
-  // Classic whip mast rather than the GT's shark fin.
-  body.add(buildAerial({ z: -1.00, y: 0.885, style: 'whip' }));
-  // Handle and repeater sit on different parts of the flank (door shoulder
-  // 0.988, fender haunch 1.012), so they get a call each — see gtCoupe.js.
+  body.add(buildMirrors({ z: 0.34, y: 0.515, x: 0.925, color: ctx.color, indicator: false }));
+  body.add(buildWipers({ z: 0.44, y: 0.635, x: 0.28, len: 0.50, tilt: 0.08, rake: 0.30 }));
+  body.add(buildAerial({ z: -1.10, y: 0.748, style: 'whip' }));
   body.add(faceOutboard(buildDoorFurniture({
-    x: 0.986, handleY: 0.42, handleZ: -0.28, handleW: 0.17,
-    repeater: false, fuel: false,
+    x: 0.976, handleY: 0.40, handleZ: -0.40, handleW: 0.17, repeater: false, fuel: false,
   })));
-  body.add(faceOutboard(buildDoorFurniture({
-    handles: false, x: 1.010, repeaterY: 0.36, repeaterZ: 0.90,
-    fuelX: 1.018, fuelY: 0.42, fuelZ: -1.30, fuelSide: -1, fuelR: 0.075,
-    color: ctx.color,
-  })));
-  body.add(faceOutboard(buildBodyVents({
-    bonnet: false, intakes: false,          // scoop above; no mid-engine intakes
-    // Flank falls 1.0025 -> 0.9929 across the stack, so 5 mm a slot (see the
-    // gillStep note in parts.js); the default 4 left the last slot floating.
-    gillZ: 0.80, gillY: 0.28, gillX: 1.000,
-    gillW: 0.060, gillH: 0.13, gillCount: 3, gillGap: 0.080, gillStep: 0.005,
-  })));
+  body.add(buildSidePipes());
 
-  // ---- Cabin, with a bolt-in cage: this is a street brawler, and the hoop is
-  // the one thing that reads instantly through the big upright side glass.
   body.add(buildInterior({
-    floorY: -0.01, dashZ: 0.28, dashH: 0.17, seatZ: -0.50, bulkheadZ: -1.05,
+    floorY: -0.02, dashZ: 0.36, dashH: 0.17, seatZ: -0.50, bulkheadZ: -1.15,
     seatX: 0.36, seatBackH: 0.56, halfWidth: 0.64,
-    wheelR: 0.16, wheelZ: 0.10, wheelY: 0.46, driverX: -0.34,
+    wheelR: 0.17, wheelZ: 0.14, wheelY: 0.46, driverX: -0.35,
     seats: 2, cage: true, harness: true,
   }));
 
-  body.add(buildUnderbody({ y: -0.245, w: 1.24, len: 3.7 }));
-  body.add(buildArchLiners({ zF: 1.45, zR: -1.45, x: 0.850, r: 0.413, width: 0.27, lip: false }));
-
+  body.add(buildUnderbody({ y: -0.245, w: 1.30, len: 4.20 }));
+  body.add(buildArchLiners({ zF: 1.475, zR: -1.475, x: 0.87, r: 0.413, width: 0.28, lip: false }));
   return { brakeLights: tail.brakeMesh };
 }

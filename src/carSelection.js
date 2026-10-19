@@ -1,33 +1,35 @@
-import { getCarSpec } from './carSpecs.js';
+import { getCarSpec, peakPowerW } from './carSpecs.js';
 
-// Ratings compare the six club-racing setups, not real-world manufacturer specs.
-// The balance probe exercises the same physics used in a race.
+// The six cars. Ratings compare the packages with each other on the game's
+// own measurements (scripts/car-balance-test.mjs runs the real physics and
+// checks the orderings below against it); they are not manufacturer claims.
+// The ids are stable so saved selections keep working.
 const choice = (data) => Object.freeze({ ...data, ratings: Object.freeze(data.ratings) });
 export const CAR_CHOICES = Object.freeze([
-  choice({ id: 'gt', name: 'Touring Sedan', color: 0xc8161d, colorName: 'Rosso', role: 'All-rounder',
-    strength: 'Composed through fast bends with dependable braking.',
-    tradeoff: 'Gives away launch pace and outright speed to the specialists.',
-    ratings: { acceleration: 8, speed: 7, handling: 7, braking: 8 } }),
-  choice({ id: 'hatch', name: 'Rally Pickup', color: 0x2588d1, colorName: 'Glacier blue', role: 'Grip & recovery',
-    strength: 'Quick off the line and forgiving over kerbs and loose surfaces.',
-    tradeoff: 'Short gearing and drag limit its speed on long straights.',
-    ratings: { acceleration: 10, speed: 5, handling: 8, braking: 8 } }),
-  choice({ id: 'open-wheel', name: 'Open Wheel', color: 0xf0b82f, colorName: 'Sunburst', role: 'Fast-corner grip',
-    strength: 'Downforce builds grip at speed and supports late braking.',
-    tradeoff: 'Keep it on the asphalt: rough surfaces cost it dearly.',
-    ratings: { acceleration: 9, speed: 6, handling: 9, braking: 10 } }),
-  choice({ id: 'muscle', name: 'Classic V8', color: 0xd86632, colorName: 'Burnt copper', role: 'Rolling power',
-    strength: 'Big V8 torque pulls hard when the road opens up.',
-    tradeoff: 'Heavy steering and longer stops reward an early braking point.',
-    ratings: { acceleration: 6, speed: 8, handling: 5, braking: 5 } }),
-  choice({ id: 'roadster', name: 'Club Roadster', color: 0x248b76, colorName: 'Racing green', role: 'Quick direction changes',
-    strength: 'Light and responsive, with the quickest steering in the field.',
-    tradeoff: 'Modest power and little downforce cost time in fast sections.',
-    ratings: { acceleration: 7, speed: 7, handling: 10, braking: 7 } }),
-  choice({ id: 'supercar', name: 'Apex Supercar', color: 0x7462d9, colorName: 'Iris metallic', role: 'Straight-line speed',
-    strength: 'A slippery body and tall gearing deliver the highest top speed.',
-    tradeoff: 'Slower launches and longer braking zones hurt in tight sections.',
-    ratings: { acceleration: 5, speed: 10, handling: 6, braking: 5 } }),
+  choice({ id: 'gt', name: 'GT3 Coupe', color: 0xc8161d, colorName: 'Rosso', role: 'All-rounder',
+    strength: 'Strong brakes, real downforce and 555 hp through slicks: dependable everywhere.',
+    tradeoff: 'Not the quickest launch, nor the fastest on a long straight.',
+    ratings: { acceleration: 9, speed: 8, handling: 8, braking: 8 } }),
+  choice({ id: 'hatch', name: 'Rally Hatch', color: 0x2588d1, colorName: 'Glacier blue', role: 'Grip & recovery',
+    strength: 'Four-wheel drive and a 2.5 m wheelbase: the best launch in the field, darts into corners and barely notices the grass.',
+    tradeoff: 'A 230 km/h ceiling, small brakes and a nose that pushes when hurried.',
+    ratings: { acceleration: 8, speed: 5, handling: 8, braking: 5 } }),
+  choice({ id: 'open-wheel', name: 'Formula', color: 0xf0b82f, colorName: 'Sunburst', role: 'Downforce',
+    strength: '800 kg, a V10 to 11,500 rpm and the most wing here: corner speeds and braking nothing else can touch.',
+    tradeoff: 'A brick through the air, so the straights belong to others, and helpless off the asphalt.',
+    ratings: { acceleration: 9, speed: 4, handling: 9, braking: 10 } }),
+  choice({ id: 'muscle', name: 'Classic V8', color: 0xd86632, colorName: 'Burnt copper', role: 'Big-block torque',
+    strength: 'A seven-litre V8 in a 1,600 kg fastback: monstrous mid-range and the second-highest top speed.',
+    tradeoff: 'Slow steering, little grip, a tail that steps out under power, and four long gears to light up.',
+    ratings: { acceleration: 5, speed: 8, handling: 4, braking: 6 } }),
+  choice({ id: 'roadster', name: 'Speedster', color: 0x248b76, colorName: 'Racing green', role: 'Lightweight',
+    strength: '820 kg with no roof: the quickest steering here and the most mechanical grip in slow and medium corners.',
+    tradeoff: 'Only 265 hp and no wing, so it has nothing in reserve on straights or in fast bends.',
+    ratings: { acceleration: 7, speed: 5, handling: 10, braking: 8 } }),
+  choice({ id: 'supercar', name: 'Hypercar', color: 0x7462d9, colorName: 'Iris metallic', role: 'Straight-line speed',
+    strength: 'A twin-turbo V12 near 780 hp and the slipperiest body: past 250 km/h it is alone.',
+    tradeoff: 'Lights up its rears in the low gears, and its mass tells on the brakes and in direction changes.',
+    ratings: { acceleration: 10, speed: 10, handling: 6, braking: 7 } }),
 ]);
 
 const STORAGE_KEY = 'racer2.car';
@@ -110,9 +112,10 @@ export function initCarSelector(onChange) {
       value.textContent = `${choice.ratings[key]}/10`;
     }
     const spec = getCarSpec(choice.id);
-    const power = Math.max(...spec.torqueCurve.map(([rpm, torque]) => rpm * torque * Math.PI / 30 / 745.7));
-    document.getElementById('car-spec-power').textContent = Math.round(power);
+    document.getElementById('car-spec-power').textContent = Math.round(peakPowerW(spec) / 745.7);
     document.getElementById('car-spec-mass').textContent = spec.massKg.toLocaleString('en');
+    const gears = document.getElementById('car-spec-gears');
+    if (gears) gears.textContent = spec.gears.length;
   }
 
   update(selected);

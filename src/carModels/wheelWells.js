@@ -5,9 +5,11 @@ import * as THREE from 'three';
 // keep the wheel faces visible. A convex polygonal cylinder lets us trim each
 // intersecting triangle exactly, preserving the loft's UVs and hard normals.
 // This runs once per cached road-car hull, never during rendering or driving.
-const ARCH_RADIUS = 0.408;
+//
+// The axle positions, the opening radius and the inboard limit of the cut
+// are the caller's: cars now have their own wheelbases (carSpecs.js), and a
+// rally car wants a taller opening over its tyre than a GT does.
 const ARCH_SEGMENTS = 64;
-const INNER_X = 0.665;
 const EPS = 1e-7;
 
 function splitPolygon(polygon, plane) {
@@ -28,7 +30,9 @@ function splitPolygon(polygon, plane) {
   return { inside, outside };
 }
 
-export function cutWheelWells(source) {
+export function cutWheelWells(source, {
+  zF = 1.45, zR = -1.45, r: ARCH_RADIUS = 0.408, innerX: INNER_X = 0.665, lip = 0.026,
+} = {}) {
   const position = source.getAttribute('position');
   const normal = source.getAttribute('normal');
   const uv = source.getAttribute('uv');
@@ -41,7 +45,7 @@ export function cutWheelWells(source) {
   for (let i = 0; i < ids.length; i += 3) triangles.push([vertices[ids[i]], vertices[ids[i + 1]], vertices[ids[i + 2]]]);
   const returns = [];
 
-  for (const axleZ of [-1.45, 1.45]) {
+  for (const axleZ of [zR, zF]) {
     for (const side of [-1, 1]) {
       const planes = [{ distance: v => INNER_X - side * v[0] }];
       // Inscribed 64-gon: the largest radial approximation is under 0.5 mm.
@@ -77,7 +81,7 @@ export function cutWheelWells(source) {
           const plane = planes.slice(1).find(p => Math.abs(p.distance(a)) < EPS * 4 && Math.abs(p.distance(b)) < EPS * 4);
           if (!plane || Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]) + Math.abs(a[2] - b[2]) < EPS) continue;
           const vertex = (v, inset) => [v[0] - side * inset, v[1], v[2], 0, -plane.y, -plane.z, v[6], v[7]];
-          const quad = [vertex(a, 0), vertex(b, 0), vertex(b, 0.026), vertex(a, 0.026)];
+          const quad = [vertex(a, 0), vertex(b, 0), vertex(b, lip), vertex(a, lip)];
           const ab = new THREE.Vector3().fromArray(quad[1]).sub(new THREE.Vector3().fromArray(quad[0]));
           const ac = new THREE.Vector3().fromArray(quad[2]).sub(new THREE.Vector3().fromArray(quad[0]));
           if (ab.cross(ac).dot(new THREE.Vector3(0, -plane.y, -plane.z)) < 0) quad.reverse();

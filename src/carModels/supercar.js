@@ -14,29 +14,35 @@ import {
 // Low mid-engine berlinetta. A narrow cab-forward roof, wide rear haunches,
 // deep side scoops and a long louvred engine deck give this car its own
 // silhouette. Axle positions and wheel clearances follow the shared chassis.
+// Greenhouse: glass sill 14 % inboard of the shoulder, convex glass, a
+// rounded rail (loftBuilder SURFACE_DEFAULTS). Axles at z ±1.40 (2.8 m
+// wheelbase), tyres' outer faces at x 1.07 (1.86 m track).
+const CABIN = { beltIn: 0.14, beltY: 0.05, tumbleK: 0.60, tumbleY: 0.52, railIn: 0.035 };
 export const keys = [
   { z: -2.33, hw: 0.89, yb: -0.13, hip: 0.33, yt: 0.47, topW: 0.72, crown: 0.006, hard: true },
   { z: -2.10, hw: 0.99, yb: -0.12, hip: 0.43, yt: 0.55, topW: 0.82, crown: 0.010 },
-  { z: -1.78, hw: 0.99, yb: -0.07, hip: 0.46, yt: 0.59, topW: 0.85, flare: 0.055, lipY: 0.68, crown: 0.015 },
-  { z: -1.45, hw: 0.995, yb: 0.035, hip: 0.47, yt: 0.61, topW: 0.85, flare: 0.065, lipY: 0.70, crown: 0.016 },
-  { z: -1.13, hw: 0.995, yb: -0.12, hip: 0.47, yt: 0.64, topW: 0.76, flare: 0.050, lipY: 0.67, sill: 0.022, crown: 0.014 },
-  { z: -0.62, hw: 0.96, yb: -0.195, hip: 0.42, yt: 0.79, topW: 0.62, sill: 0.035, tuck: 0.32, crease: 0.012, crown: 0.018 },
-  { z: 0.22, hw: 0.95, yb: -0.195, hip: 0.41, yt: 0.81, topW: 0.62, sill: 0.035, tuck: 0.32, crease: 0.012, crown: 0.018 },
-  { z: 0.64, hw: 0.955, yb: -0.17, hip: 0.405, yt: 0.52, topW: 0.78, sill: 0.020, crease: 0.010, crown: 0.015 },
-  { z: 1.12, hw: 0.965, yb: -0.09, hip: 0.41, yt: 0.46, topW: 0.84, flare: 0.055, lipY: 0.69, crown: 0.016 },
-  { z: 1.45, hw: 0.965, yb: 0.035, hip: 0.42, yt: 0.47, topW: 0.86, flare: 0.065, lipY: 0.72, crown: 0.017 },
-  { z: 1.78, hw: 0.96, yb: -0.09, hip: 0.39, yt: 0.435, topW: 0.84, flare: 0.050, lipY: 0.69, crown: 0.013 },
-  { z: 2.09, hw: 0.93, yb: -0.155, hip: 0.27, yt: 0.33, topW: 0.77, crown: 0.010 },
-  { z: 2.27, hw: 0.86, yb: -0.16, hip: 0.12, yt: 0.18, topW: 0.68, crown: 0.006 },
-  { z: 2.37, hw: 0.77, yb: -0.15, hip: 0.02, yt: 0.075, topW: 0.60, crown: 0.003, hard: true },
+  { z: -1.73, hw: 1.03, yb: -0.07, hip: 0.46, yt: 0.59, topW: 0.85, flare: 0.045, lipY: 0.82, crown: 0.015 },
+  { z: -1.40, hw: 1.05, yb: 0.035, hip: 0.47, yt: 0.61, topW: 0.85, flare: 0.055, lipY: 0.86, crown: 0.016 },
+  { z: -1.08, hw: 1.02, yb: -0.12, hip: 0.47, yt: 0.64, topW: 0.76, flare: 0.040, lipY: 0.80, sill: 0.022, crown: 0.014 },
+  { z: -0.62, hw: 0.96, yb: -0.195, hip: 0.42, yt: 0.79, topW: 0.64, sill: 0.035, tuck: 0.32, crease: 0.012, crown: 0.018, ...CABIN },
+  { z:  0.22, hw: 0.95, yb: -0.195, hip: 0.41, yt: 0.81, topW: 0.64, sill: 0.035, tuck: 0.32, crease: 0.012, crown: 0.018, ...CABIN },
+  { z:  0.64, hw: 0.955, yb: -0.17, hip: 0.405, yt: 0.52, topW: 0.78, sill: 0.020, crease: 0.010, crown: 0.015, beltIn: 0.07, hard: true },
+  { z:  1.07, hw: 0.985, yb: -0.09, hip: 0.41, yt: 0.46, topW: 0.84, flare: 0.040, lipY: 0.80, crown: 0.016 },
+  { z:  1.40, hw: 1.015, yb: 0.035, hip: 0.42, yt: 0.47, topW: 0.86, flare: 0.050, lipY: 0.86, crown: 0.017 },
+  { z:  1.73, hw: 0.98, yb: -0.09, hip: 0.39, yt: 0.435, topW: 0.84, flare: 0.035, lipY: 0.80, crown: 0.013 },
+  { z:  2.09, hw: 0.93, yb: -0.155, hip: 0.27, yt: 0.33, topW: 0.77, crown: 0.010 },
+  { z:  2.27, hw: 0.86, yb: -0.16, hip: 0.12, yt: 0.18, topW: 0.68, crown: 0.006 },
+  { z:  2.37, hw: 0.77, yb: -0.15, hip: 0.02, yt: 0.075, topW: 0.60, crown: 0.003, hard: true },
 ];
-export const CAP_ROLL = { nose: 0.038, tail: 0.055 };
-export const wheelStyle = 'gt';
+export const CAP_ROLL = { nose: { top: 0.08, bottom: 0.035 }, tail: { top: 0.09, bottom: 0.05 } };
+export const wheelStyle = 'supercar';
 const F = profileFractions(keys);
+// Crown-only screen and backlight (the pillars stay painted), a door pane
+// with a raked A-pillar and a C-pillar leaning with the engine deck.
 const GLASS = [
-  { zStart: 0.61, zEnd: 0.28, beltFrac: F.tumble, topFrac: 1, steps: 12 },
-  { zStart: 0.18, zEnd: -0.72, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 18 },
-  { zStart: -0.82, zEnd: -1.24, beltFrac: F.tumble, topFrac: 1, steps: 12 },
+  { zStart: 0.62, zStartTop: 0.56, zEnd: 0.24, beltFrac: F.topCorner, topFrac: 1, steps: 12 },
+  { zStart: 0.50, zStartTop: 0.14, zEnd: -0.60, zEndTop: -0.44, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 16 },
+  { zStart: -0.70, zEnd: -1.22, beltFrac: F.topCorner, topFrac: 1, steps: 12 },
 ];
 const HEADLAMPS = [-1, 1].map(side => ({
   zStart: 2.26, zEnd: 1.88, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 13, side,
@@ -44,8 +50,10 @@ const HEADLAMPS = [-1, 1].map(side => ({
 const TAILLAMPS = [-1, 1].map(side => ({
   zStart: -2.10, zEnd: -2.26, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 6, side,
 }));
+// Side scoops ahead of the rear arches, between the sill step and the
+// shoulder line — shallower than the full-flank bites they replaced.
 const INTAKES = [-1, 1].map(side => ({
-  zStart: -0.55, zEnd: -1.01, beltFrac: F.flankFoot, topFrac: F.shoulder, steps: 14, side,
+  zStart: -0.56, zEnd: -0.98, zEndTop: -0.92, beltFrac: F.archLip, topFrac: F.crease, steps: 12, side,
 }));
 export const PANES = [...GLASS, ...HEADLAMPS, ...TAILLAMPS, ...INTAKES];
 
@@ -100,8 +108,8 @@ export function decorate(body, ctx) {
     { path: [[0.73, F.topCorner], [0.73, 1], [0.73, -F.topCorner]] },
     { path: [[0.73, F.topCorner], [1.87, F.topCorner]], mirror: true },
     { path: [[1.87, F.topCorner], [1.87, 1], [1.87, -F.topCorner]] },
-    { path: [[0.73, F.sillLip], [0.73, F.shoulder], [-0.43, F.shoulder],
-      [-0.43, F.sillLip], [0.73, F.sillLip]], mirror: true },
+    { path: [[0.73, F.sillLip], [0.73, F.shoulder], [-0.50, F.shoulder],
+      [-0.50, F.sillLip], [0.73, F.sillLip]], mirror: true },
     { path: [[-1.33, F.topCorner], [-1.33, 1], [-1.33, -F.topCorner]] },
     { path: [[-1.33, F.topCorner], [-2.05, F.topCorner]], mirror: true },
   ]);
@@ -126,6 +134,6 @@ export function decorate(body, ctx) {
   body.add(buildBadgesAndPlate({ frontPose: sampleSkin(keys, 2.02, 1), rearZ: -2.345,
     rearY: 0.41, plateY: 0.105 }));
   body.add(buildUnderbody({ y: -0.26, w: 1.22, len: 3.72 }));
-  body.add(buildArchLiners({ x: 0.845, width: 0.26, r: 0.413, lip: false }));
+  body.add(buildArchLiners({ zF: 1.40, zR: -1.40, x: 0.90, width: 0.30, r: 0.413, lip: false }));
   return { brakeLights: tail.brakeMesh };
 }

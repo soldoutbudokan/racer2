@@ -68,24 +68,24 @@ Choose from **six cars**, each with its own body, colour, sound and driving
 setup. The showroom compares acceleration, top speed, handling and braking,
 and explains both the strength and the cost of each choice. Your selection is
 remembered and used in time trials, races, restarts and Player 1 in split screen.
-Player 2 uses the rally pickup. Saved choices still work: the previous GT and
-hatch slots now select the Touring Sedan and Rally Pickup.
+Player 2 uses the rally hatch. Saved choices still work: the ids are stable, so
+an old "gt" or "hatch" preference selects the GT3 Coupe or the Rally Hatch.
 
-| Car | Best at | Trade-off |
-| --- | --- | --- |
-| **Touring Sedan** | Stable fast bends and dependable braking | Neither the fastest launch nor the highest top speed |
-| **Rally Pickup** | Launches, mechanical grip and rough-surface recovery | Lowest straight-line speed |
-| **Open Wheel** | High-speed grip and shortest stops | Slow on long straights; punishing off the asphalt |
-| **Classic V8** | Rolling acceleration and high straight-line speed | Heavy turn-in and long braking distances |
-| **Club Roadster** | Quick steering and tight direction changes | Modest power and little high-speed downforce |
-| **Apex Supercar** | Highest top speed | Slower launches, limited grip and longer stops |
+| Car | Package | Best at | Trade-off |
+| --- | --- | --- | --- |
+| **GT3 Coupe** | 555 hp V8, 1,300 kg, slicks, real wing, 2.75 m wheelbase | Dependable everywhere; strong brakes and downforce | Neither the best launch nor the highest top speed |
+| **Rally Hatch** | 365 hp turbo four, four-wheel drive, 1,230 kg, 2.5 m wheelbase, gravel tyres | The best launch in the field, darts into corners, barely slowed by grass | 230 km/h ceiling, small brakes, pushes when hurried |
+| **Formula** | 520 hp V10 to 11,500 rpm, 800 kg, the most wing | Corner speeds and braking nothing else can touch | A brick through the air; helpless off the asphalt |
+| **Classic V8** | 7-litre big block, 1,600 kg, four long gears, 2.95 m wheelbase | Monstrous mid-range, second-highest top speed | Slow steering, little grip, the tail steps out under power |
+| **Speedster** | 265 hp flat four, 820 kg, no roof, 2.4 m wheelbase | The quickest steering and the most mechanical grip in slow corners | No wing and no power to spare on straights |
+| **Hypercar** | 780 hp twin-turbo V12, 1,480 kg, seven-speed, slipperiest body | Past 250 km/h it is alone | Wheelspin in the low gears; mass tells on brakes and direction changes |
 
-The first two cars are entirely new concepts: a four-door performance sedan
-with a separate trunk and a compact rally pickup with an upright cab and open
-cargo bed. The roadster has an open cockpit and twin roll
-hoops; the supercar has a low canopy, rear engine deck and recessed side intakes.
-These are original designs and game-balanced setups, not manufacturer replicas
-or real-world vehicle specifications.
+The six are original designs and game-balanced setups, not manufacturer
+replicas. They were redrawn from the ground up on 2026-10-18: the previous
+touring sedan, rally pickup, club roadster and classic V8 bodies are gone, and
+the packages now differ in wheelbase, track, centre-of-mass height, drive
+layout and grip balance as well as power, weight, aero, tyres and brakes.
+`node scripts/car-balance-test.mjs` prints the measured differences.
 
 - **Time trial** — a single flying lap against the clock on an empty track.
 - **Quick race** — you vs. three AI over 3 laps. Each new race and finish-screen
@@ -130,10 +130,13 @@ validates a layout's corner radii, section gaps and start straight.
 ## Driving model
 
 Each car uses a Cannon `RaycastVehicle` with its own immutable specification in
-`src/carSpecs.js`. The GT remains the reference setup; the other five change
-weight, torque, gearing, drag, downforce, tyre grip, steering response and brakes:
+`src/carSpecs.js`. The GT3 is the reference setup; the other five change
+weight, wheelbase, track, centre-of-mass height, drive layout, torque, gearing,
+drag, downforce, tyre grip, grip balance, yaw inertia, steering response and
+brakes:
 
-- **Engine & flywheel** — a real torque curve through a 6-speed automatic with
+- **Engine & flywheel** — a real torque curve through an automatic gearbox
+  (four speeds in the V8, seven in the formula car and the hypercar) with
   shift cuts, engine braking and reverse. The engine has rotating inertia, so
   RPM is a genuine state, not a readout of road speed: when the driven tyres
   can't put all the torque down the surplus spins them up and the tach flares —
@@ -153,15 +156,26 @@ weight, torque, gearing, drag, downforce, tyre grip, steering response and brake
 - **Surfaces** — per-wheel detection of road / kerb / grass / gravel. Grass
   is slippery and draggy; the gravel traps at the heavy corners will genuinely
   ruin your lap.
-- **Brakes** — front-biased, ~1.4 g with aero (180 km/h stops in ~80 m).
+- **Brakes** — front-biased, ~1.5 g with aero in the GT3 (100 km/h stops in
+  ~24 m; the formula car in 16, the rally hatch in 30). Rear shares are sized
+  to what the rear axle still carries under full dive, so a stamped pedal
+  understeers rather than spins.
+- **Weight transfer** — each car's centre of mass sits at its own height over
+  the same wheels (`cgHeight`, 0.40 m in the formula car to 0.58 m in the V8),
+  which sets how hard it dives, squats and rolls onto its outside tyre.
+- **Drive layout and balance** — the rally hatch sends 40 % of its torque to
+  the front axle and gets four tyres' worth of traction out of a hairpin; the
+  V8's rears hold 6 % less than its fronts, so it oversteers on power.
 - **Steering** — traction-limited and speed-sensitive with a rate-limited
   column, so turn-in has weight and full lock at speed means understeer, not
   a magic pivot.
 
 The AI runs the same per-car physics through a pre-computed lap speed profile
 (corner speeds from curvature and the selected car’s grip/aero, anticipatory
-braking from its brakes), pure-pursuit steering
-and stuck-recovery. In traffic a driver picks a clear lane past a slower car,
+braking from its brakes inside a friction circle, so a braking zone that would
+fall inside a bend is pushed back before it), pure-pursuit steering and
+stuck-recovery. Its pedal starts at the planned deceleration for its own
+brakes and tapers as the corner takes the tyre. In traffic a driver picks a clear lane past a slower car,
 checks it for cars alongside or closing from behind, and holds it until it is
 clear ahead. Gaps are measured along the track, so a car just over the start
 line is not mistaken for one a lap behind. The driver brakes for the path it
@@ -176,9 +190,10 @@ samples to download. The engine note is the harmonic stack of a crankshaft
 turning at the flywheel's real RPM, so it flares with wheelspin, collapses
 through a shift cut and pops on the overrun; the throttle opens a filter the
 way a throttle opens an exhaust. Each body shape has its own character (a
-flat-plane V8 for the touring sedan, a four-cylinder for the rally pickup, a cross-plane
-burble for the classic V8, a V10 for the open-wheeler, a lighter four-cylinder
-roadster and a smooth V12 supercar). Tyres squeal from
+flat-plane V8 for the GT3, a turbo four for the rally hatch, a cross-plane
+burble for the classic V8, a V10 for the formula car, a flat four for the
+speedster and a smooth V12 for the hypercar), and the HUD's rev band is
+drawn for the car on the grid. Tyres squeal from
 the physics' own per-wheel slide, the
 surface under the car hisses (grass), crunches (gravel) or rumbles at the
 rib rate (kerbs), wind builds with speed, and the chassis thumps on contact.
@@ -215,12 +230,19 @@ pass. `M` mutes; the choice is remembered.
   and hoodoos. Each circuit is a data
   definition; everything is parented to a disposable group so switching
   circuits tears down and rebuilds cleanly.
-- **Cars**: six procedural bodies with distinct silhouettes: four-door sedan,
-  rally pickup, single-seater, classic V8, open roadster and mid-engine supercar.
-  Each has clear-coated paint, fitted lamps, cut-out wheel arches and its own
-  cabin and body details. The pickup has a separate open bed; the sedan has
-  divided side windows and a short trunk. Detailed tyres and alloy wheels are
-  shared efficiently, with body details merged into material batches per car.
+- **Cars**: six procedural bodies with distinct silhouettes: a wide-body GT3
+  coupe with a swan-neck wing and door roundels, a rally hatch with box arches,
+  a four-lamp pod, mud flaps and a tailgate wing on a raised stance, a formula
+  single-seater, a long-bonnet V8 fastback with quad lamps, side pipes and
+  stripes, a roofless speedster with deck humps and a wraparound screen, and a
+  mid-engine hypercar. The road cars are lofted on `carModels/loftBuilder.js`,
+  which gives them a real shoulder ledge under the glass, convex side glass,
+  leaning A- and C-pillars (raked pane edges), bonnets and decks that curl down
+  into their fascias (asymmetric bumper rolls) and lamps cut into the fenders.
+  Each has clear-coated paint, cut-out wheel arches on its own wheelbase and
+  track, and its own wheels: centre-lock slicks, six-spoke gravel wheels, deep
+  five-spokes, a fine mesh. Detailed tyres and alloy wheels are shared
+  efficiently, with body details merged into material batches per car.
 - **Frame pacing**: the simulation steps at a fixed 120 Hz; every car is drawn
   interpolated between its last two steps, and the chase camera and shadow
   frustum follow that drawn pose, so a 60, 120 or 144 Hz display all see

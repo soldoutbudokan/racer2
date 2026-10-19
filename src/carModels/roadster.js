@@ -1,63 +1,104 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  buildPanelSeams, buildWindowSeals, profileFractions, sampleSkin,
+  buildLoftHull, buildPanelSeams, buildWindowSeals, profileFractions, sampleSkin,
 } from './loftBuilder.js';
-import { makeGlass, makePaint, makeSatin, makeShutline, makeTrim } from './carMaterials.js';
+import { makeGlass, makePaint, makeSatin, makeShutline, makeTrim, makeTaillight } from './carMaterials.js';
 import { buildApertureLamps } from './apertureLamps.js';
 import {
-  buildTaillights, buildMirrors, buildGrille, buildSplitter, buildDiffuser,
-  buildExhaust, buildBadgesAndPlate, buildUnderbody, buildArchLiners, buildInterior,
+  buildMirrors, buildGrille, buildSplitter, buildDiffuser, buildExhaust,
+  buildBadgesAndPlate, buildUnderbody, buildArchLiners, buildInterior, buildWing,
 } from './parts.js';
 
-// A compact, front-engined two-seater: rounded fenders, a low waist and a real
-// open cockpit. All dimensions stay in the shared axle-centred frame, with
-// axles at +/-1.45 and a 0.36 tyre radius. The short overhangs, separate screen
-// and twin hoops distinguish it from every enclosed car even at race distance.
+// ---------------------------------------------------------------------------
+// Speedster — kept under the legacy `roadster` id.
+//
+// A low two-seater with no roof at all: a wraparound screen barely higher
+// than the belt, two humps on the rear deck behind the seats, a nose that
+// drops to a slim mouth, round tail lamps and a lip spoiler. 3.9 m long on a
+// 2.4 m wheelbase, so the wheels sit at the corners.
+//
+// Axle-centred frame: wheel centre y 0, ground -0.36, axles z ±1.20, tyres'
+// outer faces at x 0.98 (1.68 m track).
+// ---------------------------------------------------------------------------
+
+const LINE = { crease: 0.010, creaseY: 0.80 };
 export const keys = [
-  { z: -2.07, hw: 0.82, yb: -0.12, hip: 0.25, yt: 0.37, topW: 0.65, crown: 0.010, hard: true },
-  { z: -1.88, hw: 0.93, yb: -0.12, hip: 0.36, yt: 0.45, topW: 0.79, crown: 0.014, flare: 0.035 },
-  { z: -1.73, hw: 0.965, yb: -0.08, hip: 0.39, yt: 0.47, topW: 0.84, flare: 0.055, lipY: 0.70, crown: 0.015 },
-  { z: -1.45, hw: 0.965, yb: 0.035, hip: 0.41, yt: 0.49, topW: 0.85, flare: 0.060, lipY: 0.72, crown: 0.016 },
-  { z: -1.12, hw: 0.96, yb: -0.13, hip: 0.39, yt: 0.45, topW: 0.80, flare: 0.050, lipY: 0.68, crown: 0.012 },
-  { z: -0.84, hw: 0.925, yb: -0.18, hip: 0.37, yt: 0.43, topW: 0.78, sill: 0.022, crown: 0.010 },
-  { z: 0.30, hw: 0.92, yb: -0.18, hip: 0.365, yt: 0.44, topW: 0.78, sill: 0.022, crown: 0.014 },
-  { z: 0.60, hw: 0.93, yb: -0.16, hip: 0.375, yt: 0.46, topW: 0.80, sill: 0.018, crown: 0.019 },
-  { z: 1.12, hw: 0.96, yb: -0.10, hip: 0.40, yt: 0.47, topW: 0.83, flare: 0.050, lipY: 0.70, crown: 0.022 },
-  { z: 1.45, hw: 0.96, yb: 0.035, hip: 0.41, yt: 0.48, topW: 0.85, flare: 0.060, lipY: 0.72, crown: 0.020 },
-  { z: 1.77, hw: 0.955, yb: -0.09, hip: 0.365, yt: 0.425, topW: 0.81, flare: 0.045, lipY: 0.70, crown: 0.017 },
-  { z: 1.99, hw: 0.91, yb: -0.14, hip: 0.235, yt: 0.30, topW: 0.73, crown: 0.013 },
-  { z: 2.13, hw: 0.78, yb: -0.14, hip: 0.08, yt: 0.15, topW: 0.63, crown: 0.006, hard: true },
+  //   z,     hw,    yb,     hip,   yt,    topW
+  { z: -1.85, hw: 0.860, yb: -0.140, hip: 0.300, yt: 0.420, topW: 0.70, hard: true, crown: 0.010, ...LINE, crease: 0.006 },
+  { z: -1.62, hw: 0.955, yb: -0.150, hip: 0.365, yt: 0.455, topW: 0.80, crown: 0.014, ...LINE, flare: 0.030, lipY: 0.80 },
+  { z: -1.20, hw: 0.990, yb: -0.030, hip: 0.405, yt: 0.470, topW: 0.84, crown: 0.016, ...LINE, flare: 0.055, lipY: 0.84 },   // rear axle
+  { z: -0.85, hw: 0.960, yb: -0.170, hip: 0.395, yt: 0.470, topW: 0.80, crown: 0.012, ...LINE, flare: 0.030, lipY: 0.80, sill: 0.020 },
+  { z: -0.20, hw: 0.940, yb: -0.180, hip: 0.385, yt: 0.455, topW: 0.78, crown: 0.010, ...LINE, sill: 0.024 },
+  { z:  0.45, hw: 0.945, yb: -0.175, hip: 0.390, yt: 0.470, topW: 0.80, crown: 0.016, ...LINE, sill: 0.020, hard: true },   // cowl
+  { z:  0.85, hw: 0.960, yb: -0.160, hip: 0.400, yt: 0.455, topW: 0.82, crown: 0.020, ...LINE, flare: 0.030, lipY: 0.80 },
+  { z:  1.20, hw: 0.990, yb: -0.030, hip: 0.410, yt: 0.455, topW: 0.84, crown: 0.022, ...LINE, flare: 0.055, lipY: 0.84 },   // front axle
+  { z:  1.55, hw: 0.960, yb: -0.160, hip: 0.370, yt: 0.410, topW: 0.82, crown: 0.018, ...LINE, flare: 0.030, lipY: 0.80 },
+  { z:  1.85, hw: 0.900, yb: -0.175, hip: 0.250, yt: 0.300, topW: 0.76, crown: 0.012, ...LINE, hard: true },
+  { z:  2.05, hw: 0.820, yb: -0.180, hip: 0.070, yt: 0.130, topW: 0.66, crown: 0.006, hard: true },
 ];
-export const CAP_ROLL = { nose: 0.040, tail: 0.055 };
-export const wheelStyle = 'rally';
+export const CAP_ROLL = { nose: { top: 0.14, bottom: 0.045 }, tail: { top: 0.09, bottom: 0.05 } };
+export const wheelStyle = 'speedster';
 const F = profileFractions(keys);
 
-// Removing the crown, rather than hiding a roof with a black panel, leaves
-// the two seats and dashboard visibly inside a deep, open passenger cell.
-const COCKPIT = [{ zStart: 0.40, zEnd: -0.91, beltFrac: F.topCorner, topFrac: 1, steps: 18 }];
+// The cockpit is a hole in the deck: everything between the top corners from
+// the cowl to the humps comes out of the painted shell.
+const COCKPIT = [{ zStart: 0.40, zEnd: -0.88, beltFrac: F.topCorner, topFrac: 1, steps: 18 }];
 const HEADLAMPS = [-1, 1].map(side => ({
-  zStart: 2.04, zEnd: 1.84, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 8, side,
+  zStart: 1.92, zEnd: 1.60, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 10, side,
 }));
 export const PANES = [...COCKPIT, ...HEADLAMPS];
 
-function tube(points, radius, material, closed = false) {
-  const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)), closed, 'centripetal');
-  return new THREE.Mesh(new THREE.TubeGeometry(curve, closed ? 48 : 24, radius, 6, closed), material);
+const SHUT_LINES = [
+  { path: [[1.74, F.topCorner], [1.74, 1.0], [1.74, -F.topCorner]] },
+  { path: [[1.74, F.topCorner], [0.44, F.topCorner]], mirror: true },
+  {
+    path: [[0.40, F.sillLip], [0.40, F.shoulder], [-0.84, F.shoulder],
+      [-0.84, F.sillLip], [0.40, F.sillLip]],
+    mirror: true,
+  },
+  { path: [[-1.00, F.topCorner], [-1.00, -F.topCorner]] },
+];
+
+// A speedster hump: a small loft of its own, sunk into the rear deck behind
+// each seat, tapering back to nothing at the deck lid.
+const HUMP = [
+  { z: -1.66, hw: 0.17, yb: 0.36, hip: 0.43, yt: 0.465, topW: 0.11, crown: 0.004 },
+  { z: -1.38, hw: 0.27, yb: 0.36, hip: 0.45, yt: 0.530, topW: 0.18, crown: 0.010 },
+  { z: -1.10, hw: 0.31, yb: 0.36, hip: 0.46, yt: 0.600, topW: 0.21, crown: 0.014 },
+  { z: -0.94, hw: 0.31, yb: 0.36, hip: 0.46, yt: 0.630, topW: 0.21, crown: 0.014 },
+  { z: -0.82, hw: 0.29, yb: 0.36, hip: 0.45, yt: 0.610, topW: 0.19, crown: 0.010, hard: true },
+];
+let humpGeo = null;
+function buildHumps(color) {
+  const g = new THREE.Group();
+  humpGeo ||= buildLoftHull(HUMP, { ringsPerSegment: 8, profilePoints: 14, capRoll: { nose: 0.05, tail: 0.02 } });
+  for (const side of [-1, 1]) {
+    const hump = new THREE.Mesh(humpGeo, makePaint(color));
+    hump.position.x = side * 0.34;
+    hump.castShadow = true; hump.receiveShadow = true;
+    hump.userData.noMerge = true;
+    g.add(hump);
+    // Roll hoop just proud of each hump's crown.
+    const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.022, 8, 20, Math.PI), makeSatin());
+    hoop.position.set(side * 0.34, 0.50, -0.88);
+    g.add(hoop);
+  }
+  return g;
 }
 
-function buildWindscreen(color) {
-  const group = new THREE.Group();
-  // The screen is independent of the low body loft: a lightly bowed trapezoid
-  // leans back from the cowl, leaving the rest of the passenger cell open.
+// Wraparound screen: a low bowed strip of glass on a satin surround.
+function buildScreen(color) {
+  const g = new THREE.Group();
   const positions = [], indices = [];
-  const nx = 16, ny = 4;
+  const nx = 20, ny = 4;
   for (let row = 0; row <= ny; row++) {
     const t = row / ny;
     for (let col = 0; col <= nx; col++) {
       const u = col / nx * 2 - 1;
-      positions.push(u * THREE.MathUtils.lerp(0.76, 0.655, t),
-        THREE.MathUtils.lerp(0.445, 0.90, t) + (1 - u * u) * 0.018,
-        THREE.MathUtils.lerp(0.46, 0.16, t) + (1 - u * u) * 0.045);
+      positions.push(u * THREE.MathUtils.lerp(0.80, 0.70, t),
+        THREE.MathUtils.lerp(0.465, 0.73, t) + (1 - u * u) * 0.010,
+        THREE.MathUtils.lerp(0.42, 0.22, t) + (1 - u * u) * 0.17 - Math.abs(u) ** 3 * 0.10);
     }
   }
   for (let row = 0; row < ny; row++) for (let col = 0; col < nx; col++) {
@@ -68,61 +109,74 @@ function buildWindscreen(color) {
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices); geometry.computeVertexNormals();
   const screen = new THREE.Mesh(geometry, makeGlass());
-  screen.name = 'roadster-windscreen';
-  group.add(screen);
-  const surround = [
-    [-0.76, 0.445, 0.46], [-0.655, 0.90, 0.16], [0, 0.918, 0.205],
-    [0.655, 0.90, 0.16], [0.76, 0.445, 0.46], [0, 0.463, 0.505],
-  ];
-  group.add(tube(surround, 0.021, makeTrim(), true));
-  for (const sx of [-1, 1]) {
-    group.add(tube([[sx * 0.76, 0.435, 0.47], [sx * 0.71, 0.68, 0.315], [sx * 0.655, 0.90, 0.16]],
-      0.025, makePaint(color)));
+  screen.name = 'speedster-screen';
+  g.add(screen);
+  // Top rail and the two end posts.
+  const rail = [];
+  for (let col = 0; col <= nx; col++) {
+    const u = col / nx * 2 - 1;
+    rail.push(new THREE.Vector3(u * 0.70, 0.74 + (1 - u * u) * 0.010, 0.22 + (1 - u * u) * 0.17 - Math.abs(u) ** 3 * 0.10));
   }
-  return group;
+  g.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(rail), 32, 0.016, 6, false), makeSatin()));
+  for (const side of [-1, 1]) {
+    const post = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3([
+      new THREE.Vector3(side * 0.80, 0.455, 0.42), new THREE.Vector3(side * 0.70, 0.74, 0.22),
+    ]), 4, 0.018, 6, false), makePaint(color));
+    g.add(post);
+  }
+  return g;
+}
+
+// Round tail lamps in satin bezels on the tail face, baked into one red mesh.
+function buildTailLamps() {
+  const g = new THREE.Group();
+  const red = [];
+  for (const side of [-1, 1]) for (const x of [0.46, 0.66]) {
+    const bezel = new THREE.Mesh(new THREE.TorusGeometry(0.062, 0.009, 6, 24), makeSatin());
+    bezel.position.set(side * x, 0.26, -1.858); g.add(bezel);
+    const well = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.056, 0.02, 24), makeTrim());
+    well.geometry.rotateX(Math.PI / 2); well.position.set(side * x, 0.26, -1.848); g.add(well);
+    const lens = new THREE.CircleGeometry(0.048, 24);
+    lens.rotateY(Math.PI); lens.translate(side * x, 0.26, -1.862);
+    red.push(lens);
+  }
+  const brakeMesh = new THREE.Mesh(mergeGeometries(red, false), makeTaillight());
+  red.forEach(geometry => geometry.dispose());
+  brakeMesh.userData.noMerge = true;
+  g.add(brakeMesh);
+  return { group: g, brakeMesh };
 }
 
 export function decorate(body, ctx) {
-  body.add(buildWindscreen(ctx.color));
-  const rim = buildWindowSeals(keys, { panes: COCKPIT, width: 0.020, proud: 0.006 });
+  const rim = buildWindowSeals(keys, { panes: COCKPIT, width: 0.022, proud: 0.006 });
   if (rim) body.add(new THREE.Mesh(rim, makeTrim()));
-  const lamps = buildApertureLamps(keys, F, { head: HEADLAMPS, projectorZ: [1.94], depth: 0.026 });
+  const shut = buildPanelSeams(keys, SHUT_LINES);
+  if (shut) body.add(new THREE.Mesh(shut, makeShutline()));
+  const lamps = buildApertureLamps(keys, F, { head: HEADLAMPS, depth: 0.026, projectorZ: [1.82, 1.70] });
   body.add(lamps.group);
 
-  const seams = buildPanelSeams(keys, [
-    { path: [[0.59, F.topCorner], [0.59, 1], [0.59, -F.topCorner]] },
-    { path: [[0.59, F.topCorner], [1.82, F.topCorner]], mirror: true },
-    { path: [[1.82, F.topCorner], [1.82, 1], [1.82, -F.topCorner]] },
-    { path: [[0.59, F.sillLip], [0.59, F.shoulder], [-0.84, F.shoulder],
-      [-0.84, F.sillLip], [0.59, F.sillLip]], mirror: true },
-    { path: [[-1.10, F.topCorner], [-1.10, 1], [-1.10, -F.topCorner]] },
-  ]);
-  if (seams) body.add(new THREE.Mesh(seams, makeShutline()));
-
+  body.add(buildScreen(ctx.color));
+  body.add(buildHumps(ctx.color));
   body.add(buildInterior({
-    floorY: -0.035, dashZ: 0.41, seatZ: -0.54, bulkheadZ: -0.90,
-    seatBackH: 0.44, halfWidth: 0.62, seatX: 0.33,
-    wheelY: 0.42, wheelZ: 0.15, wheelR: 0.135, harness: false,
+    floorY: -0.05, dashZ: 0.42, dashH: 0.14, seatZ: -0.58, bulkheadZ: -0.90,
+    seatBackH: 0.42, halfWidth: 0.62, seatX: 0.34,
+    wheelY: 0.40, wheelZ: 0.16, wheelR: 0.135, harness: true, seats: 2,
   }));
-  // Satin hoops emerge from the rear bulkhead behind each head restraint.
-  for (const sx of [-1, 1]) {
-    body.add(tube([
-      [sx * 0.33 - 0.19, 0.41, -0.82], [sx * 0.33 - 0.18, 0.67, -0.82],
-      [sx * 0.33, 0.75, -0.84], [sx * 0.33 + 0.18, 0.67, -0.82],
-      [sx * 0.33 + 0.19, 0.41, -0.82],
-    ], 0.027, makeSatin()));
-  }
-  const tail = buildTaillights({ z: -2.073, y: 0.22, width: 1.18, height: 0.10,
-    depth: 0.034, barH: 0.025, segments: 3, fog: false });
+
+  // Tail cap plane z -1.85; face y -0.09 .. 0.33.
+  const tail = buildTailLamps();
   body.add(tail.group);
-  body.add(buildMirrors({ z: 0.35, y: 0.47, x: 0.94, color: ctx.color, indicator: false }));
-  body.add(buildGrille({ z: 2.135, y: -0.008, w: 0.72, h: 0.13, depth: 0.032, ducts: false, bar: false }));
-  body.add(buildSplitter({ z: 2.035, y: -0.17, w: 1.26, canards: false, rods: false, fins: false }));
-  body.add(buildDiffuser({ z: -1.94, y: -0.23, w: 1.20, tunnels: false, fences: false, strakes: 3 }));
-  body.add(buildExhaust({ z: -2.09, y: -0.095, x: 0.54, r: 0.044, count: 2 }));
-  body.add(buildBadgesAndPlate({ frontPose: sampleSkin(keys, 1.91, 1), rearZ: -2.084,
-    rearY: 0.32, plateY: 0.025 }));
-  body.add(buildUnderbody({ y: -0.25, w: 1.18, len: 3.45 }));
-  body.add(buildArchLiners({ x: 0.845, width: 0.26, r: 0.413, lip: false }));
+  body.add(buildBadgesAndPlate({ frontPose: sampleSkin(keys, 1.70, 1), rearZ: -1.862, rearY: 0.26, plateY: 0.08 }));
+  body.add(buildExhaust({ z: -1.87, y: -0.03, x: 0.14, count: 2, r: 0.042 }));
+  body.add(buildDiffuser({ z: -1.72, y: -0.24, w: 1.30, tunnels: false, fences: false, strakes: 3 }));
+  body.add(buildWing({ z: -1.62, deckY: 0.455, span: 1.40, style: 'ducktail', gurney: false }));
+
+  // Nose cap plane z 2.05; face y -0.135 .. -0.01: a slim mouth and splitter.
+  body.add(buildGrille({ z: 2.053, y: -0.07, w: 0.70, h: 0.10, depth: 0.030, ducts: false, bar: true }));
+  body.add(buildSplitter({ z: 1.96, y: -0.19, w: 1.56, canards: false, rods: false }));
+  body.add(buildMirrors({ z: 0.42, y: 0.48, x: 0.92, color: ctx.color, indicator: false, fairing: true }));
+
+  body.add(buildUnderbody({ y: -0.25, w: 1.22, len: 3.40 }));
+  body.add(buildArchLiners({ zF: 1.20, zR: -1.20, x: 0.84, r: 0.413, width: 0.26, lip: false }));
   return { brakeLights: tail.brakeMesh };
 }

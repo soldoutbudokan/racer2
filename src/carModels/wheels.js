@@ -52,11 +52,17 @@ const SPOKE_R1 = 0.218;    // … to just past the dish inner edge
 
 const templates = new Map();
 
+// `slick` swaps the road tread for racing rubber; `lock` is lugs or a single
+// centre-lock nut. Styles are the roster's: a GT3 car on centre-lock slicks,
+// a rally car on chunky six-spoke gravel wheels, a classic V8 on wide
+// five-spokes, a speedster on a fine mesh, the single-seater on dark slicks.
 const STYLES = {
-  gt:        { spokes: 5, twin: true,  spokeW: 0.040, rim: 'bright', lock: 'lugs' },
-  rally:     { spokes: 8, twin: false, spokeW: 0.048, rim: 'bright', lock: 'lugs' },
-  muscle:    { spokes: 5, twin: false, spokeW: 0.085, rim: 'bright', lock: 'lugs' },
-  openWheel: { spokes: 10, twin: false, spokeW: 0.030, rim: 'dark', lock: 'center' },
+  gt:        { spokes: 10, twin: false, spokeW: 0.032, rim: 'bright', lock: 'center', slick: true },
+  rally:     { spokes: 6,  twin: false, spokeW: 0.068, rim: 'bright', lock: 'lugs' },
+  muscle:    { spokes: 5,  twin: false, spokeW: 0.085, rim: 'bright', lock: 'lugs' },
+  speedster: { spokes: 7,  twin: true,  spokeW: 0.030, rim: 'bright', lock: 'lugs', slick: true },
+  supercar:  { spokes: 5,  twin: true,  spokeW: 0.036, rim: 'dark', lock: 'center', slick: true },
+  openWheel: { spokes: 10, twin: false, spokeW: 0.030, rim: 'dark', lock: 'center', slick: true },
 };
 
 // Lathe segments for everything that shows a round SILHOUETTE (tread,
@@ -207,7 +213,7 @@ function buildTemplateRaw(styleKey, style) {
   const group = new THREE.Group();
 
   // Tyre: lathed profile — crowned tread band + two bulged sidewalls.
-  const tread = new THREE.Mesh(latheX(TREAD_PROFILE, TYRE_SEG), styleKey === 'openWheel' ? makeSlickTire() : makeTire());
+  const tread = new THREE.Mesh(latheX(TREAD_PROFILE, TYRE_SEG), style.slick ? makeSlickTire() : makeTire());
   tread.castShadow = true;
   group.add(tread);
   for (const dir of [1, -1]) {

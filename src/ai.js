@@ -15,7 +15,7 @@ import { getCarSpec, getCarPerformance, getSteerCap, getCornerSpeed, getLateralA
 export function createAIDriver(track, options = {}) {
   const skill = THREE.MathUtils.clamp(options.skill ?? 0.85, 0, 1);
   let spec = options.spec ?? getCarSpec();
-  let aLatMax, aBrake, vMax;
+  let aLatMax, aBrake, vMax, brakeFeed;
 
   const ctrl = {
     throttle: 0,
@@ -59,14 +59,31 @@ export function createAIDriver(track, options = {}) {
     aLatMax = spec.mu.road * 9.82 * (0.65 + 0.3 * skill);
     aBrake = capability.aBrake * 0.85;
     vMax = capability.vMax * ((52 + 18 * skill) / 71);
+    // The pedal position that delivers the planned deceleration, from the
+    // car's own brake clamps (impulse per step and wheel → force at the
+    // road). Braking starts there rather than ramping up from a touch, so a
+    // car with twice the power of the reference still meets its profile
+    // instead of arriving over it and stamping the pedal mid-corner.
+    const pedalDecel = (spec.brakeFront + spec.brakeRear) * 2 * 120 / spec.massKg;
+    brakeFeed = THREE.MathUtils.clamp(aBrake / pedalDecel, 0.15, 0.8);
     for (let i = 0; i < n; i++) {
       profile[i] = Math.min(vMax, getCornerSpeed(spec, kSmooth[i], aLatMax));
     }
     // Backward passes: each driver's braking distance follows their car.
-    for (let pass = 0; pass < 2; pass++) {
+    // The braking available at a frame is what the tyres have left after the
+    // cornering it already demands there (a friction circle): a car at the
+    // limit mid-corner cannot also shed speed for the corner after it, so a
+    // braking zone that would fall inside a bend is pushed back before it.
+    // Without this the plan for a linked pair of corners asked for full
+    // braking at 1.2 g of lateral load, which unloads the rear axle and spins
+    // any car light enough to be quick.
+    for (let pass = 0; pass < 3; pass++) {
       for (let i = n - 1; i >= 0; i--) {
         const next = profile[(i + 1) % n];
-        profile[i] = Math.min(profile[i], Math.sqrt(next * next + 2 * aBrake * ds[i]));
+        const v = profile[i];
+        const lateral = Math.min(1, v * v * kSmooth[i] / getLateralAcceleration(spec, v, aLatMax));
+        const room = Math.sqrt(Math.max(0.15, 1 - lateral * lateral));
+        profile[i] = Math.min(v, Math.sqrt(next * next + 2 * aBrake * room * ds[i]));
       }
     }
   }
@@ -116,7 +133,7 @@ export function createAIDriver(track, options = {}) {
   const MISALIGN_DOT = 0.64;     // ≈50° off the track direction — spun, not driving
   const REVERSE_S = 1.5;         // cap on one recovery
   const FREE_BACK_M = 1.6;       // backed out this far and clear → drive again
-  const BEHIND_M = 6.0;          // never reverse into a car this close behind
+  const BEHIND_M = 7.0;          // never reverse into a car this close behind (origin to origin: ~2.5 m of bumper gap)
 
   // Lateral distance from the centreline at which the barriers stand.
   const wallOffset = track.armcoOffset ?? (track.width ?? 14) / 2 + 6;
@@ -281,17 +298,31 @@ export function createAIDriver(track, options = {}) {
     target = Math.min(target, getCornerSpeed(spec, Math.abs(needK), aLatMax));
 
     // --- Longitudinal ---
+    // How much of the tyre the corner is already using, 0..1.
+    const lateralLoad = speed * speed * 2 * Math.sin(ang) / Ld /
+      getLateralAcceleration(spec, speed, aLatMax);
     if (speed < target - 0.5) {
       // Use full power on exit; ease only as the requested lateral force
       // consumes the tyre budget, rather than penalising steering at any speed.
-      const lateralLoad = speed * speed * 2 * Math.sin(ang) / Ld /
-        getLateralAcceleration(spec, speed, aLatMax);
       ctrl.throttle = THREE.MathUtils.lerp(1, 0.82,
         THREE.MathUtils.clamp((lateralLoad - 0.6) / 0.4, 0, 1));
       ctrl.brake = 0;
     } else if (speed > target + 1.0) {
       ctrl.throttle = 0;
-      ctrl.brake = THREE.MathUtils.clamp((speed - target) / 4, 0.2, 1);
+      // The planned pedal plus a correction for being over the profile, kept
+      // inside the friction circle: what the corner is taking laterally is
+      // not available for braking, and a driver who stands on the pedal at
+      // the limit locks the lightly loaded rears and spins. Trail braking
+      // tapers off as the lateral load comes on, the way a real foot does.
+      const demand = Math.max(brakeFeed, THREE.MathUtils.clamp((speed - target) / 4, 0.2, 1));
+      // Lateral load from the pursuit path, or from the yaw the car already
+      // carries if that is higher — a car rotating into a corner is loading
+      // its tyres before the path asks it to.
+      const turning = speed * Math.abs(car.body.angularVelocity.y) /
+        getLateralAcceleration(spec, speed, aLatMax);
+      const l = THREE.MathUtils.clamp(Math.max(lateralLoad, turning), 0, 1);
+      const room = Math.sqrt(Math.max(0.06, 1 - l * l));
+      ctrl.brake = Math.min(demand, room);
     } else {
       ctrl.throttle = 0.35;
       ctrl.brake = 0;

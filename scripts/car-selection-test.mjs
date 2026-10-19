@@ -25,7 +25,7 @@ try {
     getItem: key => values.get(key) ?? null,
     setItem: (key, value) => values.set(key, String(value)),
   } });
-  assert.equal(loadCarChoice().id, 'gt', 'a new player starts with the red touring sedan');
+  assert.equal(loadCarChoice().id, 'gt', 'a new player starts with the red GT3 coupe');
   assert.equal(getCarChoice('muscle').id, 'muscle', 'the muscle car is its own selectable choice');
   values.set('racer2.car', 'muscle');
   assert.equal(loadCarChoice().id, 'muscle', 'a saved muscle preference restores the muscle car');
@@ -169,7 +169,7 @@ async function checkBrowser() {
     }
     if (mode === 'two-player') assert.deepEqual(otherCars, [
       { archetype: 'hatch', color: 0x1f6cff, isPlayer: true },
-    ], 'Player 2 uses the blue rally pickup');
+    ], 'Player 2 uses the blue rally hatch');
     return state.cars[0].id;
   }
 
@@ -291,8 +291,8 @@ async function checkBrowser() {
               new THREE.Vector3(body.position.x, body.position.y, body.position.z));
             return { mode: entry.chase.getMode(), forward: offset.dot(forward) };
           });
-          assert.equal(hoodForward.mode, 1, 'the pickup camera switches from chase to hood');
-          assert(hoodForward.forward > 1.0, 'the pickup hood camera sits ahead of its taller cabin');
+          assert.equal(hoodForward.mode, 1, 'the hatch camera switches from chase to hood');
+          assert(hoodForward.forward > 0.4, 'the hatch hood camera sits at its cowl, ahead of the chassis origin');
           await page.screenshot({ path: `${out}/car-hatch-hood.png` });
         }
         if (mode === 'quick-race') {
@@ -338,7 +338,7 @@ async function checkBrowser() {
           position: Number(document.getElementById('pos-current').textContent),
           standing: [...document.querySelectorAll('#standings li')].findIndex(li => li.classList.contains('me')) + 1,
           cars: ctx.cars.map(entry => {
-            const spawn = window.__gridSpawn(ctx.track, entry.gridIdx);
+            const spawn = window.__gridSpawn(ctx.track, entry.gridIdx, entry.car.stance);
             const position = entry.car.body.position;
             return {
               id: entry.car.body.id, gridIdx: entry.gridIdx, isPlayer: entry.isPlayer,

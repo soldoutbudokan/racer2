@@ -8,7 +8,7 @@ import * as THREE from 'three';
  *
  * Smoothing uses critically-damped springs for both position and look-at.
  */
-export function createChaseCamera(camera, { hoodForward = 0.25 } = {}) {
+export function createChaseCamera(camera, { hoodForward = 0.25, heightOffset = 0 } = {}) {
   let mode = 0;
   const targetPos = new THREE.Vector3();
   const targetLook = new THREE.Vector3();
@@ -38,21 +38,25 @@ export function createChaseCamera(camera, { hoodForward = 0.25 } = {}) {
     fwd.set(0, 0, 1).applyQuaternion(tmpQ).normalize();
     right.crossVectors(up, fwd).normalize();
 
+    // The presets were tuned against a chassis origin 0.5 m up; a car whose
+    // centre of mass sits lower or higher than that gets the difference back
+    // so the camera's height over the road is the same for every car.
+    const lift = heightOffset;
     if (p.hood) {
       // Hood: sit on the chassis, look forward
-      targetPos.set(body.position.x, body.position.y + p.height, body.position.z)
+      targetPos.set(body.position.x, body.position.y + p.height + lift, body.position.z)
         .add(fwd.clone().multiplyScalar(hoodForward));
       targetLook.copy(targetPos).add(fwd.clone().multiplyScalar(8));
     } else {
       // Chase: distance grows slightly with speed (cinematic dolly-zoom feel)
       const dynDist = p.dist + Math.min(2.5, speed * 0.04);
-      const dynHeight = p.height + Math.min(0.8, speed * 0.012);
+      const dynHeight = p.height + lift + Math.min(0.8, speed * 0.012);
       targetPos.copy(body.position)
         .add(fwd.clone().multiplyScalar(-dynDist))
         .add(up.clone().multiplyScalar(dynHeight));
       targetLook.copy(body.position)
         .add(fwd.clone().multiplyScalar(2.0))
-        .add(up.clone().multiplyScalar(p.lookHeight));
+        .add(up.clone().multiplyScalar(p.lookHeight + lift));
     }
 
     if (!initialised) {

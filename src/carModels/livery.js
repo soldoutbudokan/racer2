@@ -14,9 +14,12 @@ export function addLivery(body, keys, archetype) {
   // its period twin-stripe treatment.
   if (!keys || archetype !== 'muscle') return;
   const f = profileFractions(keys);
+  // Twin stripes the length of the car, over bonnet, roof and deck, and a
+  // thin rocker stripe along each door.
   const stripes = buildPanelSeams(keys, [
-    { path: [[0.68, 0.965], [2.0, 0.965]], width: 0.09, proud: 0.007, mirror: true },
-    { path: [[-0.65, f.sillLip + 0.025], [0.64, f.sillLip + 0.025]], width: 0.075, proud: 0.007, mirror: true },
+    { path: [[-2.38, 0.955], [-1.60, 0.955], [-0.60, 0.955], [0.40, 0.955], [1.40, 0.955], [2.38, 0.955]],
+      width: 0.10, proud: 0.007, mirror: true },
+    { path: [[-0.84, f.sillLip + 0.03], [0.34, f.sillLip + 0.03]], width: 0.06, proud: 0.007, mirror: true },
   ]);
   if (stripes) {
     const mesh = new THREE.Mesh(stripes, stripeMaterial());

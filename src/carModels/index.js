@@ -5,7 +5,8 @@ import { buildWheel } from './wheels.js';
 import { buildContactShadow } from './parts.js';
 import { mergeByMaterial } from './merge.js';
 import { addLivery } from './livery.js';
-import { HUB_LOCAL_Y } from '../stance.js';
+import { HUB_LOCAL_Y, stanceFor } from '../stance.js';
+import { getCarSpec } from '../carSpecs.js';
 import { cutWheelWells } from './wheelWells.js';
 
 import * as gtCoupe from './gtCoupe.js';
@@ -33,8 +34,18 @@ const ARCHETYPES = {
 // spring rather than leaving it as a measured magic number. (It used to be
 // -0.37, the full-droop offset, which is the pose a car holds only for the
 // third of a second it spends falling onto the grid; every other frame of every
-// race, the shell rode 5.7 cm too low.)
+// race, the shell rode 5.7 cm too low.) Since 2026-10-18 it is also per car:
+// car.js passes the hub offset for the spec's centre-of-mass height, and the
+// default below is only for callers that build a body with no car in hand.
 const BODY_DROP = HUB_LOCAL_Y;
+
+// Where an archetype's wheel openings are cut. The axles follow the spec's
+// wheelbase, so the physics wheels and the painted arches always agree; a
+// body may widen the opening (`r`) or move its inboard limit (`innerX`).
+function archesFor(key, def) {
+  const half = getCarSpec(key).wheelbase / 2;
+  return { zF: half, zR: -half, r: 0.408, innerX: 0.665, ...(def.ARCHES ?? {}) };
+}
 
 // Hull geometry is identical for every car of an archetype → build once.
 const hullCache = new Map();
@@ -52,7 +63,7 @@ function getHull(key, def) {
       capRoll: def.CAP_ROLL,
     }) : null;
     if (hull && key !== 'open-wheel') {
-      const shell = cutWheelWells(hull);
+      const shell = cutWheelWells(hull, archesFor(key, def));
       hull.dispose();
       hull = shell;
     }
@@ -65,16 +76,19 @@ function getHull(key, def) {
  * Build the full visual car. Preserves the contract expected by car.js:
  *   { root: THREE.Group, wheels: [4 THREE.Group], brakeLights: Mesh, _brakeLevel }
  */
-export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d) {
+export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d, { hubLocalY = BODY_DROP } = {}) {
   // Normalize before caching or adding details, so stale/invalid saved IDs
   // consistently use the GT (including keys inherited from Object.prototype).
   const key = Object.hasOwn(ARCHETYPES, archetypeKey) ? archetypeKey : 'gt';
   const def = ARCHETYPES[key];
   const root = new THREE.Group();
   // Everything except the physics-driven wheels lives in the dropped body group.
+  // BODY_LIFT raises the shell over its wheels without touching the physics:
+  // a rally car on gravel springs shows daylight above its tyres.
   const body = new THREE.Group();
-  body.position.y = BODY_DROP;
+  body.position.y = hubLocalY + (def.BODY_LIFT ?? 0);
   root.add(body);
+  const arches = archesFor(key, def);
 
   const paint = makePaint(bodyColor);
   const hullGeo = getHull(key, def);
@@ -86,7 +100,7 @@ export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d) {
     body.add(hull);
   }
 
-  const deco = def.decorate(body, { color: bodyColor });
+  const deco = def.decorate(body, { color: bodyColor, arches });
   addLivery(body, def.keys, key);
 
   // Collapse the many small decoration meshes into one mesh per material.
@@ -132,3 +146,12 @@ export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d) {
 }
 
 export const ARCHETYPE_KEYS = Object.keys(ARCHETYPES);
+
+// Showroom geometry for a car with no physics behind it: where its chassis
+// origin sits over a flat floor and where its wheel hubs go.
+export function showroomStance(archetypeKey = 'gt') {
+  const key = Object.hasOwn(ARCHETYPES, archetypeKey) ? archetypeKey : 'gt';
+  const spec = getCarSpec(key);
+  const { chassisHeight, hubLocalY } = stanceFor(spec.cgHeight);
+  return { chassisHeight, hubLocalY, halfWheelbase: spec.wheelbase / 2, halfTrack: (spec.trackWidth ?? 1.72) / 2 };
+}

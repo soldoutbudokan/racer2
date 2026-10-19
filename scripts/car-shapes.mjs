@@ -21,9 +21,9 @@ try {
   await page.waitForFunction(() => window.__ctx?.selectedCar, null, { timeout: 120000 });
   const reviewedCars = await page.evaluate(async () => {
     const THREE = window.__THREE;
-    const { buildVisualCar, ARCHETYPE_KEYS } = await import('/src/carModels/index.js');
+    const { buildVisualCar, ARCHETYPE_KEYS, showroomStance } = await import('/src/carModels/index.js');
     const { CAR_CHOICES } = await import('/src/carSelection.js');
-    const { STATIC_CHASSIS_HEIGHT, WHEEL_RADIUS } = await import('/src/stance.js');
+    const { WHEEL_RADIUS } = await import('/src/stance.js');
     const { renderer, scene: gameScene } = window.__ctx;
     renderer.setPixelRatio(1);
     renderer.setSize(640, 360, false);
@@ -47,15 +47,21 @@ try {
     const ids = [...CAR_CHOICES.map(choice => choice.id), ...ARCHETYPE_KEYS]
       .filter((id, index, all) => ARCHETYPE_KEYS.includes(id) && all.indexOf(id) === index);
     const labels = ids.map(id => (CAR_CHOICES.find(choice => choice.id === id)?.name || id.replaceAll('-', ' ')).toUpperCase());
-    const cars = ids.map(id => buildVisualCar(id, 0x71828b));
+    // Older revisions export no showroomStance; CI also runs this harness
+    // against the base revision, so fall back to the shared stance there.
+    const stances = ids.map(id => showroomStance?.(id)
+      ?? { chassisHeight: 0.677, hubLocalY: -0.317, halfWheelbase: 1.45, halfTrack: 0.86 });
+    const cars = ids.map((id, i) => buildVisualCar(id, 0x71828b, { hubLocalY: stances[i].hubLocalY }));
     for (const [label, position] of views) {
       scene.overrideMaterial = label === 'Silhouette' ? silhouette : null;
       for (const [index, car] of cars.entries()) {
         car.shadow.visible = label !== 'Silhouette';
-        car.root.position.y = STATIC_CHASSIS_HEIGHT;
-        car.shadow.position.y = -STATIC_CHASSIS_HEIGHT + 0.012;
+        const stance = stances[index];
+        car.root.position.y = stance.chassisHeight;
+        car.shadow.position.y = -stance.chassisHeight + 0.012;
         scene.add(car.root, ...car.wheels);
-        car.wheels.forEach((wheel, i) => wheel.position.set(i % 2 ? -0.88 : 0.88, WHEEL_RADIUS, i < 2 ? 1.45 : -1.45));
+        car.wheels.forEach((wheel, i) => wheel.position.set((i % 2 ? -1 : 1) * ((stance.halfTrack ?? 0.86) + 0.02), WHEEL_RADIUS,
+          i < 2 ? stance.halfWheelbase : -stance.halfWheelbase));
         camera.position.set(...position);
         camera.lookAt(0, 0.85, 0);
         renderer.render(scene, camera);

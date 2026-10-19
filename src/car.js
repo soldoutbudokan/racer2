@@ -3,10 +3,12 @@ import * as CANNON from 'cannon-es';
 import { buildVisualCar } from './carModels/index.js';
 import { getCarSpec, getSteerCap } from './carSpecs.js';
 import {
-  WHEEL_RADIUS, SUSPENSION_REST, SUSPENSION_STIFFNESS, SUSPENSION_ANCHOR_Y,
-  STATIC_CHASSIS_HEIGHT,
+  WHEEL_RADIUS, SUSPENSION_REST, SUSPENSION_STIFFNESS, stanceFor,
 } from './stance.js';
 
+// Collision box of a car that declares none of its own. The specs size theirs
+// to the body: a speedster is half a metre shorter than the muscle car and
+// should snag half a metre less barrier.
 const CHASSIS_HALF = { x: 0.92, y: 0.32, z: 2.18 };
 
 function torqueAt(spec, rpm) {
@@ -44,22 +46,49 @@ export const ENGINE_BAND = Object.freeze({
  */
 export function createCar(world, materials, options = {}) {
   const bodyColor = options.color ?? 0xc8161d;
-  const SPEC = getCarSpec(options.archetype);
-  const archetype = SPEC.id;
-  const visual = buildVisualCar(archetype, bodyColor);
+  // `options.spec` lets a tuning probe drive a variant of a package without
+  // editing carSpecs.js; the game itself only ever passes an archetype id.
+  const SPEC = options.spec ?? getCarSpec(options.archetype);
+  const archetype = options.spec ? (options.archetype ?? SPEC.id) : SPEC.id;
+  // Where this car's centre of mass sits over its wheels (stance.js). The
+  // visual body is dropped to the same hub height so shell and wheels agree.
+  const stance = stanceFor(SPEC.cgHeight);
+  const visual = buildVisualCar(archetype, bodyColor, { hubLocalY: stance.hubLocalY });
 
   // Chassis body
-  const chassisShape = new CANNON.Box(
-    new CANNON.Vec3(CHASSIS_HALF.x, CHASSIS_HALF.y, CHASSIS_HALF.z)
-  );
+  const half = { ...CHASSIS_HALF, ...(SPEC.chassisHalf ?? {}) };
+  const chassisShape = new CANNON.Box(new CANNON.Vec3(half.x, half.y, half.z));
   const chassisBody = new CANNON.Body({
     mass: SPEC.massKg,
     material: materials.chassisMat,
   });
-  chassisBody.addShape(chassisShape, new CANNON.Vec3(0, 0.2, 0));
-  // Lower the centre of gravity a touch — keeps it from rolling over
-  chassisBody.shapeOffsets[0].y = -0.05;
-  chassisBody.angularDamping = 0.25;
+  // The box hangs with its underside 0.30 m above the road whatever height
+  // the centre of mass (the body origin) sits at. It used to be fixed in body
+  // space, which was fine while every car's origin was 0.68 m up; a car with
+  // a lower centre of mass then carried its box 13 cm off the asphalt, where
+  // it caught the kerbs at speed and vaulted the armco off them. (The shape
+  // offset moves only the collision geometry — in cannon the origin IS the
+  // centre of mass, so this never changed the handling.)
+  const BOX_BOTTOM = 0.30;
+  chassisBody.addShape(chassisShape,
+    new CANNON.Vec3(0, BOX_BOTTOM + half.y - stance.chassisHeight, 0));
+  chassisBody.angularDamping = SPEC.angularDamping ?? 0.25;
+  // Yaw inertia. cannon derives it from the collision box, which says nothing
+  // about where the mass sits: a mid-engined speedster with everything between
+  // the axles turns in like a kart, a big-block coupe with the engine over
+  // the nose has to be persuaded. The spec scales the box figure to say which.
+  const yawInertia = SPEC.yawInertia ?? 1;
+  if (yawInertia !== 1) {
+    chassisBody.inertia.y *= yawInertia;
+    chassisBody.invInertia.y = chassisBody.inertia.y > 0 ? 1 / chassisBody.inertia.y : 0;
+    chassisBody.updateInertiaWorld(true);
+  }
+  // Torque share sent to the front axle. 0 is rear drive; a rally car runs
+  // ~0.4 and gets four tyres' worth of traction out of every hairpin.
+  const frontDrive = THREE.MathUtils.clamp(SPEC.frontDrive ?? 0, 0, 0.6);
+  // Rear tyres' share of grip relative to the fronts. Below 1 the tail lets
+  // go first (power oversteer); above 1 the nose washes wide (understeer).
+  const gripBalance = SPEC.gripBalance ?? 1;
 
   const vehicle = new CANNON.RaycastVehicle({
     chassisBody,
@@ -91,8 +120,8 @@ export function createCar(world, materials, options = {}) {
   };
 
   const wb = SPEC.wheelbase / 2;        // wheelbase half
-  const tw = 0.86;                 // track half
-  const wy = SUSPENSION_ANCHOR_Y;  // suspension anchor y in chassis space
+  const tw = (SPEC.trackWidth ?? 1.72) / 2;  // track half
+  const wy = stance.anchorY;       // suspension anchor y in chassis space
   // Front-left, Front-right, Rear-left, Rear-right.
   // Pass a fresh Vec3 per wheel — cannon-es WheelInfo holds a reference to the
   // option's chassisConnectionPointLocal, so reusing one vector stacks all wheels.
@@ -324,36 +353,48 @@ export function createCar(world, materials, options = {}) {
     const dir = drive.mode === 'R' ? -1 : 1;
     const Fdesired = crankTq * ratio * SPEC.drivelineEff / WHEEL_RADIUS * dir;
 
-    // --- Rear-axle traction budget: a friction circle on load-sensitive grip,
-    //     eased toward the kinetic floor once the tyres are spinning. Cornering
-    //     load eats into what's left for drive, so you can't both turn and
-    //     power at the limit. ---
+    // --- Driven-axle traction budget: a friction circle on load-sensitive
+    //     grip, eased toward the kinetic floor once the tyres are spinning.
+    //     Cornering load eats into what's left for drive, so you can't both
+    //     turn and power at the limit. Each driven axle has its own budget;
+    //     a four-wheel-drive car adds the fronts' to the rears'. ---
     const yawRate = chassisBody.angularVelocity.y;
     const aLat = Math.abs(speed * yawRate);
-    const nRL = loads[2];
-    const nRR = loads[3];
-    const gripRear =
-      loadMu(SPEC, SPEC.mu[drive.surfaces[2]] ?? SPEC.mu.road, nRL, avgLoad) * nRL +
-      loadMu(SPEC, SPEC.mu[drive.surfaces[3]] ?? SPEC.mu.road, nRR, avgLoad) * nRR;
     // 1.3 margin: v·yawRate understates true tyre demand while ploughing.
-    const fLatRear = SPEC.massKg * aLat * 0.5 * 1.3;
-    let fCap = (gripRear * gripRear) - (fLatRear * fLatRear);
-    fCap = fCap > 0 ? Math.sqrt(fCap) : 0;
-    // Once the tyres are spinning, grip eases toward its kinetic floor. Uses
-    // last frame's slip (persistent state) — it's recomputed below.
-    if (drive.slip > 0.14) {
-      const t = THREE.MathUtils.clamp((drive.slip - 0.14) / 0.5, 0, 1);
-      fCap *= THREE.MathUtils.lerp(1, SPEC.slipGripFloor, t);
-    }
+    const fLatAxle = SPEC.massKg * aLat * 0.5 * 1.3;
+    const slipEase = drive.slip > 0.14
+      ? THREE.MathUtils.lerp(1, SPEC.slipGripFloor,
+        THREE.MathUtils.clamp((drive.slip - 0.14) / 0.5, 0, 1))
+      : 1;
+    const axleCap = (a, b, muScale) => {
+      const nA = loads[a], nB = loads[b];
+      const grip = muScale * (
+        loadMu(SPEC, SPEC.mu[drive.surfaces[a]] ?? SPEC.mu.road, nA, avgLoad) * nA +
+        loadMu(SPEC, SPEC.mu[drive.surfaces[b]] ?? SPEC.mu.road, nB, avgLoad) * nB);
+      const cap = grip * grip - fLatAxle * fLatAxle;
+      // Once the tyres are spinning, grip eases toward its kinetic floor. Uses
+      // last frame's slip (persistent state) — it's recomputed below.
+      return (cap > 0 ? Math.sqrt(cap) : 0) * slipEase;
+    };
+    const capRear = axleCap(2, 3, gripBalance);
+    const capFront = frontDrive > 0 ? axleCap(0, 1, 1) : 0;
+    const fCap = capRear + capFront;
+    const drivenLoad = loads[2] + loads[3] + (frontDrive > 0 ? loads[0] + loads[1] : 0);
 
     // Traction-limit the force the tyres can actually lay down.
     let engineForce = Fdesired;
-    if (nRL + nRR > 100) {
+    if (drivenLoad > 100) {
       engineForce = Fdesired >= 0
         ? Math.min(Fdesired, fCap)
         : Math.max(Fdesired, -fCap);
     }
     if (drive.mode === 'R' && -fwdSpd > SPEC.maxReverseSpeed) engineForce = 0;
+    // Split between the axles: the rears take their nominal share up to what
+    // they can hold, and the centre coupling sends the rest forward — so a
+    // rally car that lights up its rears on gravel still pulls on its fronts.
+    const fMag = Math.abs(engineForce), fSign = Math.sign(engineForce);
+    const fFront = Math.min(fMag - Math.min(fMag * (1 - frontDrive), capRear), capFront);
+    const fRear = Math.min(fMag - fFront, capRear);
 
     // --- Driven-wheel flywheel. The clutch stays locked, so engine RPM follows
     //     the driven wheels through the gearing. When the tyres take all the
@@ -365,10 +406,11 @@ export function createCar(world, materials, options = {}) {
     //     by ratio². ---
     const omegaRoad = Math.abs(fwdSpd) / WHEEL_RADIUS;             // rad/s rolling
     const omegaMax = (SPEC.redlineRpm / 60 * 2 * Math.PI) / ratio;  // rev limiter
-    const spinning = onThrottle && (nRL + nRR > 100)
+    const spinning = onThrottle && drivenLoad > 100
                    && Math.abs(Fdesired) > fCap + 1;
     if (spinning) {
-      const Ihub = SPEC.engineInertia * ratio * ratio + 2 * SPEC.wheelInertia;
+      const Ihub = SPEC.engineInertia * ratio * ratio
+                 + (frontDrive > 0 ? 4 : 2) * SPEC.wheelInertia;
       const driveTq = Math.abs(crankTq) * ratio * SPEC.drivelineEff; // at the hub
       const tractionTq = Math.abs(engineForce) * WHEEL_RADIUS;       // resisting
       if (drive.wheelOmega < omegaRoad) drive.wheelOmega = omegaRoad;
@@ -392,10 +434,12 @@ export function createCar(world, materials, options = {}) {
     }
 
     // RaycastVehicle convention here: negative engine force drives forward.
-    // engineForce is the TOTAL force at the contact patches; the diff splits
-    // it across both driven wheels.
-    vehicle.applyEngineForce(-engineForce / 2, 2);
-    vehicle.applyEngineForce(-engineForce / 2, 3);
+    // engineForce is the TOTAL force at the contact patches; each axle's diff
+    // splits its share across its two wheels.
+    vehicle.applyEngineForce(-fSign * fRear / 2, 2);
+    vehicle.applyEngineForce(-fSign * fRear / 2, 3);
+    vehicle.applyEngineForce(-fSign * fFront / 2, 0);
+    vehicle.applyEngineForce(-fSign * fFront / 2, 1);
 
     // --- Brakes (front-biased) ---
     const bf = SPEC.brakeFront * brakeCmd;
@@ -426,8 +470,11 @@ export function createCar(world, materials, options = {}) {
     //     does on a real car. ---
     for (let i = 0; i < 4; i++) {
       let mu = loadMu(SPEC, SPEC.mu[drive.surfaces[i]] ?? SPEC.mu.road, loads[i], avgLoad);
-      // Handbrake breaks the rears loose.
-      if (ctrl.handbrake && i >= 2) mu *= 0.55;
+      if (i >= 2) {
+        mu *= gripBalance;
+        // Handbrake breaks the rears loose.
+        if (ctrl.handbrake) mu *= 0.55;
+      }
       vehicle.wheelInfos[i].frictionSlip = mu;
     }
 
@@ -616,7 +663,7 @@ export function createCar(world, materials, options = {}) {
       // centring offset, which moves the blob by under a centimetre at full
       // spread — far less than the spread itself.
       const air = Math.max(0,
-        visual.root.position.y - STATIC_CHASSIS_HEIGHT - groundY - AIR_DEADBAND);
+        visual.root.position.y - stance.chassisHeight - groundY - AIR_DEADBAND);
       const t = Math.min(1, air / AIR_SPAN);
       shadow.material.userData.fade.value = t;
       const s = 1 + t * AIR_SPREAD;
@@ -656,8 +703,7 @@ export function createCar(world, materials, options = {}) {
     telemetry.brake = 0;
     telemetry.gear = 0;
     telemetry.shifting = false;
-    vehicle.applyEngineForce(0, 2);
-    vehicle.applyEngineForce(0, 3);
+    for (let i = 0; i < 4; i++) vehicle.applyEngineForce(0, i);
     vehicle.setSteeringValue(0, 0);
     vehicle.setSteeringValue(0, 1);
     for (let i = 0; i < 4; i++) vehicle.setBrake(0, i);
@@ -686,6 +732,9 @@ export function createCar(world, materials, options = {}) {
     dispose,
     telemetry,
     spec: SPEC,
+    // Ride-height geometry: the chassis height to spawn this car at, and the
+    // hub offset its shell hangs at (stance.js).
+    stance,
     // Body shape, so the sound can pick an engine character to match it.
     archetype,
   };

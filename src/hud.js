@@ -43,46 +43,59 @@ export function createHud(maxSpeed = 320, engine = null) {
   const startA = Math.PI * 0.75;
   const sweep = Math.PI * 1.5;
   const SEGMENTS = 44;
-  const idle = engine?.idleRpm ?? 1000;
-  const redline = engine?.redlineRpm ?? 7600;
-  const shiftFrac = engine ? (engine.shiftUpRpm - idle) / (redline - idle) : 0.93;
   const segGroup = document.getElementById('rpm-segments');
-  const segs = [];
-  const polar = (a, r) => `${(cx + Math.cos(a) * r).toFixed(2)} ${(cy + Math.sin(a) * r).toFixed(2)}`;
-  for (let i = 0; i < SEGMENTS; i++) {
-    const gap = 0.012;
-    const a0 = startA + (sweep * i) / SEGMENTS + gap;
-    const a1 = startA + (sweep * (i + 1)) / SEGMENTS - gap;
-    const p = document.createElementNS(SVG_NS, 'path');
-    p.setAttribute('d', `M ${polar(a0, rOuter)} A ${rOuter} ${rOuter} 0 0 1 ${polar(a1, rOuter)}`
-      + ` L ${polar(a1, rInner)} A ${rInner} ${rInner} 0 0 0 ${polar(a0, rInner)} Z`);
-    const t = (i + 0.5) / SEGMENTS;
-    p.setAttribute('class', t >= shiftFrac ? 'seg seg-red' : t >= shiftFrac - 0.2 ? 'seg seg-amber' : 'seg');
-    segGroup.appendChild(p);
-    segs.push(p);
-  }
-  // Numerals every 1000 rpm inside the band.
   const ticks = document.getElementById('ticks');
-  for (let k = Math.ceil(idle / 1000); k * 1000 <= redline; k++) {
-    const t = (k * 1000 - idle) / (redline - idle);
-    const a = startA + sweep * t;
-    const tick = document.createElementNS(SVG_NS, 'line');
-    const [x1, y1] = polar(a, rInner - 3).split(' ');
-    const [x2, y2] = polar(a, rInner - 9).split(' ');
-    tick.setAttribute('x1', x1); tick.setAttribute('y1', y1);
-    tick.setAttribute('x2', x2); tick.setAttribute('y2', y2);
-    tick.setAttribute('class', t >= shiftFrac ? 'tick tick-red' : 'tick');
-    ticks.appendChild(tick);
-    const label = document.createElementNS(SVG_NS, 'text');
-    const [lx, ly] = polar(a, rInner - 19).split(' ');
-    label.setAttribute('x', lx); label.setAttribute('y', (+ly + 3.5).toFixed(2));
-    label.setAttribute('text-anchor', 'middle');
-    label.setAttribute('class', t >= shiftFrac ? 'tick-label tick-red' : 'tick-label');
-    label.textContent = k;
-    ticks.appendChild(label);
+  const polar = (a, r) => `${(cx + Math.cos(a) * r).toFixed(2)} ${(cy + Math.sin(a) * r).toFixed(2)}`;
+  let segs = [], shiftFrac = 0.93;
+  // The band is the player's car's: a formula car idles at 2,500 and shifts
+  // at 11,000, a big-block at 800 and 5,800. setEngine rebuilds the segment
+  // colours and the numerals for the car on the grid.
+  function setEngine(engine) {
+    const idle = engine?.idleRpm ?? 1000;
+    const redline = engine?.redlineRpm ?? 7600;
+    shiftFrac = engine ? (engine.shiftUpRpm - idle) / (redline - idle) : 0.93;
+    segGroup.replaceChildren();
+    ticks.replaceChildren();
+    segs = [];
+    for (let i = 0; i < SEGMENTS; i++) {
+      const gap = 0.012;
+      const a0 = startA + (sweep * i) / SEGMENTS + gap;
+      const a1 = startA + (sweep * (i + 1)) / SEGMENTS - gap;
+      const p = document.createElementNS(SVG_NS, 'path');
+      p.setAttribute('d', `M ${polar(a0, rOuter)} A ${rOuter} ${rOuter} 0 0 1 ${polar(a1, rOuter)}`
+        + ` L ${polar(a1, rInner)} A ${rInner} ${rInner} 0 0 0 ${polar(a0, rInner)} Z`);
+      const t = (i + 0.5) / SEGMENTS;
+      p.setAttribute('class', t >= shiftFrac ? 'seg seg-red' : t >= shiftFrac - 0.2 ? 'seg seg-amber' : 'seg');
+      segGroup.appendChild(p);
+      segs.push(p);
+    }
+    // Numerals every 1000 rpm inside the band; every 2000 once the band is
+    // wide enough that thousands would crowd the dial.
+    const step = redline - idle > 8000 ? 2000 : 1000;
+    for (let k = Math.ceil(idle / step); k * step <= redline; k++) {
+      const t = (k * step - idle) / (redline - idle);
+      const a = startA + sweep * t;
+      const tick = document.createElementNS(SVG_NS, 'line');
+      const [x1, y1] = polar(a, rInner - 3).split(' ');
+      const [x2, y2] = polar(a, rInner - 9).split(' ');
+      tick.setAttribute('x1', x1); tick.setAttribute('y1', y1);
+      tick.setAttribute('x2', x2); tick.setAttribute('y2', y2);
+      tick.setAttribute('class', t >= shiftFrac ? 'tick tick-red' : 'tick');
+      ticks.appendChild(tick);
+      const label = document.createElementNS(SVG_NS, 'text');
+      const [lx, ly] = polar(a, rInner - 19).split(' ');
+      label.setAttribute('x', lx); label.setAttribute('y', (+ly + 3.5).toFixed(2));
+      label.setAttribute('text-anchor', 'middle');
+      label.setAttribute('class', t >= shiftFrac ? 'tick-label tick-red' : 'tick-label');
+      label.textContent = k * step / 1000;
+      ticks.appendChild(label);
+    }
+    litShown = -1;
+    shiftShown = null;
   }
 
   let litShown = -1, speedShown = null, gearShown = null, shiftShown = null;
+  setEngine(engine);
   // The tach shows engine RPM when provided; falls back to speed fraction.
   function setSpeed(speedKmh, gearLabel, rpmFrac) {
     const t = rpmFrac != null
@@ -364,6 +377,7 @@ export function createHud(maxSpeed = 320, engine = null) {
   }
 
   return {
+    setEngine,
     setSpeed, setLap, setLapTime, setBest,
     setPosition, hidePosition, setStandings,
     setPace, hidePace,

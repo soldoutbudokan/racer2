@@ -402,6 +402,7 @@ function startMode(ctx, mode) {
   // The perfect-line aid is for single-screen modes; in split-screen its
   // colours could only be right for one of the two players.
   ctx.racingLine.setCarSpec(ctx.cars[ctx.primaryPlayerIdx].car.spec);
+  ctx.hud.setEngine(ctx.cars[ctx.primaryPlayerIdx].car.spec);
   ctx.lineAid = mode !== 'two-player';
   ctx.racingLine.setVisible(ctx.lineAid);
   if (!ctx.lineAid) ctx.hud.hidePace();
@@ -588,11 +589,15 @@ function addPlayerCar(ctx, bindings, color, gridIdx, archetype = 'gt') {
   const car = createCar(ctx.world, ctx.materials, { color, archetype });
   ctx.scene.add(car.visual.root);
   car.visual.wheels.forEach((w) => ctx.scene.add(w));
-  const spawn = gridSpawn(ctx.track, gridIdx);
+  const spawn = gridSpawn(ctx.track, gridIdx, car.stance);
   car.reset(spawn.position, spawn.yaw);
   const input = createInput(bindings);
+  // The cameras hang off the chassis origin, which is each car's centre of
+  // mass; lift them by however much lower than the default car's that sits,
+  // so a low formula car and a tall rally car are both framed from the road.
   const chase = createChaseCamera(playerIdx === 0 ? ctx.camera : ctx.camera2, {
-    hoodForward: archetype === 'hatch' ? 1.25 : 0.25,
+    hoodForward: car.spec.hoodForward ?? 0.25,
+    heightOffset: STATIC_CHASSIS_HEIGHT - car.stance.chassisHeight,
   });
   ctx.cars.push({
     car, color, gridIdx,
@@ -613,7 +618,7 @@ function addAICar(ctx, color, gridIdx, skill, archetype = 'gt', driver = null, d
   const car = createCar(ctx.world, ctx.materials, { color, archetype });
   ctx.scene.add(car.visual.root);
   car.visual.wheels.forEach((w) => ctx.scene.add(w));
-  const spawn = gridSpawn(ctx.track, gridIdx);
+  const spawn = gridSpawn(ctx.track, gridIdx, car.stance);
   car.reset(spawn.position, spawn.yaw);
   const ai = createAIDriver(ctx.track, { skill });
   ctx.cars.push({
@@ -647,11 +652,15 @@ function showGridPositions(ctx) {
 // visibly fell onto the circuit and bounced for the first third of a second of
 // every race, and a rescued car did the same mid-lap. See ROUTINE.md,
 // 2026-07-29.
-function chassisSpawnY(roadY) {
-  return roadY + STATIC_CHASSIS_HEIGHT;
+//
+// The height is the car's own: every package carries its centre of mass at a
+// different height over the same wheels (`stance.js`), so a spawn at the
+// default car's figure would drop or bury a car with a different one.
+function chassisSpawnY(roadY, stance) {
+  return roadY + (stance?.chassisHeight ?? STATIC_CHASSIS_HEIGHT);
 }
 
-function gridSpawn(track, idx) {
+function gridSpawn(track, idx, stance = null) {
   // Match the visual grid: alternating sides, 7 m apart, behind the line.
   const back = -2.8 - idx * 7.0;
   const lat = (idx % 2 === 0 ? 1 : -1) * 2.5;
@@ -661,7 +670,7 @@ function gridSpawn(track, idx) {
       .copy(f.pos)
       .add(f.tan.clone().multiplyScalar(back))
       .add(f.left.clone().multiplyScalar(lat))
-      .setY(chassisSpawnY(f.pos.y)),
+      .setY(chassisSpawnY(f.pos.y, stance)),
     yaw: Math.atan2(f.tan.x, f.tan.z),
   };
 }
@@ -753,7 +762,7 @@ function tick(ctx, dt, now) {
         const grid = createStartingGrid(ctx.mode, ctx.cars.length);
         for (const [idx, cc] of ctx.cars.entries()) {
           cc.gridIdx = grid[idx];
-          const sp = gridSpawn(ctx.track, cc.gridIdx);
+          const sp = gridSpawn(ctx.track, cc.gridIdx, cc.car.stance);
           cc.car.reset(sp.position, sp.yaw);
           cc.state = carState();
           // A new grid must not inherit a previous pass, lane or recovery.

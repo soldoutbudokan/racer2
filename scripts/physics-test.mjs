@@ -302,8 +302,11 @@ const spawn = await page.evaluate(() => {
   const ctx = window.__ctx;
   ctx.mode = null;                       // hand-step; no driver input anywhere
   const cars = ctx.cars.map((c) => c.car);
+  // Each car spawns at its own settled chassis height (stance.js): the six
+  // packages carry their centres of mass at different heights over the same
+  // wheels, so a shared figure would drop or bury all but one of them.
   const spawnY = cars.map((car, i) => {
-    const sp = window.__gridSpawn(ctx.track, i);
+    const sp = window.__gridSpawn(ctx.track, i, car.stance);
     car.reset(sp.position, sp.yaw);
     return sp.position.y;
   });

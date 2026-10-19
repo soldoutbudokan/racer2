@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { buildVisualCar } from './carModels/index.js';
+import { buildVisualCar, showroomStance } from './carModels/index.js';
 import { getCarChoice } from './carSelection.js';
-import { STATIC_CHASSIS_HEIGHT, WHEEL_RADIUS } from './stance.js';
+import { WHEEL_RADIUS } from './stance.js';
 
 // The showroom is painted once; it shares the game's WebGL context.
 function paintTexture(size, draw) {
@@ -80,14 +80,17 @@ export function createGarage(renderer, environment) {
       car.dispose();
     }
     currentChoice = choice;
-    car = buildVisualCar(choice.id, choice.color);
-    car.root.position.y = STATIC_CHASSIS_HEIGHT;
-    car.shadow.position.y = -STATIC_CHASSIS_HEIGHT + 0.012;
+    // Each car sits over its wheels at its own height and wheelbase.
+    const stance = showroomStance(choice.id);
+    car = buildVisualCar(choice.id, choice.color, { hubLocalY: stance.hubLocalY });
+    car.root.position.y = stance.chassisHeight;
+    car.shadow.position.y = -stance.chassisHeight + 0.012;
     car.root.rotation.y = -0.12;
     scene.add(car.root);
     for (let i = 0; i < 4; i++) {
       const wheel = car.wheels[i];
-      wheel.position.set(i % 2 ? -0.88 : 0.88, WHEEL_RADIUS, i < 2 ? 1.45 : -1.45);
+      wheel.position.set((i % 2 ? -1 : 1) * (stance.halfTrack + 0.02), WHEEL_RADIUS,
+        i < 2 ? stance.halfWheelbase : -stance.halfWheelbase);
       wheel.position.applyAxisAngle(up, car.root.rotation.y);
       wheel.rotation.y += car.root.rotation.y;
       scene.add(wheel);

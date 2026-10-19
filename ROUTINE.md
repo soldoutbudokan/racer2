@@ -154,6 +154,59 @@ from branch `claude/elegant-noether-rfx3gr`; not a scheduled run.
 - Checks: smoke-car, graphics-test, world-audit (unit and full), ai-test,
   physics-test, car-selection-test, browser-check and the production build.
 
+## Owner-requested: six-car redesign and rebalance (2026-10-18)
+
+Branch `claude/vibrant-thompson-ujml6z`, not a scheduled run. The owner's
+brief: "little difference in the handling, acceleration, etc between the
+cars", and "other than the yellow car and maybe the purple car, all of these
+seem horrible — from the ground up re-design and rethink these cars, and make
+the 3D modelling much better."
+
+- **Roster.** Six ids unchanged (saved choices still work), four concepts
+  replaced: `gt` is a wide-body GT3 coupe, `hatch` a three-door rally hatch
+  on a 2.5 m wheelbase, `muscle` a long-bonnet V8 fastback, `roadster` a
+  roofless speedster with deck humps. The formula car is untouched; the
+  hypercar (`supercar`) was reworked on the new builder features.
+- **Balance** (`src/carSpecs.js`). Power-to-weight now 300–650 hp/t (was
+  310–480), μ 1.40–1.56, downforce 0.45–2.6 m², top speed 221–325 km/h,
+  0–100 from 3.1 s (four-wheel-drive hatch) to 4.7 s (V8), 100–0 from 16 m
+  (formula) to 30 m (hatch). New per-car fields the physics honours
+  (`car.js`): `wheelbase` and `trackWidth` (the visual arches follow),
+  `cgHeight` (centre of mass over the wheels, through `stance.js`), `frontDrive`
+  (per-axle traction budgets and a centre coupling), `gripBalance` (rear μ
+  relative to front), `yawInertia`, `angularDamping`, `chassisHalf`,
+  `hoodForward`. The hood and chase cameras lift by each car's centre-of-mass
+  difference so every car is framed from the road.
+- **Why the centre of mass moved.** The chassis origin sat 0.677 m up for
+  everyone (0.32 m above the hubs). Brake impulses act at the contact patch
+  with that full arm, so the first draft of the quicker cars unloaded the
+  rear axle under the AI's braking and spun — traced per wheel with
+  `skidInfo`. Lowered to 0.40–0.58 m per car; rear brake shares resized to
+  what the loaded rear axle can hold (6–30 against 44–72 at the front).
+- **AI** (`src/ai.js`). The backward braking pass is friction-circle aware
+  (a braking zone that would fall inside a bend is pushed back before it);
+  the live pedal starts at the planned deceleration for the car's own brake
+  clamps and is capped by the lateral load from the pursuit path or the yaw
+  the car already carries. Laps on all six circuits are clean for all six
+  cars; the GP spread is 93–102 s, the oval 30–37 s (aero decides the oval).
+  The recovery's keep-clear radius behind (`BEHIND_M`) is 7 m, origin to
+  origin, since the new boxes are longer and the GT3 slides further along
+  the armco under its first gear before it calls itself stuck.
+- **Modelling** (`carModels/`). `loftBuilder`: greenhouse fields `beltIn`,
+  `beltY`, `tumbleK`, `tumbleY`, `railIn` (a shoulder ledge under convex glass
+  with a rounded rail; a sill of 6 % or more becomes a tangent break);
+  asymmetric `capRoll` (`{ top, bottom }`) so a bonnet curls down over a crisp
+  bumper lip; raked pane edges (`zStartTop`, `zEndTop`) for leaning A- and
+  C-pillars, honoured by the hull cut, the glass, the wells and the seals.
+  `wheelWells.cutWheelWells` takes the axle positions, radius and inboard
+  limit; `index.js` cuts each car on its own wheelbase and can lift a shell
+  over its wheels (`BODY_LIFT`, the rally stance). Wheel styles per car.
+  `showroomStance()` gives the garage and the shape sheet each car's height,
+  wheelbase and track.
+- **Checks.** `car-balance-test` asserts spreads (not just orderings), that
+  every car gives up a discipline to every other, that the menu ratings agree
+  with the measurements, and lap-time parity within 14 % (26 % on the oval).
+
 ## Changelog (accepted to `main`)
 
 - **2026-09-24** (accepted → `main` 2026-09-24, owner: "push to main and close
