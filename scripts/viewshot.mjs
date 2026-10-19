@@ -51,7 +51,7 @@ await page.evaluate((secs) => {
   // pose a race actually starts in.
   if (steps === 0) {
     ctx.cars.forEach((c, i) => {
-      const sp = window.__gridSpawn(ctx.track, i);
+      const sp = window.__gridSpawn(ctx.track, i, c.car.stance);
       c.car.reset(sp.position, sp.yaw);
     });
     ctx.world.step(dt);   // one step so the suspension raycast has run

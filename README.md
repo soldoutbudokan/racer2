@@ -74,11 +74,11 @@ an old "gt" or "hatch" preference selects the GT3 Coupe or the Rally Hatch.
 | Car | Package | Best at | Trade-off |
 | --- | --- | --- | --- |
 | **GT3 Coupe** | 555 hp V8, 1,300 kg, slicks, real wing, 2.75 m wheelbase | Dependable everywhere; strong brakes and downforce | Neither the best launch nor the highest top speed |
-| **Rally Hatch** | 365 hp turbo four, four-wheel drive, 1,230 kg, 2.5 m wheelbase, gravel tyres | The best launch in the field, darts into corners, barely slowed by grass | 230 km/h ceiling, small brakes, pushes when hurried |
-| **Formula** | 520 hp V10 to 11,500 rpm, 800 kg, the most wing | Corner speeds and braking nothing else can touch | A brick through the air; helpless off the asphalt |
+| **Rally Hatch** | 367 hp turbo four, four-wheel drive, 1,230 kg, 2.5 m wheelbase, gravel tyres | The best launch in the field, darts into corners, barely slowed by grass | 230 km/h ceiling, small brakes, pushes when hurried |
+| **Formula** | 440 hp V10 to 11,500 rpm, 800 kg, the most wing | Corner speeds and braking nothing else can touch | A brick through the air; helpless off the asphalt |
 | **Classic V8** | 7-litre big block, 1,600 kg, four long gears, 2.95 m wheelbase | Monstrous mid-range, second-highest top speed | Slow steering, little grip, the tail steps out under power |
-| **Speedster** | 265 hp flat four, 820 kg, no roof, 2.4 m wheelbase | The quickest steering and the most mechanical grip in slow corners | No wing and no power to spare on straights |
-| **Hypercar** | 780 hp twin-turbo V12, 1,480 kg, seven-speed, slipperiest body | Past 250 km/h it is alone | Wheelspin in the low gears; mass tells on brakes and direction changes |
+| **Speedster** | 265 hp flat four, 820 kg, no roof, 2.4 m wheelbase | The quickest steering and the most mechanical grip in slow and medium corners | No wing and no power to spare on straights |
+| **Hypercar** | 780 hp twin-turbo V12, 1,480 kg, seven-speed, slipperiest body | The only car past 300 km/h | Wheelspin in the low gears; mass tells on brakes and direction changes |
 
 The six are original designs and game-balanced setups, not manufacturer
 replicas. They were redrawn from the ground up on 2026-10-18: the previous
@@ -142,12 +142,13 @@ brakes:
   can't put all the torque down the surplus spins them up and the tach flares —
   wheelspin — and when grip is in hand the wheels just roll and RPM tracks the
   road. The tachometer shows that real flywheel speed.
-- **Aerodynamics** — quadratic drag (top speed is drag-limited around
-  285 km/h) plus downforce that loads the tyres at speed.
-- **Tyres** — finite grip (μ ≈ 1.45 on the racing surface) with a true
-  combined-slip friction circle: cornering at the limit leaves nothing for
-  throttle, hard cornering scrubs off speed, and the handbrake breaks the
-  rears loose. Grip is **load-sensitive** — a tyre carrying more than its
+- **Aerodynamics** — quadratic drag (top speeds run from about 225 km/h in
+  the formula car to 325 km/h in the hypercar) plus downforce that loads the
+  tyres at speed: 0.45 m² of it on the speedster, 3.4 m² on the formula car.
+- **Tyres** — finite grip (μ 1.40 in the V8 to 1.68 in the speedster on the
+  racing surface) with a true combined-slip friction circle: cornering at the
+  limit leaves nothing for throttle, hard cornering scrubs off speed, and the
+  handbrake breaks the rears loose. Grip is **load-sensitive** — a tyre carrying more than its
   share makes less grip per newton — so weight transfer matters: braking dives
   onto (and works) the fronts, power squats and hooks up the rears, and an
   overloaded outside tyre gives up grip mid-corner. Once a driven tyre is
@@ -156,8 +157,8 @@ brakes:
 - **Surfaces** — per-wheel detection of road / kerb / grass / gravel. Grass
   is slippery and draggy; the gravel traps at the heavy corners will genuinely
   ruin your lap.
-- **Brakes** — front-biased, ~1.5 g with aero in the GT3 (100 km/h stops in
-  ~24 m; the formula car in 16, the rally hatch in 30). Rear shares are sized
+- **Brakes** — front-biased, about 1.7 g on average in the GT3 (100 km/h stops
+  in 23 m; the formula car in 16, the rally hatch in 30). Rear shares are sized
   to what the rear axle still carries under full dive, so a stamped pedal
   understeers rather than spins.
 - **Weight transfer** — each car's centre of mass sits at its own height over
@@ -277,7 +278,7 @@ src/
   audio.js      procedural engine / tyre / surface / wind / impact sound
   carModels/    procedural car bodies (loft, bumper rolls, lamp apertures), wheels, materials
 scripts/
-  physics-test.mjs  deterministic driving-model assertions (23 checks)
+  physics-test.mjs  deterministic driving-model assertions (55 checks)
   ai-test.mjs       AI laps on every circuit plus traffic scenarios, in Node
   viewshot.mjs      deterministic drive + multi-angle screenshots
   trackshots.mjs    every circuit: chase / high / trackside / aerial / oblique
@@ -329,7 +330,7 @@ Screenshots and render measurements are attached as a workflow artifact.
 Run `node scripts/car-balance-test.mjs` (or add `--all-tracks` to cover every
 circuit) to measure the actual simulation on
 a flat road: 0–100 km/h, 80–160 km/h, terminal speed, 100–0 km/h stopping
-distance, turn-in response, fast-corner grip and rough-surface recovery. The
+distance, steering response, fast-corner grip and rough-surface recovery. The
 suite checks meaningful differences and rejects a car that beats another in
 every measured discipline. It also exercises each setup on a full circuit and
 checks that the driving aid changes its recommendations with the selected car.

@@ -737,7 +737,8 @@ export function buildExhaust({
   const satin = makeSatin();
   const trim = makeTrim();
   const black = undertrayMaterial();
-  const xs = count === 4 ? [-x - 0.1, -x + 0.04, x - 0.04, x + 0.1] : [-x, x];
+  // One tip at +x, a pair at ±x, or four in two pairs.
+  const xs = count === 4 ? [-x - 0.1, -x + 0.04, x - 0.04, x + 0.1] : count === 1 ? [x] : [-x, x];
   // Segment counts are split by what the part actually has to hold: the satin
   // sleeve and its shroud are the only round silhouettes you read from behind,
   // so they keep 12; everything inside the bore is unlit black and gets 10.
@@ -1115,7 +1116,11 @@ export function buildDoorFurniture({
     for (const sx of [-1, 1]) {
       const h = new THREE.Group();
       h.position.set(sx * x, handleY, handleZ);
-      h.rotation.y = -sx * Math.PI / 2;   // local +z now points outboard
+      // +π/2 about y takes local +z to +x: outboard on the right (sx 1) and,
+      // with sx -1, on the left. (This was -sx·π/2, which sent every handle,
+      // gill and side intake INTO the shell; bodies carried a faceOutboard()
+      // flip to undo it. Fixed 2026-10-19 and the flips removed.)
+      h.rotation.y = sx * Math.PI / 2;    // local +z now points outboard
       h.rotation.z = handleTilt;
       // recessed trough behind the handle: this is the shadow that makes a
       // handle read at distance, far more than the bar itself
@@ -1208,7 +1213,7 @@ export function buildBodyVents({
       for (let i = 0; i < gillCount; i++) {
         const s = new THREE.Group();
         s.position.set(sx * (gillX - i * gillStep), gillY + i * 0.004, gillZ - i * gillGap);
-        s.rotation.y = -sx * Math.PI / 2;
+        s.rotation.y = sx * Math.PI / 2;     // outboard; see buildDoorFurniture
         s.rotation.z = 0.16;                     // rake the slots back
         addOpening(s, {
           w: gillW, h: gillH, depth: 0.026, wall: 0.008, lipT: 0.009,
@@ -1225,7 +1230,7 @@ export function buildBodyVents({
     for (const sx of [-1, 1]) {
       const s = new THREE.Group();
       s.position.set(sx * intakeX, intakeY, intakeZ);
-      s.rotation.y = -sx * Math.PI / 2;
+      s.rotation.y = sx * Math.PI / 2;       // outboard; see buildDoorFurniture
       addOpening(s, {
         w: intakeW, h: intakeH, depth: 0.052, wall: 0.011, lipT: 0.012,
         floorMat: intakeMesh ? makeGrille() : black, wallMat: black, lipMat: trim,

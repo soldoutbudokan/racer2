@@ -65,7 +65,7 @@ for (const id of ids) {
   await page.evaluate(() => {
     const ctx = window.__ctx;
     ctx.mode = null;                          // freeze game loop
-    const car = ctx.cars[0].car, spawn = window.__gridSpawn(ctx.track, 0);
+    const car = ctx.cars[0].car, spawn = window.__gridSpawn(ctx.track, 0, car.stance);
     car.reset(spawn.position, spawn.yaw);
     for (let i = 0; i < 90; i++) {
       car.applyControls({ throttle: 0, brake: 1, steer: 0, handbrake: true }, 1 / 120);

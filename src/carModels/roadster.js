@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  buildLoftHull, buildPanelSeams, buildWindowSeals, profileFractions, sampleSkin,
+  buildLoftHull, buildPanelSeams, buildWindowSeals, profileFractions, sampleSkin, skinTopY,
 } from './loftBuilder.js';
 import { makeGlass, makePaint, makeSatin, makeShutline, makeTrim, makeTaillight } from './carMaterials.js';
 import { buildApertureLamps } from './apertureLamps.js';
 import {
   buildMirrors, buildGrille, buildSplitter, buildDiffuser, buildExhaust,
-  buildBadgesAndPlate, buildUnderbody, buildArchLiners, buildInterior, buildWing,
+  buildBadgesAndPlate, buildUnderbody, buildArchLiners, buildInterior,
 } from './parts.js';
 
 // ---------------------------------------------------------------------------
@@ -22,18 +22,21 @@ import {
 // outer faces at x 0.98 (1.68 m track).
 // ---------------------------------------------------------------------------
 
+// The flank line runs at 80 % of the flank. The loft lifts a crease to at
+// least 4 % of the flank above an arch lip (loftBuilder halfProfileSurfaced),
+// so the lips stay at or below 0.76 and the line stays level over the wheels.
 const LINE = { crease: 0.010, creaseY: 0.80 };
 export const keys = [
   //   z,     hw,    yb,     hip,   yt,    topW
   { z: -1.85, hw: 0.860, yb: -0.140, hip: 0.300, yt: 0.420, topW: 0.70, hard: true, crown: 0.010, ...LINE, crease: 0.006 },
-  { z: -1.62, hw: 0.955, yb: -0.150, hip: 0.365, yt: 0.455, topW: 0.80, crown: 0.014, ...LINE, flare: 0.030, lipY: 0.80 },
-  { z: -1.20, hw: 0.990, yb: -0.030, hip: 0.405, yt: 0.470, topW: 0.84, crown: 0.016, ...LINE, flare: 0.055, lipY: 0.84 },   // rear axle
-  { z: -0.85, hw: 0.960, yb: -0.170, hip: 0.395, yt: 0.470, topW: 0.80, crown: 0.012, ...LINE, flare: 0.030, lipY: 0.80, sill: 0.020 },
+  { z: -1.62, hw: 0.955, yb: -0.150, hip: 0.365, yt: 0.455, topW: 0.80, crown: 0.014, ...LINE, flare: 0.030, lipY: 0.74 },
+  { z: -1.20, hw: 0.990, yb: -0.030, hip: 0.405, yt: 0.470, topW: 0.84, crown: 0.016, ...LINE, flare: 0.055, lipY: 0.76 },   // rear axle
+  { z: -0.85, hw: 0.960, yb: -0.170, hip: 0.395, yt: 0.470, topW: 0.80, crown: 0.012, ...LINE, flare: 0.030, lipY: 0.74, sill: 0.020 },
   { z: -0.20, hw: 0.940, yb: -0.180, hip: 0.385, yt: 0.455, topW: 0.78, crown: 0.010, ...LINE, sill: 0.024 },
   { z:  0.45, hw: 0.945, yb: -0.175, hip: 0.390, yt: 0.470, topW: 0.80, crown: 0.016, ...LINE, sill: 0.020, hard: true },   // cowl
-  { z:  0.85, hw: 0.960, yb: -0.160, hip: 0.400, yt: 0.455, topW: 0.82, crown: 0.020, ...LINE, flare: 0.030, lipY: 0.80 },
-  { z:  1.20, hw: 0.990, yb: -0.030, hip: 0.410, yt: 0.455, topW: 0.84, crown: 0.022, ...LINE, flare: 0.055, lipY: 0.84 },   // front axle
-  { z:  1.55, hw: 0.960, yb: -0.160, hip: 0.370, yt: 0.410, topW: 0.82, crown: 0.018, ...LINE, flare: 0.030, lipY: 0.80 },
+  { z:  0.85, hw: 0.960, yb: -0.160, hip: 0.400, yt: 0.455, topW: 0.82, crown: 0.020, ...LINE, flare: 0.030, lipY: 0.74 },
+  { z:  1.20, hw: 0.990, yb: -0.030, hip: 0.410, yt: 0.455, topW: 0.84, crown: 0.022, ...LINE, flare: 0.055, lipY: 0.76 },   // front axle
+  { z:  1.55, hw: 0.960, yb: -0.160, hip: 0.370, yt: 0.410, topW: 0.82, crown: 0.018, ...LINE, flare: 0.030, lipY: 0.74 },
   { z:  1.85, hw: 0.900, yb: -0.175, hip: 0.250, yt: 0.300, topW: 0.76, crown: 0.012, ...LINE, hard: true },
   { z:  2.05, hw: 0.820, yb: -0.180, hip: 0.070, yt: 0.130, topW: 0.66, crown: 0.006, hard: true },
 ];
@@ -69,6 +72,8 @@ const HUMP = [
   { z: -0.94, hw: 0.31, yb: 0.36, hip: 0.46, yt: 0.630, topW: 0.21, crown: 0.014 },
   { z: -0.82, hw: 0.29, yb: 0.36, hip: 0.45, yt: 0.610, topW: 0.19, crown: 0.010, hard: true },
 ];
+// One hump geometry serves both humps and every speedster, so the meshes are
+// flagged and the car's dispose() leaves it alone.
 let humpGeo = null;
 function buildHumps(color) {
   const g = new THREE.Group();
@@ -78,6 +83,7 @@ function buildHumps(color) {
     hump.position.x = side * 0.34;
     hump.castShadow = true; hump.receiveShadow = true;
     hump.userData.noMerge = true;
+    hump.userData.sharedGeometry = true;
     g.add(hump);
     // Roll hoop just proud of each hump's crown.
     const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.022, 8, 20, Math.PI), makeSatin());
@@ -127,6 +133,43 @@ function buildScreen(color) {
   return g;
 }
 
+// Lip spoiler on the deck's trailing edge, behind the humps (which start at
+// z -1.66): a wedge laid onto the crowned deck, flush at its leading edge
+// and rising 4 cm at the tail, sunk 1 cm into the skin all round. It follows
+// the crown across its span, so no corner hangs off the deck or cuts a hump.
+function buildLip() {
+  const nx = 16, nz = 4, x0 = 0.70, zF = -1.68, zB = -1.83, sink = 0.010;
+  const rise = (t) => 0.004 + 0.036 * t * t;
+  const zAt = (j) => zF + (zB - zF) * j / nz;
+  const xAt = (i) => -x0 + 2 * x0 * i / nx;
+  const pos = [];
+  const tri = (a, b, c) => pos.push(...a, ...b, ...c);
+  const top = (i, j) => [xAt(i), skinTopY(keys, zAt(j), xAt(i)) + rise(j / nz), zAt(j)];
+  const foot = (i, j) => [xAt(i), skinTopY(keys, zAt(j), xAt(i)) - sink, zAt(j)];
+  for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+    tri(top(i, j), top(i + 1, j), top(i, j + 1));             // +x by -z: faces up
+    tri(top(i + 1, j), top(i + 1, j + 1), top(i, j + 1));
+  }
+  for (let i = 0; i < nx; i++) {
+    tri(foot(i, nz), top(i, nz), foot(i + 1, nz));            // tail face, -z
+    tri(foot(i + 1, nz), top(i, nz), top(i + 1, nz));
+    tri(foot(i, 0), foot(i + 1, 0), top(i, 0));               // leading face, +z
+    tri(foot(i + 1, 0), top(i + 1, 0), top(i, 0));
+  }
+  for (let j = 0; j < nz; j++) {
+    tri(foot(nx, j), foot(nx, j + 1), top(nx, j));            // right end, +x
+    tri(foot(nx, j + 1), top(nx, j + 1), top(nx, j));
+    tri(foot(0, j), top(0, j), foot(0, j + 1));               // left end, -x
+    tri(foot(0, j + 1), top(0, j), top(0, j + 1));
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geometry.computeVertexNormals();
+  const lip = new THREE.Mesh(geometry, makePaint(0x111316));
+  lip.castShadow = true;
+  return lip;
+}
+
 // Round tail lamps in satin bezels on the tail face, baked into one red mesh.
 function buildTailLamps() {
   const g = new THREE.Group();
@@ -167,9 +210,10 @@ export function decorate(body, ctx) {
   const tail = buildTailLamps();
   body.add(tail.group);
   body.add(buildBadgesAndPlate({ frontPose: sampleSkin(keys, 1.70, 1), rearZ: -1.862, rearY: 0.26, plateY: 0.08 }));
-  body.add(buildExhaust({ z: -1.87, y: -0.03, x: 0.14, count: 2, r: 0.042 }));
+  // Twin tips outboard of the plate recess (x ±0.24) and under the lamps.
+  body.add(buildExhaust({ z: -1.87, y: -0.03, x: 0.34, count: 2, r: 0.042 }));
   body.add(buildDiffuser({ z: -1.72, y: -0.24, w: 1.30, tunnels: false, fences: false, strakes: 3 }));
-  body.add(buildWing({ z: -1.62, deckY: 0.455, span: 1.40, style: 'ducktail', gurney: false }));
+  body.add(buildLip());
 
   // Nose cap plane z 2.05; face y -0.135 .. -0.01: a slim mouth and splitter.
   body.add(buildGrille({ z: 2.053, y: -0.07, w: 0.70, h: 0.10, depth: 0.030, ducts: false, bar: true }));
@@ -177,6 +221,6 @@ export function decorate(body, ctx) {
   body.add(buildMirrors({ z: 0.42, y: 0.48, x: 0.92, color: ctx.color, indicator: false, fairing: true }));
 
   body.add(buildUnderbody({ y: -0.25, w: 1.22, len: 3.40 }));
-  body.add(buildArchLiners({ zF: 1.20, zR: -1.20, x: 0.84, r: 0.413, width: 0.26, lip: false }));
+  body.add(buildArchLiners({ zF: ctx.arches.zF, zR: ctx.arches.zR, x: 0.84, r: 0.413, width: 0.26, lip: false }));
   return { brakeLights: tail.brakeMesh };
 }

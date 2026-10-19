@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { hideFromOverridePasses } from './scenery/noise.js';
-import { getCarSpec, getCarPerformance, getCornerSpeed } from './carSpecs.js';
+import { getCarSpec, getCarPerformance, getCornerSpeed, applyBrakingPasses } from './carSpecs.js';
 
 /**
  * "Perfect line" driving aid: a ribbon drawn along the ideal racing line (the
@@ -123,22 +123,19 @@ export function createRacingLine(scene, track) {
   function setCarSpec(spec = getCarSpec()) {
     if (currentSpec === spec) return;
     currentSpec = spec;
-    const { aLat, aBrake, aAccel, vMax, wheelPower, mass,
-      halfRhoCdA, rollingDrag } = getCarPerformance(spec);
+    const { aLat, aBrake, aAccel, vMax, tractiveForce, mass,
+      halfRhoCdA, rollingDrag, bodyDamping } = getCarPerformance(spec);
     for (let i = 0; i < n; i++) {
       profile[i] = Math.min(vMax, getCornerSpeed(spec, kSmooth[i], aLat));
     }
-    // Braking begins earlier in heavier cars with weaker brakes.
-    for (let pass = 0; pass < 2; pass++) {
-      for (let i = n - 1; i >= 0; i--) {
-        const next = profile[(i + 1) % n];
-        profile[i] = Math.min(profile[i], Math.sqrt(next * next + 2 * aBrake * ds[i]));
-      }
-    }
+    // Braking begins earlier in heavier cars with weaker brakes, and inside
+    // a bend the tyres' cornering load leaves less for braking: the same
+    // pass the AI plans with, so the aid and the field agree.
+    applyBrakingPasses(profile, kSmooth, ds, spec, aLat, aBrake);
     // Reachability keeps the line's acceleration demand inside this engine's
-    // power, tyre and aerodynamic limits, including exits from slow corners.
+    // gearing, tyre and aerodynamic limits, including exits from slow corners.
     const accelAt = v => Math.min(aAccel, Math.max(0,
-      (wheelPower / Math.max(8, v) - halfRhoCdA * v * v - rollingDrag) / mass));
+      (tractiveForce(v) - halfRhoCdA * v * v - rollingDrag - bodyDamping * v) / mass));
     for (let pass = 0; pass < 2; pass++) {
       for (let i = 0; i < n; i++) {
         const j = (i + 1) % n;

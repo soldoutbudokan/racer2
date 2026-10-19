@@ -294,9 +294,9 @@ ck('the contact shadow fades and spreads with airtime',
 // ---------- The field is placed ON the grid, not dropped onto it ----------
 // A car spawned above its settled ride height starts with the springs at full
 // droop and falls; the whole field used to drop 36 cm and bounce through the
-// first half-second of every race. Spawning at `STATIC_CHASSIS_HEIGHT`
-// (src/stance.js) puts the suspension in equilibrium on step 1, so nothing
-// should move at all. See ROUTINE.md, 2026-07-29.
+// first half-second of every race. Spawning each car at its own settled
+// chassis height (`car.stance.chassisHeight`, src/stance.js) puts the
+// suspension in equilibrium on step 1, so nothing should move at all. See ROUTINE.md, 2026-07-29.
 await startMode('quick-race');
 const spawn = await page.evaluate(() => {
   const ctx = window.__ctx;
@@ -349,7 +349,7 @@ const lights = await page.evaluate(() => {
   const ctx = window.__ctx;
   const SEQ = window.__startSequenceS;
   ctx.cars.forEach((c, i) => {
-    const sp = window.__gridSpawn(ctx.track, i);
+    const sp = window.__gridSpawn(ctx.track, i, c.car.stance);
     c.car.reset(sp.position, sp.yaw);
   });
   ctx.state.startT = 0;
@@ -490,7 +490,7 @@ const launch = await page.evaluate(() => {
   const ctx = window.__ctx;
   const SEQ = window.__startSequenceS;
   ctx.cars.forEach((c, i) => {
-    const sp = window.__gridSpawn(ctx.track, i);
+    const sp = window.__gridSpawn(ctx.track, i, c.car.stance);
     c.car.reset(sp.position, sp.yaw);
   });
   ctx.state.startT = 0;

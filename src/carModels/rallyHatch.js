@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   buildGreenhouseShell, buildPanelSeams, buildWindowSeals, profileFractions, sampleSkin,
+  buildFlankDecal, flankPoint, skinTopY,
 } from './loftBuilder.js';
 import {
   makeGlass, makeShutline, makeTrim, makeCarbon, makeSatin, makeHeadlight, makeCaliper,
@@ -26,21 +27,25 @@ import {
 // ---------------------------------------------------------------------------
 
 const CABIN = { beltIn: 0.12, beltY: 0.05, tumbleK: 0.58, tumbleY: 0.50, railIn: 0.045 };
-const LINE = { crease: 0.010, creaseY: 0.84 };
-const ARCH = { flare: 0.070, lipY: 0.90 };    // square box arch: wide right up to the shoulder
+// The shoulder crease runs at 90 % of the flank, nose to tail. The loft lifts
+// a crease to at least 4 % of the flank above an arch lip (loftBuilder
+// halfProfileSurfaced), so the box arches keep their lips at or below 0.86
+// and the line stays straight over the wheels.
+const LINE = { crease: 0.010, creaseY: 0.90 };
+const ARCH = { flare: 0.070, lipY: 0.86 };    // square box arch, lip just under the crease
 
 export const keys = [
   //   z,     hw,    yb,     hip,   yt,    topW
   { z: -1.95, hw: 0.890, yb: -0.160, hip: 0.430, yt: 0.620, topW: 0.70, hard: true, crown: 0.006, ...LINE, crease: 0.006, ...CABIN },
-  { z: -1.68, hw: 0.950, yb: -0.170, hip: 0.450, yt: 0.860, topW: 0.70, crown: 0.010, ...LINE, ...CABIN, flare: 0.030, lipY: 0.88 },
+  { z: -1.68, hw: 0.950, yb: -0.170, hip: 0.450, yt: 0.860, topW: 0.70, crown: 0.010, ...LINE, ...CABIN, flare: 0.030, lipY: 0.84 },
   { z: -1.25, hw: 0.960, yb: -0.030, hip: 0.460, yt: 0.905, topW: 0.70, crown: 0.012, ...LINE, ...CABIN, ...ARCH },      // rear axle
-  { z: -0.90, hw: 0.945, yb: -0.170, hip: 0.455, yt: 0.925, topW: 0.70, sill: 0.028, crown: 0.012, ...LINE, ...CABIN, flare: 0.030, lipY: 0.88 },
+  { z: -0.90, hw: 0.945, yb: -0.170, hip: 0.455, yt: 0.925, topW: 0.70, sill: 0.028, crown: 0.012, ...LINE, ...CABIN, flare: 0.030, lipY: 0.84 },
   { z: -0.40, hw: 0.940, yb: -0.180, hip: 0.450, yt: 0.930, topW: 0.70, sill: 0.030, crown: 0.012, ...LINE, ...CABIN },  // B-pillar
   { z:  0.15, hw: 0.940, yb: -0.180, hip: 0.450, yt: 0.920, topW: 0.70, sill: 0.030, crown: 0.012, ...LINE, ...CABIN },  // header
   { z:  0.58, hw: 0.945, yb: -0.175, hip: 0.450, yt: 0.540, topW: 0.78, sill: 0.028, crown: 0.016, ...LINE, beltIn: 0.07, hard: true },  // cowl
-  { z:  0.90, hw: 0.950, yb: -0.165, hip: 0.445, yt: 0.515, topW: 0.80, crown: 0.018, ...LINE, flare: 0.030, lipY: 0.88 },
+  { z:  0.90, hw: 0.950, yb: -0.165, hip: 0.445, yt: 0.515, topW: 0.80, crown: 0.018, ...LINE, flare: 0.030, lipY: 0.84 },
   { z:  1.25, hw: 0.960, yb: -0.030, hip: 0.440, yt: 0.490, topW: 0.80, crown: 0.018, ...LINE, ...ARCH },               // front axle
-  { z:  1.60, hw: 0.945, yb: -0.165, hip: 0.420, yt: 0.455, topW: 0.80, crown: 0.016, ...LINE, flare: 0.030, lipY: 0.88 },
+  { z:  1.60, hw: 0.945, yb: -0.165, hip: 0.420, yt: 0.455, topW: 0.80, crown: 0.016, ...LINE, flare: 0.030, lipY: 0.84 },
   { z:  1.85, hw: 0.910, yb: -0.180, hip: 0.360, yt: 0.410, topW: 0.78, crown: 0.010, ...LINE, hard: true },
   { z:  2.00, hw: 0.860, yb: -0.185, hip: 0.230, yt: 0.300, topW: 0.72, crown: 0.006, hard: true },
 ];
@@ -65,9 +70,11 @@ export const PANES = [...GLASS, ...TAILLAMPS];
 const SHUT_LINES = [
   { path: [[1.80, F.topCorner], [1.80, 1.0], [1.80, -F.topCorner]] },
   { path: [[1.80, F.topCorner], [0.56, F.topCorner]], mirror: true },
+  // Door: rear cut between the door glass (ends z -0.50) and the quarter
+  // light (starts -0.58).
   {
-    path: [[0.50, F.sillLip], [0.50, F.shoulder], [-0.62, F.shoulder],
-      [-0.62, F.sillLip], [0.50, F.sillLip]],
+    path: [[0.50, F.sillLip], [0.50, F.shoulder], [-0.54, F.shoulder],
+      [-0.54, F.sillLip], [0.50, F.sillLip]],
     mirror: true,
   },
   // Tailgate: round the tail glass and down the back panel.
@@ -99,14 +106,6 @@ function box(w, h, d, material, x = 0, y = 0, z = 0) {
   mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true;
   return mesh;
 }
-// parts.js yaws its side-facing recesses the wrong way (local +z inboard on
-// both flanks); flip the quarter turns so the handles face out of the paint.
-function faceOutboard(group) {
-  group.traverse(o => {
-    if (Math.abs(Math.abs(o.rotation.y) - Math.PI / 2) < 1e-6) o.rotation.y = -o.rotation.y;
-  });
-  return group;
-}
 
 // Four-lamp pod on the bonnet's leading edge: a black bar with four round
 // projectors in satin bezels. On a rally car this is the face.
@@ -131,10 +130,10 @@ function buildLampPod() {
 }
 
 // Mud flaps behind each wheel, hanging off the arch's trailing edge.
-function buildMudFlaps() {
+function buildMudFlaps(arches) {
   const g = new THREE.Group();
   const rubber = new THREE.MeshStandardMaterial({ color: 0x0c0d10, roughness: 0.95, metalness: 0 });
-  for (const z of [1.25, -1.25]) for (const side of [-1, 1]) {
+  for (const z of [arches.zF, arches.zR]) for (const side of [-1, 1]) {
     const flap = box(0.30, 0.26, 0.016, rubber, side * 0.90, -0.26, z - 0.44);
     flap.rotation.x = 0.08;
     g.add(flap);
@@ -166,8 +165,12 @@ export function decorate(body, ctx) {
   // A matte bumper bar wraps the lower tail, skid plate under it.
   body.add(box(1.72, 0.12, 0.10, makeTrim(), 0, -0.02, -1.93));
   body.add(box(0.80, 0.035, 0.18, makeSatin(), 0, -0.13, -1.90));
-  // Tailgate wing: a hoop-mounted blade off the roof's trailing edge.
-  body.add(buildWing({ z: -1.90, y: 1.04, span: 1.30, deckY: 0.80, style: 'gt', gurney: true }));
+  // Tailgate wing: a hoop-mounted blade off the roof's trailing edge. The
+  // posts span z -1.93..-1.83 over a roof falling 11 cm toward the tail, so
+  // their feet go to the skin at the trailing face and sink in from there.
+  body.add(buildWing({
+    z: -1.90, y: 1.04, span: 1.30, deckY: skinTopY(keys, -1.93, 0.57) + 0.01, style: 'gt', gurney: true,
+  }));
 
   // Nose cap plane z 2.00; face y -0.13 .. 0.20.
   body.add(buildGrille({ z: 2.003, y: 0.10, w: 0.74, h: 0.14, depth: 0.034, bar: true,
@@ -189,19 +192,17 @@ export function decorate(body, ctx) {
 
   body.add(buildWipers({ z: 0.58, y: 0.565, x: 0.24, len: 0.46, tilt: 0.06, rake: 0.55 }));
   body.add(buildMirrors({ z: 0.46, y: 0.52, x: 0.90, color: ctx.color, indicator: false }));
-  body.add(faceOutboard(buildDoorFurniture({
-    x: 0.935, handleY: 0.36, handleZ: -0.40, handleW: 0.15, repeater: false, fuel: false,
-  })));
-  // Door number panel, seated on the door skin.
-  const forward = new THREE.Vector3(0, 0, 1);
+  body.add(buildDoorFurniture({
+    x: flankPoint(keys, -0.40, 0.36).position.x, handleY: 0.36, handleZ: -0.40, handleW: 0.15,
+    repeater: false, fuel: false,
+  }));
+  // Door number panel, laid onto the door skin between the sill (y -0.02)
+  // and the shoulder (0.45), clear of the handle behind it.
   for (const side of [-1, 1]) {
-    const { position, normal } = sampleSkin(keys, -0.05, side * (F.shoulder - 0.07));
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.40, 0.30), numberPanel());
-    panel.quaternion.setFromUnitVectors(forward, normal);
-    panel.position.copy(position).addScaledVector(normal, 0.004);
-    body.add(panel);
+    body.add(new THREE.Mesh(buildFlankDecal(keys, { z: -0.05, y: 0.25, w: 0.40, h: 0.30, side }),
+      numberPanel()));
   }
-  body.add(buildMudFlaps());
+  body.add(buildMudFlaps(ctx.arches));
   // Rocker protection: a satin sill guard along the floor edge.
   for (const side of [-1, 1]) body.add(box(0.06, 0.07, 1.70, makeTrim(), side * 0.905, -0.17, 0.0));
 
@@ -213,6 +214,6 @@ export function decorate(body, ctx) {
   }));
 
   body.add(buildUnderbody({ y: -0.24, w: 1.26, len: 3.40 }));
-  body.add(buildArchLiners({ zF: 1.25, zR: -1.25, x: 0.84, r: 0.45, width: 0.28, lip: false }));
+  body.add(buildArchLiners({ zF: ctx.arches.zF, zR: ctx.arches.zR, x: 0.84, r: 0.45, width: 0.28, lip: false }));
   return { brakeLights: tail.brakeMesh };
 }

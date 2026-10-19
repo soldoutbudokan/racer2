@@ -110,11 +110,13 @@ function sampleField(keys, field, u, dflt = 0) {
  *                   gives the panel a highlight gradient that reads as
  *                   pressed metal. Negative scoops the panel.
  *
- * The four below shape the GREENHOUSE (everything above the shoulder), added
+ * The five below shape the GREENHOUSE (everything above the shoulder), added
  * 2026-10-18 when the road cars were redrawn. Before them the upper profile
  * was fixed: glass started 4.5 % of the half-width inboard of the shoulder
  * and leaned straight in to the roof, which is why every closed car read as
- * a tent pitched on a bathtub. Defaults reproduce the old handles.
+ * a tent pitched on a bathtub. A car that declares none of them keeps the old
+ * handles exactly; once any station declares one, the tumble handle is
+ * measured from the glass sill instead of the shoulder.
  *
  *   beltIn  frac    how far inboard of the shoulder the glass sill sits, as a
  *                   fraction of hw. 0.045 is the legacy tuck-in; 0.07–0.12
@@ -142,6 +144,7 @@ export const SURFACE_DEFAULTS = {
   railIn: 0,
 };
 const SURFACE_FIELDS = Object.keys(SURFACE_DEFAULTS);
+const GREENHOUSE_FIELDS = ['beltIn', 'beltY', 'tumbleK', 'tumbleY', 'railIn'];
 
 // Resolution of the surfaced profile: vertex columns per rung of the landmark
 // ladder below. 1 is the ladder itself (22 columns, ~57 mm apart on a road
@@ -207,15 +210,16 @@ function featureSet(keys) {
   let f = featureCache.get(keys);
   if (f !== undefined) return f;
   let declared = false;
-  let sill = false, flare = false, crease = false, belt = false;
+  let sill = false, flare = false, crease = false, belt = false, greenhouse = false;
   for (const k of keys) {
     for (const name of SURFACE_FIELDS) if (k[name] !== undefined) declared = true;
+    for (const name of GREENHOUSE_FIELDS) if (k[name] !== undefined) greenhouse = true;
     if (Math.abs(k.sill ?? 0) > 0.003) sill = true;
     if (Math.abs(k.flare ?? 0) > 0.003) flare = true;
     if (Math.abs(k.crease ?? 0) > 0.002) crease = true;
     if ((k.beltIn ?? 0) >= 0.06) belt = true;
   }
-  f = declared ? { sill, flare, crease, belt } : null;
+  f = declared ? { sill, flare, crease, belt, greenhouse } : null;
   featureCache.set(keys, f);
   return f;
 }
@@ -385,7 +389,11 @@ function halfProfileSurfaced(p, N, feat) {
     // a real shoulder ledge), the tumblehome handle, the roof rail corner and
     // the crown plane. See SURFACE_DEFAULTS for the four fields.
     { i: IDX.beltTuck, x: xBelt, y: hipY + upSpan * beltY, hard: hard.has(IDX.beltTuck) },
-    { i: IDX.tumble, x: Math.min(xBelt, tw + (xBelt - tw) * tumbleK), y: hipY + upSpan * tumbleY },
+    // A car that declares none of the greenhouse fields keeps the pre-2026-10
+    // tumble handle exactly (measured from the shoulder, not the sill), so its
+    // hull is unchanged by their introduction.
+    { i: IDX.tumble, y: hipY + upSpan * tumbleY,
+      x: feat.greenhouse ? Math.min(xBelt, tw + (xBelt - tw) * tumbleK) : tw + (hw - tw) * 0.42 },
     { i: IDX.topCorner, x: tw - railIn, y: top - Math.min(0.006, upSpan * 0.08) },
     // Crown: a shallow dome from the top corners up to the centre line. The
     // edge node sits at 52 % of the half-width, where a parabola has 73 % of
@@ -483,6 +491,50 @@ function insetHalf(half, d) {
   out[0].x = 0;
   out[N - 1].x = 0;
   return out;
+}
+
+/**
+ * Make a rolled half-profile star-shaped about its own centre (0, mean y),
+ * in place: walking from the floor centre up the flank to the crown centre,
+ * the angle about that centre must never go backwards. insetHalf moves each
+ * point along its own bisector, so on a low end section with a large roll
+ * radius (a bonnet curling down 16 cm over a section 7.5 cm tall) the crown
+ * points pass below the roof-rail points and the ring folds over itself —
+ * inverted faces in the roll and a cap fan with mixed winding. A run of
+ * points that would go backwards is laid evenly along the chord between the
+ * good points either side of it: the angle then rises monotonically, so the
+ * ring cannot cross itself, and every point stays distinct, so no triangle
+ * collapses to zero area (which left vertices with no normal at all).
+ */
+function untangleHalf(half) {
+  let cy = 0;
+  for (const q of half) cy += q.y;
+  cy /= half.length;
+  const angle = (q) => Math.atan2(q.y - cy, Math.max(0, q.x));
+  let maxA = -Infinity, good = -1;
+  for (let i = 0; i < half.length; i++) {
+    const a = angle(half[i]);
+    if (a < maxA - 1e-9) continue;
+    if (good >= 0 && i - good > 1) {
+      const A = half[good], B = half[i], n = i - good;
+      for (let k = good + 1; k < i; k++) {
+        const t = (k - good) / n;
+        half[k].x = A.x + (B.x - A.x) * t;
+        half[k].y = A.y + (B.y - A.y) * t;
+      }
+    }
+    maxA = a;
+    good = i;
+  }
+  // The crown centre ends the walk at +90 deg, so a run cannot be left open;
+  // if one ever is, it collapses onto the last good point as a fallback.
+  for (let k = good + 1; k < half.length; k++) {
+    half[k].x = half[good].x;
+    half[k].y = half[good].y;
+  }
+  half[0].x = 0;
+  half[half.length - 1].x = 0;
+  return half;
 }
 
 // Rings per quarter turn of a bumper roll. Six puts a vertex every 15 deg,
@@ -588,18 +640,14 @@ export function buildLoftHull(keys, opts = {}) {
     .filter((u) => u > uT + 1e-9 && u < uN - 1e-9);
   samples.push(uT, uN);
   // A RAKED edge (zStartTop / zEndTop differing from the belt z) runs
-  // diagonally across the ring grid, so it gets a row at several points along
-  // its run rather than one at each end: the staircase the cut leaves is then
-  // finer than the seal that frames the opening.
+  // diagonally across the ring grid; the cells it crosses are clipped along
+  // it below, so it needs rows only at its two ends.
   for (const pane of panes) {
-    const edges = [[pane.zStart, pane.zStartTop ?? pane.zStart], [pane.zEnd, pane.zEndTop ?? pane.zEnd]];
-    for (const [zBelt, zTop] of edges) {
-      const n = Math.abs(zTop - zBelt) < 1e-6 ? 0 : 6;
-      for (let k = 0; k <= n; k++) {
-        const u = uAtZ(zBelt + (zTop - zBelt) * (n ? k / n : 0));
-        if (u <= uT || u >= uN) continue;
-        if (!samples.some(value => Math.abs(value - u) < 1e-6)) samples.push(u);
-      }
+    for (const z of [pane.zStartTop, pane.zEndTop]) {
+      if (z === undefined) continue;
+      const u = uAtZ(z);
+      if (u <= uT || u >= uN) continue;
+      if (!samples.some(value => Math.abs(value - u) < 1e-6)) samples.push(u);
     }
   }
   samples.sort((a, b) => a - b);
@@ -608,6 +656,7 @@ export function buildLoftHull(keys, opts = {}) {
   // asymmetric bumper roll are not planar, because the hood is part-way round
   // a long radius while the bumper lip below it is still running straight.
   const emitRing = (half, z, v, copies) => {
+    opts.debugRings?.push({ z, half });      // probes inspect the sections
     for (let c = 0; c < copies; c++) {
       rows.push(positions.length / 3);
       rowZ.push(z);
@@ -644,7 +693,7 @@ export function buildLoftHull(keys, opts = {}) {
       const s = i / steps;
       const top = path(roll.top, s), bot = path(roll.bottom, s);
       if (roll.top === roll.bottom) {
-        out.push({ z: top.z, half: insetHalf(L.half(stationAtZ(keys, top.z, L.feat)), top.d) });
+        out.push({ z: top.z, half: untangleHalf(insetHalf(L.half(stationAtZ(keys, top.z, L.feat)), top.d)) });
         continue;
       }
       const hTop = insetHalf(L.half(stationAtZ(keys, top.z, L.feat)), top.d);
@@ -656,7 +705,7 @@ export function buildLoftHull(keys, opts = {}) {
         return p;
       });
       // The last ring is the cap plane for every point.
-      out.push({ z: top.z, half });
+      out.push({ z: top.z, half: untangleHalf(half) });
     }
     return out;
   };
@@ -678,6 +727,83 @@ export function buildLoftHull(keys, opts = {}) {
     for (const ring of rollRings(noseRoll, zNose, 1)) emitRing(ring.half, ring.z, 1, 1);
   }
 
+  // Pane openings. Each pane is a convex region of the (profile fraction f,
+  // z) parameter plane: f between its belt and top columns (snapped to the
+  // vertex columns, as the glass is) and z between its two edges, which are
+  // straight lines in that plane — vertical for a plain pane, leaning for a
+  // raked one. A cell wholly inside is dropped; a cell the boundary crosses
+  // is CLIPPED along it, like cutWheelWells does, so the opening follows a
+  // raked pillar exactly instead of in column-wide steps (it used to leave
+  // notches up to 44 mm deep between the seal and the glass).
+  const snapF = (f) => Math.round(f * (N - 1)) / (N - 1);
+  const regions = panes.map((pane) => {
+    const fb = snapF(pane.beltFrac ?? 0.60);
+    const crown = (pane.topFrac ?? 1) >= 0.999;
+    const ft = crown ? 1 : Math.max(fb + 1 / (N - 1), snapF(pane.topFrac));
+    const span = ft - fb;
+    const edge = (z0, z1) => ({ z0, slope: ((z1 ?? z0) - z0) / span });
+    let lo = edge(pane.zStart, pane.zStartTop), hi = edge(pane.zEnd, pane.zEndTop);
+    const mid = (e) => e.z0 + e.slope * span / 2;
+    if (mid(lo) > mid(hi)) [lo, hi] = [hi, lo];
+    const zAt = (e, f) => e.z0 + e.slope * (f - fb);
+    // Signed distances; a point is inside the opening when all are <= 0.
+    const planes = [(p) => fb - p.f, (p) => zAt(lo, p.f) - p.z, (p) => p.z - zAt(hi, p.f)];
+    if (!crown) planes.push((p) => p.f - ft);
+    return { side: pane.side ?? 0, planes };
+  });
+  const EPS = 1e-9;
+  const lerpV = (p, q, t) => ({
+    id: -1, f: p.f + (q.f - p.f) * t, z: p.z + (q.z - p.z) * t,
+    pos: p.pos.map((v, i) => v + (q.pos[i] - v) * t),
+    uv: p.uv.map((v, i) => v + (q.uv[i] - v) * t),
+  });
+  // Sutherland–Hodgman against one plane: the part on each side, with
+  // on-plane vertices in both (cutWheelWells does the same).
+  const split = (poly, plane) => {
+    const inside = [], outside = [];
+    for (let i = 0; i < poly.length; i++) {
+      const p = poly[i], q = poly[(i + 1) % poly.length];
+      const dp = plane(p), dq = plane(q);
+      if (dp <= EPS) inside.push(p);
+      if (dp >= -EPS) outside.push(p);
+      if ((dp < -EPS && dq > EPS) || (dp > EPS && dq < -EPS)) {
+        const v = lerpV(p, q, dp / (dp - dq));
+        inside.push(v); outside.push(v);
+      }
+    }
+    return { inside, outside };
+  };
+  // The polygons of `poly` outside one convex region.
+  const subtract = (poly, planes) => {
+    const out = [];
+    let rem = poly;
+    for (const plane of planes) {
+      const { inside, outside } = split(rem, plane);
+      if (outside.length >= 3) out.push(outside);
+      rem = inside;
+      if (rem.length < 3) return out;
+    }
+    return out;                                   // `rem` is the opening
+  };
+  const newIds = new Map();
+  const idOf = (v) => {
+    if (v.id >= 0) return v.id;
+    const key = v.pos.map((x) => x.toFixed(6)).join(',');
+    let id = newIds.get(key);
+    if (id === undefined) {
+      id = positions.length / 3;
+      positions.push(...v.pos);
+      uvs.push(...v.uv);
+      newIds.set(key, id);
+    }
+    return id;
+  };
+  const vert = (id, k) => ({
+    id, f: k / (N - 1), z: positions[id * 3 + 2],
+    pos: [positions[id * 3], positions[id * 3 + 1], positions[id * 3 + 2]],
+    uv: [uvs[id * 2], uvs[id * 2 + 1]],
+  });
+
   const indices = [];
   for (let ri = 0; ri < rows.length - 1; ri++) {
     if (!rowBridge[ri]) continue;
@@ -685,21 +811,26 @@ export function buildLoftHull(keys, opts = {}) {
     for (let j = 0; j < M; j++) {
       if (!bridge[j]) continue;
       const j1 = (j + 1) % M;
-      // Cell centre z from its own vertices: in a bumper roll the rings are
-      // not planar, so the ring's nominal z would misjudge the cells the
-      // pane cut should remove.
-      const z = (positions[(a + j) * 3 + 2] + positions[(b + j) * 3 + 2]) / 2;
-      const frac = (cols[j].k + cols[j1].k) / (2 * (N - 1));
-      if (panes.some(pane => {
-        if (frac < pane.beltFrac - 1e-6 || frac > pane.topFrac + 1e-6) return false;
-        if (pane.side && pane.side !== cols[j].s) return false;
-        const [zs, ze] = paneZRange(pane, frac);
-        return z > Math.min(zs, ze) && z < Math.max(zs, ze);
-      })) continue;
       const v00 = a + j, v01 = a + j1, v10 = b + j, v11 = b + j1;
       // Winding chosen so faces point outward (verified via signed volume).
-      indices.push(v00, v11, v10);
-      indices.push(v00, v01, v11);
+      const tris = [[v00, v11, v10], [v00, v01, v11]];
+      const touching = regions.filter((r) => !r.side || r.side === cols[j].s);
+      if (!touching.length) { for (const t of tris) indices.push(...t); continue; }
+      const corners = [vert(v00, cols[j].k), vert(v01, cols[j1].k), vert(v10, cols[j].k), vert(v11, cols[j1].k)];
+      const byId = new Map(corners.map((c) => [c.id, c]));
+      const relevant = touching.filter((r) => !r.planes.some((plane) => corners.every((c) => plane(c) > EPS)));
+      if (!relevant.length) { for (const t of tris) indices.push(...t); continue; }
+      for (const t of tris) {
+        let polys = [t.map((id) => byId.get(id))];
+        for (const r of relevant) polys = polys.flatMap((poly) => subtract(poly, r.planes));
+        for (const poly of polys) {
+          const ids = poly.map(idOf);
+          for (let i = 1; i < ids.length - 1; i++) {
+            if (ids[0] === ids[i] || ids[i] === ids[i + 1] || ids[0] === ids[i + 1]) continue;
+            indices.push(ids[0], ids[i], ids[i + 1]);
+          }
+        }
+      }
     }
   }
 
@@ -826,6 +957,100 @@ export function sampleSkin(keys, z, f, opts = {}) {
   const cache = new Map();
   const c = toRing(f);
   return { position: skinPoint(keys, L, z, c, cache), normal: skinNormal(keys, L, z, c, cache) };
+}
+
+// Ring coordinate of the right flank at height y on station z, by bisection
+// over the band lo..hi of profile fractions, where the skin rises
+// monotonically.
+function flankRing(keys, L, cache, z, y, lo, hi) {
+  let a = lo, b = hi;
+  for (let i = 0; i < 40; i++) {
+    const m = (a + b) / 2;
+    if (skinPoint(keys, L, z, m, cache).y < y) a = m; else b = m;
+  }
+  return (a + b) / 2;
+}
+
+/**
+ * The flank skin at station z and height y on one side, and which way it
+ * faces — for seating a part pressed against the door or fender.
+ * @returns { position: THREE.Vector3, normal: THREE.Vector3 }
+ */
+export function flankPoint(keys, z, y, side = 1, { cLo, cHi } = {}) {
+  const L = profileFor(keys, 16);
+  const F = profileFractions(keys);
+  const cache = new Map();
+  const c = flankRing(keys, L, cache, z, y, cLo ?? F.sillLip, cHi ?? F.shoulder);
+  const cc = side > 0 ? c : 2 - c;
+  return { position: skinPoint(keys, L, z, cc, cache), normal: skinNormal(keys, L, z, cc, cache) };
+}
+
+/**
+ * A flat decal laid onto the flank: a w × h rectangle centred at station z
+ * and height y on one side, every vertex seated on the skin (plus `proud`)
+ * so it follows the door's curvature instead of standing off it as a flat
+ * plane. The rectangle must lie within the flank band cLo..cHi (profile
+ * fractions, default sill lip to shoulder), where the skin rises
+ * monotonically, so each (z, y) has one point on it.
+ * @returns BufferGeometry with position, normal and uv, oriented so a
+ *   texture reads the right way round from outside on either flank.
+ */
+export function buildFlankDecal(keys, {
+  z, y, w, h, side = 1, proud = 0.004, cLo, cHi, nu = 12, nv = 10,
+} = {}) {
+  const L = profileFor(keys, 16);
+  const F = profileFractions(keys);
+  const lo = cLo ?? F.sillLip, hi = cHi ?? F.shoulder;
+  const cache = new Map();
+  const cAt = (zz, yy) => flankRing(keys, L, cache, zz, yy, lo, hi);
+  const positions = [], normals = [], uvs = [], indices = [];
+  for (let j = 0; j <= nv; j++) {
+    for (let i = 0; i <= nu; i++) {
+      const u = i / nu, v = j / nv;
+      const zz = z + (u - 0.5) * w * (side > 0 ? 1 : -1);
+      const c = cAt(zz, y + (v - 0.5) * h);
+      const cc = side > 0 ? c : 2 - c;
+      const p = skinPoint(keys, L, zz, cc, cache);
+      const n = skinNormal(keys, L, zz, cc, cache);
+      positions.push(p.x + n.x * proud, p.y + n.y * proud, p.z + n.z * proud);
+      normals.push(n.x, n.y, n.z);
+      // Seen from outside, the car's nose is on the viewer's left on the
+      // right flank and on the right on the left flank, so u runs nose to
+      // tail on the right side and tail to nose on the left: text reads.
+      uvs.push(1 - u, v);
+    }
+  }
+  for (let j = 0; j < nv; j++) {
+    for (let i = 0; i < nu; i++) {
+      const a = j * (nu + 1) + i, b = a + 1, c = a + nu + 1, d = c + 1;
+      indices.push(a, d, b, a, c, d);          // faces outboard on both sides
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+/**
+ * Height of the top surface (deck, roof, bonnet) at station z and lateral
+ * offset x, so a part can stand on it by measurement: the skin between the
+ * roof rail and the crown centre, bisected on x.
+ */
+export function skinTopY(keys, z, x) {
+  const L = profileFor(keys, 16);
+  const F = profileFractions(keys);
+  const cache = new Map();
+  let a = F.beltTuck, b = 1;
+  if (Math.abs(x) >= skinPoint(keys, L, z, a, cache).x) return skinPoint(keys, L, z, a, cache).y;
+  for (let i = 0; i < 40; i++) {
+    const m = (a + b) / 2;
+    if (skinPoint(keys, L, z, m, cache).x > Math.abs(x)) a = m; else b = m;
+  }
+  return skinPoint(keys, L, z, (a + b) / 2, cache).y;
 }
 
 // One unit of ring coordinate is roughly this many metres of profile arc, so
@@ -979,7 +1204,7 @@ export function sampleUpperRings(keys, zList, N = 14) {
 // pane whose top corners differ from its belt corners has RAKED edges — the
 // leaning A-pillar and C-pillar every closed car has — instead of the
 // vertical bands a single z range can draw.
-function paneZRange(pane, frac) {
+export function paneZRange(pane, frac) {
   const top = pane.topFrac >= 0.999 ? 1 : pane.topFrac;
   const t = clamp((frac - pane.beltFrac) / Math.max(1e-6, top - pane.beltFrac), 0, 1);
   const zs = pane.zStartTop === undefined ? pane.zStart : pane.zStart + (pane.zStartTop - pane.zStart) * t;

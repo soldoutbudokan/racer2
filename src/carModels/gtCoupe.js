@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import {
   buildGreenhouseShell, buildPanelSeams, buildWindowSeals, profileFractions, sampleSkin,
+  buildFlankDecal, flankPoint,
 } from './loftBuilder.js';
 import { makeGlass, makeShutline, makeTrim, makeCarbon } from './carMaterials.js';
 import { buildApertureLamps } from './apertureLamps.js';
 import {
   buildTaillights, buildMirrors, buildGrille, buildSplitter, buildDiffuser, buildWing,
   buildExhaust, buildBadgesAndPlate, buildUnderbody, buildArchLiners, buildInterior,
-  buildBodyVents, buildWipers, buildAerial, buildTowEye,
+  buildBodyVents, buildWipers, buildAerial,
 } from './parts.js';
 
 // ---------------------------------------------------------------------------
@@ -19,30 +20,33 @@ import {
 // chase camera it is the wing, the haunches and the low wide mouth.
 //
 // Axle-centred frame: wheel centre y 0, ground -0.36, +Z forward. The axles
-// are at z ±1.375 (2.75 m wheelbase) and the tyres' outer faces at x 1.08
-// (1.84 m track), so the arches are authored at hw 1.045 + flare and the
-// openings cut by carModels/index.js land on the fender blisters.
+// are at z ±1.375 (2.75 m wheelbase) and the tyres' outer faces at x 1.06
+// (1.84 m track, 0.28 m tyres), so the arches are authored at hw 1.04 plus
+// flare and the openings cut by carModels/index.js land on the blisters.
 // ---------------------------------------------------------------------------
 
 // Greenhouse fields shared by the cabin stations: the glass sill 17 % of the
 // half-width inboard of the shoulder (a real ledge under the side glass),
 // convex glass and a rounded roof rail. See loftBuilder SURFACE_DEFAULTS.
 const CABIN = { beltIn: 0.17, beltY: 0.05, tumbleK: 0.62, tumbleY: 0.52, railIn: 0.035 };
-const LINE = { crease: 0.012, creaseY: 0.86 };   // one shoulder line, nose to tail
+// One shoulder line, nose to tail. The loft lifts a crease to at least 4 % of
+// the flank above an arch lip (loftBuilder halfProfileSurfaced), so the arch
+// lips stay at or below 0.82 to keep it straight.
+const LINE = { crease: 0.012, creaseY: 0.86 };
 
 export const keys = [
   //   z,     hw,    yb,     hip,   yt,    topW
   { z: -2.26, hw: 0.905, yb: -0.140, hip: 0.380, yt: 0.490, topW: 0.76, hard: true, crown: 0.006, ...LINE, crease: 0.008 },
   { z: -2.05, hw: 0.990, yb: -0.170, hip: 0.440, yt: 0.520, topW: 0.84, crown: 0.010, ...LINE },
   { z: -1.72, hw: 1.025, yb: -0.140, hip: 0.470, yt: 0.545, topW: 0.86, flare: 0.045, lipY: 0.80, crown: 0.012, ...LINE },
-  { z: -1.375, hw: 1.045, yb: -0.020, hip: 0.490, yt: 0.560, topW: 0.86, flare: 0.060, lipY: 0.86, crown: 0.012, ...LINE },  // rear axle
+  { z: -1.375, hw: 1.045, yb: -0.020, hip: 0.490, yt: 0.560, topW: 0.86, flare: 0.060, lipY: 0.82, crown: 0.012, ...LINE },  // rear axle
   { z: -1.05, hw: 1.020, yb: -0.170, hip: 0.480, yt: 0.620, topW: 0.80, flare: 0.040, lipY: 0.78, sill: 0.020, crown: 0.014, ...LINE },
   { z: -0.68, hw: 0.985, yb: -0.200, hip: 0.465, yt: 0.780, topW: 0.66, sill: 0.030, crown: 0.016, ...LINE, ...CABIN },      // C-pillar
   { z: -0.30, hw: 0.975, yb: -0.200, hip: 0.460, yt: 0.860, topW: 0.62, sill: 0.030, crown: 0.016, ...LINE, ...CABIN, beltIn: 0.18 },  // roof
   { z:  0.12, hw: 0.975, yb: -0.200, hip: 0.460, yt: 0.855, topW: 0.62, sill: 0.030, crown: 0.016, ...LINE, ...CABIN, beltIn: 0.18 },  // header
   { z:  0.60, hw: 0.985, yb: -0.190, hip: 0.460, yt: 0.520, topW: 0.80, sill: 0.025, crown: 0.018, ...LINE, beltIn: 0.08, hard: true },  // cowl
   { z:  0.98, hw: 1.000, yb: -0.170, hip: 0.460, yt: 0.490, topW: 0.86, flare: 0.035, lipY: 0.78, crown: 0.020, ...LINE },
-  { z:  1.375, hw: 1.040, yb: -0.020, hip: 0.460, yt: 0.470, topW: 0.88, flare: 0.060, lipY: 0.86, crown: 0.020, ...LINE },  // front axle
+  { z:  1.375, hw: 1.040, yb: -0.020, hip: 0.460, yt: 0.470, topW: 0.88, flare: 0.060, lipY: 0.82, crown: 0.020, ...LINE },  // front axle
   { z:  1.72, hw: 1.000, yb: -0.160, hip: 0.420, yt: 0.430, topW: 0.86, flare: 0.040, lipY: 0.80, crown: 0.018, ...LINE },
   { z:  2.06, hw: 0.950, yb: -0.190, hip: 0.300, yt: 0.345, topW: 0.80, crown: 0.012, ...LINE, crease: 0.008, hard: true },
   { z:  2.32, hw: 0.860, yb: -0.200, hip: 0.090, yt: 0.165, topW: 0.70, crown: 0.006, hard: true },
@@ -82,9 +86,11 @@ export const PANES = [...GLASS, ...HEADLAMPS, ...TAILLAMPS];
 const SHUT_LINES = [
   { path: [[2.00, F.topCorner], [2.00, 1.0], [2.00, -F.topCorner]] },
   { path: [[2.00, F.topCorner], [0.58, F.topCorner]], mirror: true },
+  // Door: front cut ahead of the raked A-pillar's foot, rear cut between the
+  // door glass (ends z -0.40) and the quarter light (starts -0.48).
   {
-    path: [[0.50, F.sillLip], [0.50, F.shoulder], [-0.52, F.shoulder],
-      [-0.52, F.sillLip], [0.50, F.sillLip]],
+    path: [[0.50, F.sillLip], [0.50, F.shoulder], [-0.44, F.shoulder],
+      [-0.44, F.sillLip], [0.50, F.sillLip]],
     mirror: true,
   },
   { path: [[-1.26, F.topCorner], [-1.26, 1.0], [-1.26, -F.topCorner]] },
@@ -92,7 +98,8 @@ const SHUT_LINES = [
 ];
 
 // Door-number roundel: the one livery element a GT3 car cannot be without.
-// A canvas texture on a disc seated on the door skin by sampleSkin.
+// A canvas texture on a patch laid onto the door skin (buildFlankDecal), so
+// it follows the door instead of standing off it as a flat disc.
 let _roundel = null;
 function roundelMaterial() {
   if (_roundel) return _roundel;
@@ -115,13 +122,11 @@ function roundelMaterial() {
 }
 function buildRoundels() {
   const g = new THREE.Group();
-  const forward = new THREE.Vector3(0, 0, 1);
+  // 0.30 m across, centred on the door between the sill (y ~0) and the
+  // shoulder (y 0.46); the canvas's corners are transparent.
   for (const side of [-1, 1]) {
-    const { position, normal } = sampleSkin(keys, 0.02, side * (F.shoulder - 0.055));
-    const disc = new THREE.Mesh(new THREE.CircleGeometry(0.21, 36), roundelMaterial());
-    disc.quaternion.setFromUnitVectors(forward, normal);
-    disc.position.copy(position).addScaledVector(normal, 0.004);
-    g.add(disc);
+    g.add(new THREE.Mesh(buildFlankDecal(keys, { z: 0.03, y: 0.21, w: 0.30, h: 0.30, side }),
+      roundelMaterial()));
   }
   return g;
 }
@@ -190,22 +195,25 @@ export function decorate(body, ctx) {
   body.add(buildWing({ z: -2.00, y: 0.86, span: 1.74, deckY: 0.540, style: 'gt' }));
 
   // Nose cap plane z 2.32, face y -0.15 to 0.0 after the rolls: a low, wide
-  // mouth with brake ducts in its corners, a splitter under it, tow eye on
-  // the lip. The lamps live in the fenders above, so the face is all intake.
+  // mouth with brake ducts in its corners and a splitter under it. The lamps
+  // live in the fenders above, so the face is all intake.
   body.add(buildGrille({
     z: 2.323, y: -0.072, w: 0.86, h: 0.13, depth: 0.040,
     ductW: 0.22, ductH: 0.11, ductX: 0.62, ductY: -0.075,
   }));
   body.add(buildSplitter({ z: 2.235, y: -0.195, w: 1.78, canardX: 0.90, canardY: -0.07, canardZ: 2.20, canardLen: 0.15 }));
-  body.add(buildTowEye({ z: 2.323, y: -0.03, x: 0.36, r: 0.028 }));
 
-  // Bonnet extractors, seated on the crowned bonnet behind the lamps.
+  // Bonnet extractors, seated on the crowned bonnet behind the lamps, and
+  // three gills behind each front arch, seated on the measured flank: the
+  // fender falls away 9 mm over the stack, so each slot steps in to match.
   const vent = sampleSkin(keys, 1.52, F.crownEdge);
+  const gill0 = flankPoint(keys, 0.92, 0.30).position.x;
+  const gill2 = flankPoint(keys, 0.78, 0.30).position.x;
   body.add(buildBodyVents({
     bonnet: true, bonnetZ: 1.52, bonnetY: vent.position.y + 0.002, bonnetX: vent.position.x,
     bonnetW: 0.30, bonnetL: 0.34, bonnetLouvres: 4, bonnetTilt: -0.04,
-    gills: true, gillZ: 0.92, gillY: 0.30, gillX: 1.012,
-    gillW: 0.050, gillH: 0.11, gillCount: 3, gillGap: 0.070, gillStep: 0.006,
+    gills: true, gillZ: 0.92, gillY: 0.30, gillX: gill0 - 0.002,
+    gillW: 0.050, gillH: 0.11, gillCount: 3, gillGap: 0.070, gillStep: (gill0 - gill2) / 2,
     intakes: false,
   }));
   body.add(buildWipers({ z: 0.60, y: 0.545, x: 0.26, len: 0.50, tilt: 0.08, rake: 0.42 }));
@@ -222,6 +230,6 @@ export function decorate(body, ctx) {
   }));
 
   body.add(buildUnderbody({ y: -0.25, w: 1.34, len: 3.90 }));
-  body.add(buildArchLiners({ zF: 1.375, zR: -1.375, x: 0.90, r: 0.413, width: 0.30, lip: false }));
+  body.add(buildArchLiners({ zF: ctx.arches.zF, zR: ctx.arches.zR, x: 0.90, r: 0.413, width: 0.30, lip: false }));
   return { brakeLights: tail.brakeMesh };
 }

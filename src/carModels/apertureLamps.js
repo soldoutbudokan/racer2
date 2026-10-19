@@ -21,9 +21,21 @@ import { makeWell, makeTrim, makeSatin, makeHeadlight, makeLens } from './carMat
 
 const _z = new THREE.Vector3(0, 0, 1);
 
+// A band of a lamp pane between profile fractions lo..hi. A raked pane's
+// edges are linear in the fraction across its OWN belt..top, so the band's
+// corners are read off those edges at lo and hi; copying the pane's rake
+// onto the narrower band would steepen it past the opening.
 function strip(keys, panes, lo, hi, proud) {
   return buildGreenhouseShell(keys, {
-    panes: panes.map((p) => ({ ...p, beltFrac: lo, topFrac: hi, proud })),
+    panes: panes.map((p) => {
+      const t = (f) => (f - p.beltFrac) / Math.max(1e-6, p.topFrac - p.beltFrac);
+      const along = (z0, z1, f) => z0 + ((z1 ?? z0) - z0) * t(f);
+      return {
+        ...p, beltFrac: lo, topFrac: hi, proud,
+        zStart: along(p.zStart, p.zStartTop, lo), zStartTop: along(p.zStart, p.zStartTop, hi),
+        zEnd: along(p.zEnd, p.zEndTop, lo), zEndTop: along(p.zEnd, p.zEndTop, hi),
+      };
+    }),
   });
 }
 

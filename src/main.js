@@ -152,7 +152,9 @@ async function bootstrap() {
     // drive frames through this instead of waiting on wall-clock time.
     window.__tick = (dt) => tick(ctx, dt, performance.now());
     // Lets a probe put the field back on the grid exactly the way a race
-    // start does (scripts/spawn-settle.mjs, physics-test.mjs).
+    // start does (scripts/spawn-settle.mjs, physics-test.mjs). Pass the car's
+    // `stance` as the third argument, as the race does: without it the slot
+    // is at the default car's height.
     window.__gridSpawn = gridSpawn;
     // Length of the start-light sequence, so a probe can pump exactly up to
     // (and past) the green without hard-coding the timing.
@@ -593,11 +595,12 @@ function addPlayerCar(ctx, bindings, color, gridIdx, archetype = 'gt') {
   car.reset(spawn.position, spawn.yaw);
   const input = createInput(bindings);
   // The cameras hang off the chassis origin, which is each car's centre of
-  // mass; lift them by however much lower than the default car's that sits,
-  // so a low formula car and a tall rally car are both framed from the road.
+  // mass; camera.js lifts them by however far that sits below the height its
+  // presets were tuned at, so a low formula car and a tall rally car are both
+  // framed from the same height over the road.
   const chase = createChaseCamera(playerIdx === 0 ? ctx.camera : ctx.camera2, {
     hoodForward: car.spec.hoodForward ?? 0.25,
-    heightOffset: STATIC_CHASSIS_HEIGHT - car.stance.chassisHeight,
+    chassisHeight: car.stance.chassisHeight,
   });
   ctx.cars.push({
     car, color, gridIdx,
@@ -974,7 +977,7 @@ function rescueCar(track, car) {
   }
   const aheadI = (bestI + 4) % frames.length;
   const f = frames[aheadI];
-  const respawn = new THREE.Vector3(f.pos.x, chassisSpawnY(f.pos.y), f.pos.z);
+  const respawn = new THREE.Vector3(f.pos.x, chassisSpawnY(f.pos.y, car.stance), f.pos.z);
   const yaw = Math.atan2(f.tan.x, f.tan.z);
   car.reset(respawn, yaw);
 }

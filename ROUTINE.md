@@ -167,10 +167,11 @@ the 3D modelling much better."
   on a 2.5 m wheelbase, `muscle` a long-bonnet V8 fastback, `roadster` a
   roofless speedster with deck humps. The formula car is untouched; the
   hypercar (`supercar`) was reworked on the new builder features.
-- **Balance** (`src/carSpecs.js`). Power-to-weight now 300–650 hp/t (was
-  310–480), μ 1.40–1.56, downforce 0.45–2.6 m², top speed 221–325 km/h,
+- **Balance** (`src/carSpecs.js`). Power-to-weight now 300–550 hp/t (was
+  310–480), μ 1.40–1.68, downforce 0.45–3.4 m², top speed 224–325 km/h,
   0–100 from 3.1 s (four-wheel-drive hatch) to 4.7 s (V8), 100–0 from 16 m
-  (formula) to 30 m (hatch). New per-car fields the physics honours
+  (formula) to 30 m (hatch), steering response 0.52–0.76 rad/s (was
+  0.54–0.68). New per-car fields the physics honours
   (`car.js`): `wheelbase` and `trackWidth` (the visual arches follow),
   `cgHeight` (centre of mass over the wheels, through `stance.js`), `frontDrive`
   (per-axle traction budgets and a centre coupling), `gripBalance` (rear μ
@@ -188,7 +189,7 @@ the 3D modelling much better."
   the live pedal starts at the planned deceleration for the car's own brake
   clamps and is capped by the lateral load from the pursuit path or the yaw
   the car already carries. Laps on all six circuits are clean for all six
-  cars; the GP spread is 93–102 s, the oval 30–37 s (aero decides the oval).
+  cars; the GP spread is 91–99 s, the oval 30–36 s (aero decides the oval).
   The recovery's keep-clear radius behind (`BEHIND_M`) is 7 m, origin to
   origin, since the new boxes are longer and the GT3 slides further along
   the armco under its first gear before it calls itself stuck.
@@ -206,6 +207,28 @@ the 3D modelling much better."
 - **Checks.** `car-balance-test` asserts spreads (not just orderings), that
   every car gives up a discipline to every other, that the menu ratings agree
   with the measurements, and lap-time parity within 14 % (26 % on the oval).
+- **Review follow-up (2026-10-19).** An independent review of the first
+  commit found 47 issues; the confirmed ones are fixed. Physics: a soft rev
+  limiter (the V8 had been reaching its top speed 630 rpm past the redline),
+  the rescue respawn and the probe scripts seat each car at its own stance,
+  the cameras are referenced to the 0.677 m origin their presets were tuned
+  at, the top-speed solve models the automatic box and the body's damping,
+  and the formula car and speedster were regeared so every gear gets used. The
+  first draft had narrowed the grip spread (μ 1.40–1.56 against the old
+  1.31–1.68), so steady cornering differed less than before the redraw; the
+  speedster's grip, the hatch's and the formula car's wing went up and the
+  hypercar's tyres down, and the balance test now measures steering response
+  (yaw rate 0.25 s into a 40 % step at 60 km/h) as well as full-lock turn-in.
+  AI: the friction-circle pass reads the next frame's speed, the pedal
+  follows the planned deceleration instead of pumping, and the racing-line
+  aid shares the same braking pass. Modelling: raked panes are clipped
+  exactly instead of leaving notched cells, folded roll rings are untangled
+  (8–24 self-crossing rings per car before, none now), door decals follow
+  the skin (`buildFlankDecal`), handles, gills and side intakes face outboard
+  without per-body flips, the V8's stripes stop at the glass, the rally wing
+  and the speedster's lip sit on their decks, arch lips sit below the
+  shoulder crease so it runs straight, liners and flaps follow the spec
+  wheelbase, and the shared hump geometry survives a car's disposal.
 
 ## Changelog (accepted to `main`)
 

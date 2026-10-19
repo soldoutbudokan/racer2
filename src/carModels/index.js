@@ -101,7 +101,7 @@ export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d, { hubL
   }
 
   const deco = def.decorate(body, { color: bodyColor, arches });
-  addLivery(body, def.keys, key);
+  addLivery(body, def.keys, key, def.PANES);
 
   // Collapse the many small decoration meshes into one mesh per material.
   // Hull (shared geo), glass/lenses (transparent) and the brake light are
@@ -134,10 +134,13 @@ export function buildVisualCar(archetypeKey = 'gt', bodyColor = 0xc8161d, { hubL
     brakeLights: deco.brakeLights,
     _brakeLevel: 0,
     dispose() {
-      // Hulls, wheel templates, paint and trim are cached across cars. Body
-      // decorations and the contact-shadow plane belong to this instance.
+      // Hulls, wheel templates, paint and trim are cached across cars, as is
+      // any geometry a body flags `sharedGeometry` (the speedster's humps).
+      // Body decorations and the contact-shadow plane belong to this instance.
       const geometries = new Set();
-      root.traverse(o => { if (o.geometry && o.geometry !== hullGeo) geometries.add(o.geometry); });
+      root.traverse(o => {
+        if (o.geometry && o.geometry !== hullGeo && !o.userData.sharedGeometry) geometries.add(o.geometry);
+      });
       for (const geometry of geometries) geometry.dispose();
       deco.brakeLights?.material.dispose();
       shadow.material.dispose();

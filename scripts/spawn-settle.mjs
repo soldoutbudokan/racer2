@@ -48,7 +48,7 @@ const out = await page.evaluate((n) => {
   const cars = ctx.cars.map((c) => c.car);
   // Put the field back on the grid exactly as a race start does.
   const spawns = cars.map((car, i) => {
-    const sp = window.__gridSpawn(ctx.track, i);
+    const sp = window.__gridSpawn(ctx.track, i, car.stance);
     car.reset(sp.position, sp.yaw);
     return sp.position.y;
   });

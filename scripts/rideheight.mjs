@@ -65,7 +65,7 @@ const PROBE = `(() => {
       car: i,
       chassisY: r(root.position.y),
       hubY: r(meanHub),
-      hubLocalY: r(meanHub - root.position.y),   // == BODY_DROP when correct
+      hubLocalY: r(meanHub - root.position.y),   // == car.stance.hubLocalY when correct (bodyDrop adds any BODY_LIFT)
       bodyDrop: r(body.position.y),
       tyreBottomY: r(meanHub - WHEEL_R),          // the real road plane
       // The body frame is authored with the wheel centre at y 0 and the ground

@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { getCarSpec, getCarPerformance, getSteerCap, getCornerSpeed, getLateralAcceleration } from './carSpecs.js';
+import {
+  getCarSpec, getCarPerformance, getSteerCap, getCornerSpeed, getLateralAcceleration,
+  applyBrakingPasses,
+} from './carSpecs.js';
 
 /**
  * Racing-line AI built for the realistic driving model.
@@ -15,7 +18,7 @@ import { getCarSpec, getCarPerformance, getSteerCap, getCornerSpeed, getLateralA
 export function createAIDriver(track, options = {}) {
   const skill = THREE.MathUtils.clamp(options.skill ?? 0.85, 0, 1);
   let spec = options.spec ?? getCarSpec();
-  let aLatMax, aBrake, vMax, brakeFeed;
+  let aLatMax, aBrake, vMax, pedalDecel;
 
   const ctrl = {
     throttle: 0,
@@ -53,38 +56,27 @@ export function createAIDriver(track, options = {}) {
 
   // --- speed profile ---
   const profile = new Float32Array(n);
+  const planDecel = new Float32Array(n);   // deceleration the plan asks for at each frame
   function planFor(nextSpec) {
     spec = nextSpec;
     const capability = getCarPerformance(spec);
     aLatMax = spec.mu.road * 9.82 * (0.65 + 0.3 * skill);
     aBrake = capability.aBrake * 0.85;
+    // A fraction of the car's own terminal speed: 0.95 at skill 0.85.
     vMax = capability.vMax * ((52 + 18 * skill) / 71);
-    // The pedal position that delivers the planned deceleration, from the
-    // car's own brake clamps (impulse per step and wheel → force at the
-    // road). Braking starts there rather than ramping up from a touch, so a
-    // car with twice the power of the reference still meets its profile
-    // instead of arriving over it and stamping the pedal mid-corner.
-    const pedalDecel = (spec.brakeFront + spec.brakeRear) * 2 * 120 / spec.massKg;
-    brakeFeed = THREE.MathUtils.clamp(aBrake / pedalDecel, 0.15, 0.8);
+    // Deceleration at full pedal from the car's own brake clamps (impulse
+    // per 1/120 s step and wheel → force at the road), so the pedal can be
+    // set to the deceleration the plan asks for.
+    pedalDecel = (spec.brakeFront + spec.brakeRear) * 2 * 120 / spec.massKg;
     for (let i = 0; i < n; i++) {
       profile[i] = Math.min(vMax, getCornerSpeed(spec, kSmooth[i], aLatMax));
     }
-    // Backward passes: each driver's braking distance follows their car.
-    // The braking available at a frame is what the tyres have left after the
-    // cornering it already demands there (a friction circle): a car at the
-    // limit mid-corner cannot also shed speed for the corner after it, so a
-    // braking zone that would fall inside a bend is pushed back before it.
-    // Without this the plan for a linked pair of corners asked for full
-    // braking at 1.2 g of lateral load, which unloads the rear axle and spins
-    // any car light enough to be quick.
-    for (let pass = 0; pass < 3; pass++) {
-      for (let i = n - 1; i >= 0; i--) {
-        const next = profile[(i + 1) % n];
-        const v = profile[i];
-        const lateral = Math.min(1, v * v * kSmooth[i] / getLateralAcceleration(spec, v, aLatMax));
-        const room = Math.sqrt(Math.max(0.15, 1 - lateral * lateral));
-        profile[i] = Math.min(v, Math.sqrt(next * next + 2 * aBrake * room * ds[i]));
-      }
+    // Backward passes: each driver's braking distance follows their car,
+    // inside the friction circle (see applyBrakingPasses).
+    applyBrakingPasses(profile, kSmooth, ds, spec, aLatMax, aBrake);
+    for (let i = 0; i < n; i++) {
+      const next = profile[(i + 1) % n];
+      planDecel[i] = Math.max(0, (profile[i] * profile[i] - next * next) / (2 * Math.max(0.1, ds[i])));
     }
   }
   planFor(spec);
@@ -241,10 +233,11 @@ export function createAIDriver(track, options = {}) {
       // Until the actual car has moved clear, it still needs braking room.
       if (Math.abs(t.lat - here.lat) >= 2.4 && Math.abs(t.lat - laneOffset) >= 2.4) continue;
       const leaderSpeed = Math.max(0, t.speed);
-      // While pulling around a stopped car, leave enough forward travel to
-      // finish steering into the open lane. Five metres still clears both
-      // 4.36 m chassis; the normal following gap remains more generous.
-      const standOff = t.car === passCar && leaderSpeed < 3 ? 5 : 6.5;
+      // Gaps are origin to origin, so the stand-off is both cars' half
+      // lengths plus the clearance: 0.64 m while pulling round a stopped car
+      // (room to finish steering into the open lane), 2.14 m when following.
+      const lengths = (spec.chassisHalf?.z ?? 2.18) + (t.car.spec?.chassisHalf?.z ?? 2.18);
+      const standOff = lengths + (t.car === passCar && leaderSpeed < 3 ? 0.64 : 2.14);
       const room = Math.max(0, t.gap - standOff - speed * 0.2);
       target = Math.min(target, Math.sqrt(leaderSpeed * leaderSpeed + 2 * aBrake * room));
       if (t.gap < standOff) target = Math.min(target, Math.max(0, leaderSpeed - 2));
@@ -309,20 +302,30 @@ export function createAIDriver(track, options = {}) {
       ctrl.brake = 0;
     } else if (speed > target + 1.0) {
       ctrl.throttle = 0;
-      // The planned pedal plus a correction for being over the profile, kept
-      // inside the friction circle: what the corner is taking laterally is
-      // not available for braking, and a driver who stands on the pedal at
-      // the limit locks the lightly loaded rears and spins. Trail braking
-      // tapers off as the lateral load comes on, the way a real foot does.
-      const demand = Math.max(brakeFeed, THREE.MathUtils.clamp((speed - target) / 4, 0.2, 1));
+      // Feed forward the deceleration the plan asks for over the stretch the
+      // target was taken from, and correct proportionally for being over it.
+      // Then keep the pedal inside the friction circle: what the corner is
+      // taking laterally is not available for braking, so the pedal tapers as
+      // the lateral load comes on, the way a trail-braking foot does. Without
+      // the feed-forward the pedal either under-brakes into the corner or, set
+      // flat, out-brakes the plan, falls under it, and pumps.
+      let planned = 0;
+      for (let k = 0; k <= aheadFrames; k++) planned = Math.max(planned, planDecel[(nearest + k) % n]);
+      const demand = Math.max(planned / pedalDecel,
+        THREE.MathUtils.clamp((speed - target) / 4, 0.2, 1));
       // Lateral load from the pursuit path, or from the yaw the car already
       // carries if that is higher — a car rotating into a corner is loading
       // its tyres before the path asks it to.
       const turning = speed * Math.abs(car.body.angularVelocity.y) /
         getLateralAcceleration(spec, speed, aLatMax);
       const l = THREE.MathUtils.clamp(Math.max(lateralLoad, turning), 0, 1);
-      const room = Math.sqrt(Math.max(0.06, 1 - l * l));
-      ctrl.brake = Math.min(demand, room);
+      // The circle is in tyre units; full pedal is the brake clamps' figure,
+      // which on a light car with big brakes is well past what the tyres
+      // hold at low speed.
+      const tyreDecel = spec.mu.road * (9.82 +
+        0.5 * spec.airDensity * spec.clA * speed * speed / spec.massKg);
+      const room = Math.sqrt(Math.max(0.06, 1 - l * l)) * tyreDecel / pedalDecel;
+      ctrl.brake = Math.min(demand, room, 1);
     } else {
       ctrl.throttle = 0.35;
       ctrl.brake = 0;

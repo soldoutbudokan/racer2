@@ -15,7 +15,7 @@ export const CAR_CHOICES = Object.freeze([
     tradeoff: 'A 230 km/h ceiling, small brakes and a nose that pushes when hurried.',
     ratings: { acceleration: 8, speed: 5, handling: 8, braking: 5 } }),
   choice({ id: 'open-wheel', name: 'Formula', color: 0xf0b82f, colorName: 'Sunburst', role: 'Downforce',
-    strength: '800 kg, a V10 to 11,500 rpm and the most wing here: corner speeds and braking nothing else can touch.',
+    strength: '800 kg, a 440 hp V10 to 11,500 rpm and the most wing here: corner speeds and braking nothing else can touch.',
     tradeoff: 'A brick through the air, so the straights belong to others, and helpless off the asphalt.',
     ratings: { acceleration: 9, speed: 4, handling: 9, braking: 10 } }),
   choice({ id: 'muscle', name: 'Classic V8', color: 0xd86632, colorName: 'Burnt copper', role: 'Big-block torque',
@@ -27,7 +27,7 @@ export const CAR_CHOICES = Object.freeze([
     tradeoff: 'Only 265 hp and no wing, so it has nothing in reserve on straights or in fast bends.',
     ratings: { acceleration: 7, speed: 5, handling: 10, braking: 8 } }),
   choice({ id: 'supercar', name: 'Hypercar', color: 0x7462d9, colorName: 'Iris metallic', role: 'Straight-line speed',
-    strength: 'A twin-turbo V12 near 780 hp and the slipperiest body: past 250 km/h it is alone.',
+    strength: 'A twin-turbo V12 near 780 hp and the slipperiest body: the only car that clears 300 km/h.',
     tradeoff: 'Lights up its rears in the low gears, and its mass tells on the brakes and in direction changes.',
     ratings: { acceleration: 10, speed: 10, handling: 6, braking: 7 } }),
 ]);

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {
   buildGreenhouseShell, buildPanelSeams, buildWindowSeals, profileFractions, sampleSkin,
+  flankPoint,
 } from './loftBuilder.js';
 import { makeGlass, makeTrim, makeCarbon, makeSatin, makeShutline, makeHeadlight } from './carMaterials.js';
 import {
@@ -21,22 +22,25 @@ import {
 // ---------------------------------------------------------------------------
 
 const CABIN = { beltIn: 0.14, beltY: 0.05, tumbleK: 0.60, tumbleY: 0.52, railIn: 0.040 };
+// One hip line nose to tail. The loft lifts a crease to at least 4 % of the
+// flank above an arch lip (loftBuilder halfProfileSurfaced), so the lips stay
+// at or below 0.78 and the line runs straight, kicking out over the haunches.
 const LINE = { crease: 0.020, creaseY: 0.82 };
 
 export const keys = [
   //   z,     hw,    yb,     hip,   yt,    topW
   { z: -2.45, hw: 0.930, yb: -0.160, hip: 0.390, yt: 0.560, topW: 0.80, hard: true, crown: 0.006, ...LINE, crease: 0.008 },
   { z: -2.20, hw: 0.995, yb: -0.170, hip: 0.440, yt: 0.580, topW: 0.86, crown: 0.010, ...LINE },
-  { z: -1.85, hw: 1.045, yb: -0.150, hip: 0.465, yt: 0.580, topW: 0.86, crown: 0.012, ...LINE, flare: 0.050, lipY: 0.84 },
-  { z: -1.475, hw: 1.065, yb: -0.020, hip: 0.475, yt: 0.610, topW: 0.84, crown: 0.012, ...LINE, flare: 0.065, lipY: 0.86 },  // rear axle
-  { z: -1.10, hw: 1.030, yb: -0.170, hip: 0.465, yt: 0.730, topW: 0.74, sill: 0.022, crown: 0.016, ...LINE, flare: 0.045, lipY: 0.82, ...CABIN, beltIn: 0.10 },
+  { z: -1.85, hw: 1.045, yb: -0.150, hip: 0.465, yt: 0.580, topW: 0.86, crown: 0.012, ...LINE, flare: 0.050, lipY: 0.76 },
+  { z: -1.475, hw: 1.065, yb: -0.020, hip: 0.475, yt: 0.610, topW: 0.84, crown: 0.012, ...LINE, flare: 0.065, lipY: 0.78 },  // rear axle
+  { z: -1.10, hw: 1.030, yb: -0.170, hip: 0.465, yt: 0.730, topW: 0.74, sill: 0.022, crown: 0.016, ...LINE, flare: 0.045, lipY: 0.76, ...CABIN, beltIn: 0.10 },
   { z: -0.60, hw: 0.980, yb: -0.190, hip: 0.465, yt: 0.930, topW: 0.68, sill: 0.030, crown: 0.020, ...LINE, ...CABIN },  // C-pillar
   { z: -0.15, hw: 0.975, yb: -0.190, hip: 0.460, yt: 0.985, topW: 0.66, sill: 0.030, crown: 0.020, ...LINE, ...CABIN },  // roof
   { z:  0.02, hw: 0.975, yb: -0.190, hip: 0.460, yt: 0.975, topW: 0.66, sill: 0.030, crown: 0.020, ...LINE, ...CABIN },  // header
   { z:  0.45, hw: 0.980, yb: -0.185, hip: 0.460, yt: 0.610, topW: 0.80, sill: 0.028, crown: 0.030, ...LINE, beltIn: 0.08, hard: true },  // cowl
-  { z:  1.00, hw: 0.990, yb: -0.170, hip: 0.450, yt: 0.580, topW: 0.86, crown: 0.034, ...LINE, flare: 0.025, lipY: 0.82 },
-  { z:  1.475, hw: 1.010, yb: -0.020, hip: 0.440, yt: 0.560, topW: 0.86, crown: 0.034, ...LINE, flare: 0.040, lipY: 0.84 },  // front axle
-  { z:  1.85, hw: 0.995, yb: -0.160, hip: 0.420, yt: 0.540, topW: 0.86, crown: 0.030, ...LINE, flare: 0.025, lipY: 0.82 },
+  { z:  1.00, hw: 0.990, yb: -0.170, hip: 0.450, yt: 0.580, topW: 0.86, crown: 0.034, ...LINE, flare: 0.025, lipY: 0.76 },
+  { z:  1.475, hw: 1.010, yb: -0.020, hip: 0.440, yt: 0.560, topW: 0.86, crown: 0.034, ...LINE, flare: 0.040, lipY: 0.78 },  // front axle
+  { z:  1.85, hw: 0.995, yb: -0.160, hip: 0.420, yt: 0.540, topW: 0.86, crown: 0.030, ...LINE, flare: 0.025, lipY: 0.76 },
   { z:  2.20, hw: 0.975, yb: -0.165, hip: 0.390, yt: 0.515, topW: 0.86, crown: 0.020, ...LINE, hard: true },
   { z:  2.45, hw: 0.930, yb: -0.165, hip: 0.330, yt: 0.470, topW: 0.82, crown: 0.010, hard: true },
 ];
@@ -56,9 +60,11 @@ export const PANES = GLASS;
 const SHUT_LINES = [
   { path: [[2.14, F.topCorner], [2.14, 1.0], [2.14, -F.topCorner]] },
   { path: [[2.14, F.topCorner], [0.44, F.topCorner]], mirror: true },
+  // Door: rear cut between the door glass (ends z -0.62 at the top) and the
+  // quarter window (starts -0.74).
   {
-    path: [[0.36, F.sillLip], [0.36, F.shoulder], [-0.86, F.shoulder],
-      [-0.86, F.sillLip], [0.36, F.sillLip]],
+    path: [[0.36, F.sillLip], [0.36, F.shoulder], [-0.70, F.shoulder],
+      [-0.70, F.sillLip], [0.36, F.sillLip]],
     mirror: true,
   },
   { path: [[-1.56, F.topCorner], [-1.56, 1.0], [-1.56, -F.topCorner]] },
@@ -69,12 +75,6 @@ function box(w, h, d, material, x = 0, y = 0, z = 0) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
   mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true;
   return mesh;
-}
-function faceOutboard(group) {
-  group.traverse(o => {
-    if (Math.abs(Math.abs(o.rotation.y) - Math.PI / 2) < 1e-6) o.rotation.y = -o.rotation.y;
-  });
-  return group;
 }
 
 // Quad round headlamps either side of the grille, in a black panel recessed
@@ -101,17 +101,19 @@ function buildFace() {
 }
 
 // Side pipes: a satin exhaust under each rocker with a slotted heat shield.
+// The tip ends at z -1.12, 4 cm clear of the rear tyre with the wheel at
+// full droop (axle -1.475, tyre radius 0.36, pipe 0.215 under the hub).
 function buildSidePipes() {
   const g = new THREE.Group();
   const satin = makeSatin(), trim = makeTrim();
   for (const side of [-1, 1]) {
-    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.052, 1.55, 14, 1, true), satin);
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.052, 1.42, 14, 1, true), satin);
     pipe.geometry.rotateX(Math.PI / 2);
-    pipe.position.set(side * 0.99, -0.215, -0.30);
+    pipe.position.set(side * 0.99, -0.215, -0.25);
     g.add(pipe);
     const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.052, 0.16, 14, 1, true), satin);
     tip.geometry.rotateX(Math.PI / 2);
-    tip.position.set(side * 0.99, -0.215, -1.13);
+    tip.position.set(side * 0.99, -0.215, -1.04);
     g.add(tip);
     // heat shield with slots
     g.add(box(0.03, 0.12, 1.10, trim, side * 1.015, -0.18, -0.20));
@@ -162,9 +164,9 @@ export function decorate(body, ctx) {
   body.add(buildMirrors({ z: 0.34, y: 0.515, x: 0.925, color: ctx.color, indicator: false }));
   body.add(buildWipers({ z: 0.44, y: 0.635, x: 0.28, len: 0.50, tilt: 0.08, rake: 0.30 }));
   body.add(buildAerial({ z: -1.10, y: 0.748, style: 'whip' }));
-  body.add(faceOutboard(buildDoorFurniture({
-    x: 0.976, handleY: 0.40, handleZ: -0.40, handleW: 0.17, repeater: false, fuel: false,
-  })));
+  body.add(buildDoorFurniture({
+    x: flankPoint(keys, -0.40, 0.40).position.x, handleY: 0.40, handleZ: -0.40, handleW: 0.17, repeater: false, fuel: false,
+  }));
   body.add(buildSidePipes());
 
   body.add(buildInterior({
@@ -175,6 +177,6 @@ export function decorate(body, ctx) {
   }));
 
   body.add(buildUnderbody({ y: -0.245, w: 1.30, len: 4.20 }));
-  body.add(buildArchLiners({ zF: 1.475, zR: -1.475, x: 0.87, r: 0.413, width: 0.28, lip: false }));
+  body.add(buildArchLiners({ zF: ctx.arches.zF, zR: ctx.arches.zR, x: 0.87, r: 0.413, width: 0.28, lip: false }));
   return { brakeLights: tail.brakeMesh };
 }

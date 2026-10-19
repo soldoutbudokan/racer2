@@ -134,6 +134,6 @@ export function decorate(body, ctx) {
   body.add(buildBadgesAndPlate({ frontPose: sampleSkin(keys, 2.02, 1), rearZ: -2.345,
     rearY: 0.41, plateY: 0.105 }));
   body.add(buildUnderbody({ y: -0.26, w: 1.22, len: 3.72 }));
-  body.add(buildArchLiners({ zF: 1.40, zR: -1.40, x: 0.90, width: 0.30, r: 0.413, lip: false }));
+  body.add(buildArchLiners({ zF: ctx.arches.zF, zR: ctx.arches.zR, x: 0.90, width: 0.30, r: 0.413, lip: false }));
   return { brakeLights: tail.brakeMesh };
 }

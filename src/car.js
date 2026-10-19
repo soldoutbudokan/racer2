@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { buildVisualCar } from './carModels/index.js';
-import { getCarSpec, getSteerCap } from './carSpecs.js';
+import { getCarSpec, getSteerCap, torqueAt } from './carSpecs.js';
 import {
   WHEEL_RADIUS, SUSPENSION_REST, SUSPENSION_STIFFNESS, stanceFor,
 } from './stance.js';
@@ -11,17 +11,6 @@ import {
 // should snag half a metre less barrier.
 const CHASSIS_HALF = { x: 0.92, y: 0.32, z: 2.18 };
 
-function torqueAt(spec, rpm) {
-  const c = spec.torqueCurve;
-  if (rpm <= c[0][0]) return c[0][1];
-  for (let i = 1; i < c.length; i++) {
-    if (rpm <= c[i][0]) {
-      const t = (rpm - c[i - 1][0]) / (c[i][0] - c[i - 1][0]);
-      return c[i - 1][1] + (c[i][1] - c[i - 1][1]) * t;
-    }
-  }
-  return c[c.length - 1][1];
-}
 
 // Load-sensitive grip: a tyre loaded above the car's average wheel load gives
 // up some μ; a lightly loaded one gains a little. Referenced to the mean so a
@@ -340,9 +329,17 @@ export function createCar(world, materials, options = {}) {
     const onThrottle = throttle > 0.02 && drive.shiftT <= 0;
 
     // --- Crank torque the engine is making right now, from its *own* RPM. ---
+    // A soft rev limiter fades the torque out over the last 2 % below the
+    // redline, judged on the RPM the road speed implies in the current gear.
+    // Without it a car whose top gear runs out before its drag does (a
+    // short-geared V8) would keep pulling at its redline torque with the
+    // tach pinned, past any speed its gearing allows.
+    const roadRpmRaw = wheelRps * 60 * ratio;
+    const limiter = THREE.MathUtils.clamp(
+      (SPEC.redlineRpm - roadRpmRaw) / (0.02 * SPEC.redlineRpm), 0, 1);
     let crankTq;
     if (onThrottle) {
-      crankTq = torqueAt(SPEC, drive.engineRpm) * throttle;
+      crankTq = torqueAt(SPEC, drive.engineRpm) * throttle * limiter;
     } else {
       // Off throttle (or during a shift cut) the engine is a brake.
       crankTq = -SPEC.engineBrakeNm * (drive.engineRpm / SPEC.redlineRpm)
@@ -392,9 +389,18 @@ export function createCar(world, materials, options = {}) {
     // Split between the axles: the rears take their nominal share up to what
     // they can hold, and the centre coupling sends the rest forward — so a
     // rally car that lights up its rears on gravel still pulls on its fronts.
+    // In the air (or on a crest with the driven tyres unloaded) there is no
+    // traction budget to split against: each axle gets its nominal share, so
+    // the driven wheels still spin up the way cannon draws them.
     const fMag = Math.abs(engineForce), fSign = Math.sign(engineForce);
-    const fFront = Math.min(fMag - Math.min(fMag * (1 - frontDrive), capRear), capFront);
-    const fRear = Math.min(fMag - fFront, capRear);
+    let fFront, fRear;
+    if (drivenLoad > 100) {
+      fFront = Math.min(fMag - Math.min(fMag * (1 - frontDrive), capRear), capFront);
+      fRear = Math.min(fMag - fFront, capRear);
+    } else {
+      fFront = fMag * frontDrive;
+      fRear = fMag - fFront;
+    }
 
     // --- Driven-wheel flywheel. The clutch stays locked, so engine RPM follows
     //     the driven wheels through the gearing. When the tyres take all the

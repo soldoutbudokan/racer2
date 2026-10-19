@@ -37,7 +37,7 @@ await page.waitForTimeout(1500);
 const seq = await page.evaluate(() => {
   const ctx = window.__ctx;
   ctx.cars.forEach((c, i) => {
-    const sp = window.__gridSpawn(ctx.track, i);
+    const sp = window.__gridSpawn(ctx.track, i, c.car.stance);
     c.car.reset(sp.position, sp.yaw);
   });
   ctx.state.startT = 0;

@@ -68,6 +68,13 @@ function measure(id) {
   reset(80);
   for (let i = 0; i < 0.5 / DT; i++) step({ ...COAST, steer: 1 });
   const turnIn = Math.abs(car.body.angularVelocity.y);
+  // Steering response: yaw rate a quarter of a second into a 40 % steer step
+  // at 60 km/h, before the tyres saturate. Full lock (turnIn above) mostly
+  // measures grip; this measures how quickly the car answers the wheel, which
+  // is what steering rate, wheelbase and yaw inertia change.
+  reset(60);
+  for (let i = 0; i < 0.25 / DT; i++) step({ ...COAST, steer: 0.4, throttle: 0.2 });
+  const response = Math.abs(car.body.angularVelocity.y);
   reset(180);
   let fastGrip = 0;
   for (let i = 0; i < 1.2 / DT; i++) {
@@ -78,7 +85,7 @@ function measure(id) {
   for (let i = 0; i < 3 / DT; i++) step(POWER, GRASS);
   const grassSpeed = speed();
   car.dispose();
-  return { id, zero100, zero160, rolling, topSpeed, stopping, turnIn, fastGrip, grassSpeed };
+  return { id, zero100, zero160, rolling, topSpeed, stopping, turnIn, response, fastGrip, grassSpeed };
 }
 
 const results = ids.map(measure);
@@ -92,17 +99,21 @@ for (const result of results) {
   assert.ok(result.topSpeed > 200 && result.topSpeed < 360, `${result.id}: competitive terminal speed`);
   assert.ok(result.stopping > 12 && result.stopping < 60, `${result.id}: usable but finite stopping distance`);
 }
-// The field has to be spread, not merely ordered. These are the gaps the
-// 2026-10-18 redraw was asked for: the old six sat within a second to 100,
-// within 20 % on turn-in and within 10 m from 100 km/h.
+// The field has to be spread, not merely ordered. The six cars before the
+// 2026-10-18 redraw measured, on these same procedures, 3.3-4.3 s to 100,
+// 236-311 km/h, 20-35 m from 100 km/h, 0.54-0.68 rad/s of steering response
+// and 92-122 km/h on grass. Each bound below is wider than that, except
+// braking, which was already spread and must stay so.
 const span = key => Math.max(...results.map(r => r[key])) - Math.min(...results.map(r => r[key]));
-assert.ok(span('zero100') > 1.2, `0-100 km/h spreads over a second (${span('zero100').toFixed(2)} s)`);
-assert.ok(span('topSpeed') > 70, `terminal speed spreads over 70 km/h (${span('topSpeed').toFixed(0)})`);
-assert.ok(span('stopping') > 10, `100-0 km/h spreads over 10 m (${span('stopping').toFixed(1)})`);
+const ratio = key => Math.max(...results.map(r => r[key])) / Math.min(...results.map(r => r[key]));
+assert.ok(span('zero100') > 1.2, `0-100 km/h spreads over 1.2 s (${span('zero100').toFixed(2)} s)`);
+assert.ok(span('topSpeed') > 90, `terminal speed spreads over 90 km/h (${span('topSpeed').toFixed(0)})`);
+assert.ok(span('stopping') > 13, `100-0 km/h spreads over 13 m (${span('stopping').toFixed(1)})`);
+assert.ok(ratio('response') > 1.35, `steering response spreads over 35 % (${ratio('response').toFixed(2)}x)`);
 assert.ok(span('grassSpeed') > 40, `rough-surface pace spreads over 40 km/h (${span('grassSpeed').toFixed(0)})`);
 // A car must lose at least one measured discipline to every other car: no
 // universal winner on launch, top speed, brakes, turn-in, aero grip and runoff.
-const scores = r => [-r.zero100, r.topSpeed, -r.stopping, r.turnIn, r.fastGrip, r.grassSpeed];
+const scores = r => [-r.zero100, r.topSpeed, -r.stopping, r.response, r.fastGrip, r.grassSpeed];
 for (const a of results) for (const b of results) {
   if (a === b) continue;
   assert.ok(scores(a).some((value, i) => value < scores(b)[i] - Math.abs(scores(b)[i]) * 0.005),
@@ -111,8 +122,8 @@ for (const a of results) for (const b of results) {
 // The menu's ratings must continue to describe the measured cars after tuning.
 // Acceleration is judged on the launch and the pull to 160 together, so a
 // four-wheel-drive launch and a 780 hp top end both count. Handling combines
-// turn-in and fast-corner grip, so its two distinct strengths are checked
-// below rather than reduced to a single misleading physical unit.
+// steering response and fast-corner grip, so its two distinct strengths are
+// checked below rather than reduced to a single misleading physical unit.
 const ratings = Object.fromEntries(CAR_CHOICES.map(choice => [choice.id, choice.ratings]));
 const pull = r => r.zero100 + r.zero160;
 for (const a of results) for (const b of results) {
@@ -124,9 +135,15 @@ for (const a of results) for (const b of results) {
     `${a.id}/${b.id}: brake ratings agree with stopping distance`);
 }
 assert.ok(byId.supercar.topSpeed > byId.hatch.topSpeed + 60, 'long straights reward the hypercar');
-assert.ok(byId.hatch.zero100 < byId.supercar.zero100 - 0.3, 'the four-wheel-drive hatch launches best');
+assert.ok(results.every(r => r === byId.hatch || byId.hatch.zero100 < r.zero100 - 0.3),
+  'the four-wheel-drive hatch launches best');
 assert.ok(byId['open-wheel'].stopping < byId.gt.stopping - 5, 'late braking rewards the formula car');
-assert.ok(byId.roadster.turnIn > byId.muscle.turnIn * 1.12, 'tight direction changes reward the speedster');
+assert.ok(results.every(r => r === byId.roadster || byId.roadster.response > r.response * 1.04),
+  'the speedster answers the wheel quickest');
+assert.ok(results.every(r => r === byId['open-wheel'] || byId['open-wheel'].fastGrip > r.fastGrip * 1.08),
+  'fast corners reward the formula car');
+assert.ok(results.every(r => r === byId.muscle || byId.muscle.response < r.response),
+  'the V8 is the slowest to answer the wheel');
 assert.ok(byId.hatch.grassSpeed > byId['open-wheel'].grassSpeed + 40, 'rough surfaces reward the rally car');
 assert.ok(byId.muscle.zero100 > byId.gt.zero100 + 0.8, 'the big block spins its tyres off the line');
 console.log('PASS: six physical driving profiles, meaningful strengths and weaknesses, and no universal winner');

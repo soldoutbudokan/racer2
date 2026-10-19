@@ -1,5 +1,8 @@
 # Car and circuit modelling audit
 
+> Written when the roster had four cars. The six-car redesign of 2026-10-18 is
+> recorded in `ROUTINE.md`; `scripts/car-shapes.mjs` renders all six bodies.
+
 This pass covers all four car bodies and all six circuits. It combines a source/geometry audit, deterministic full-world construction tests, and a CI capture workflow. The driving model and the authored circuit centrelines remain unchanged.
 
 ## Changes and findings

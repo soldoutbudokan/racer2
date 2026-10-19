@@ -52,7 +52,7 @@ await page.evaluate(() => {
   const ctx = window.__ctx;
   ctx.mode = null;
   ctx.cars.forEach((c, i) => {
-    const sp = window.__gridSpawn(ctx.track, i);
+    const sp = window.__gridSpawn(ctx.track, i, c.car.stance);
     c.car.reset(sp.position, sp.yaw);
   });
   ctx.world.step(1 / 120);

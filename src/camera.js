@@ -8,7 +8,14 @@ import * as THREE from 'three';
  *
  * Smoothing uses critically-damped springs for both position and look-at.
  */
-export function createChaseCamera(camera, { hoodForward = 0.25, heightOffset = 0 } = {}) {
+// The presets were tuned when every chassis origin rode 0.677 m above the
+// road (the stance before 2026-10-18: tyre radius 0.36, anchor 0.05 and a
+// 0.32 m spring less its 53 mm static compression). Origins now sit at each
+// car's centre-of-mass height, so the camera adds back the difference and
+// frames every car from the same height over the road.
+export const CAMERA_DATUM = 0.677;
+
+export function createChaseCamera(camera, { hoodForward = 0.25, chassisHeight = CAMERA_DATUM } = {}) {
   let mode = 0;
   const targetPos = new THREE.Vector3();
   const targetLook = new THREE.Vector3();
@@ -38,10 +45,9 @@ export function createChaseCamera(camera, { hoodForward = 0.25, heightOffset = 0
     fwd.set(0, 0, 1).applyQuaternion(tmpQ).normalize();
     right.crossVectors(up, fwd).normalize();
 
-    // The presets were tuned against a chassis origin 0.5 m up; a car whose
-    // centre of mass sits lower or higher than that gets the difference back
-    // so the camera's height over the road is the same for every car.
-    const lift = heightOffset;
+    // See CAMERA_DATUM: lift by however far this car's origin sits below
+    // the height the presets were tuned at.
+    const lift = CAMERA_DATUM - chassisHeight;
     if (p.hood) {
       // Hood: sit on the chassis, look forward
       targetPos.set(body.position.x, body.position.y + p.height + lift, body.position.z)

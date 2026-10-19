@@ -51,7 +51,7 @@ for (const id of ids) {
     await page.evaluate((secs) => {
       const ctx = window.__ctx;
       const c = ctx.cars[0];
-      const sp = window.__gridSpawn(ctx.track, 0);
+      const sp = window.__gridSpawn(ctx.track, 0, c.car.stance);
       c.car.reset(sp.position, sp.yaw);
       ctx.world.step(1 / 120);
       const drv = window.__createAIDriver(ctx.track, { skill: 0.82 });
