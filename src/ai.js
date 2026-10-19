@@ -85,8 +85,20 @@ export function createAIDriver(track, options = {}) {
   const tmpFwd = new THREE.Vector3();
   const roadLimit = Math.max(0, (track.width ?? 14) / 2 - 2);
   const PASS_CLEARANCE = 3.3;  // car width plus space between the mirrors
-  const CREEP = 3;             // m/s past a stopped car the bodies already clear
+  const CREEP = 3;             // m/s past a stopped car, once the swerve fits
+  // Forward room a swerve of `d` metres sideways needs at the curvature the
+  // short pursuit lookahead asks for round a stopped car (R ~5 m, near full
+  // lock), for a car already heading out at sin θ toward its lane: along an
+  // arc, d = x·sin θ + x²/2R.
+  const SWERVE_R = 5.1;
+  const swerveRoom = (d, sinOut = 0) => {
+    const s = THREE.MathUtils.clamp(sinOut, -1, 1);
+    return SWERVE_R * (Math.sqrt(s * s + 2 * Math.max(0, d) / SWERVE_R) - s);
+  };
   let passCar = null, passOffset = 0, laneOffset = null;
+  // Backing straight out from behind a stopped car the swerve no longer
+  // fits behind: metres still to go, seconds left, and where it started.
+  const backOut = { metres: 0, t: 0, x: 0, z: 0, heldT: 0 };
 
   // Deceleration the car gets with no pedal at all: drag, rolling resistance,
   // the body's damping and engine braking in the gear it is in. The brake
@@ -140,7 +152,6 @@ export function createAIDriver(track, options = {}) {
   const STUCK_PROGRESS_M = 1.2;  // m from the anchor that counts as going somewhere
   const STUCK_EVIDENT_S = 1.2;   // s pinned *with* evidence before backing out
   const STUCK_BLIND_S = 4.0;     // s pinned *without* evidence before backing out
-  const STUCK_HELD_S = 2.0;      // s held behind a stopped car with a lane chosen
   const WALL_REACH_M = 3.0;      // armco this close is something to be stuck on
   const MISALIGN_DOT = 0.64;     // ≈50° off the track direction — spun, not driving
   const REVERSE_S = 1.5;         // cap on one recovery
@@ -197,7 +208,15 @@ export function createAIDriver(track, options = {}) {
       const gap = gapTo(location.s, here.s);
       if (Math.abs(gap) > 140) continue;
       const v = other.body.velocity;
+      // A car stopped at an angle (a spin) reaches further across the road
+      // and less far along it than its box suggests.
+      const oq = other.body.quaternion;
+      const ofx = 2 * (oq.x * oq.z + oq.w * oq.y), ofz = 1 - 2 * (oq.x * oq.x + oq.y * oq.y);
+      const cosA = Math.min(1, Math.abs(ofx * location.frame.tan.x + ofz * location.frame.tan.z) / Math.max(1e-6, Math.hypot(ofx, ofz)));
+      const sinA = Math.sqrt(1 - cosA * cosA);
+      const half = other.spec?.chassisHalf ?? { x: 0.92, z: 2.18 };
       traffic.push({ car: other, gap, lat: location.lat,
+        reach: half.x * cosA + half.z * sinA, along: half.z * cosA + half.x * sinA,
         speed: v.x * location.frame.tan.x + v.z * location.frame.tan.z });
     }
 
@@ -208,15 +227,21 @@ export function createAIDriver(track, options = {}) {
     for (let k = 0; k <= aheadFrames; k++) {
       target = Math.min(target, profile[(nearest + k) % n]);
     }
+    const planAhead = target;
 
     // Commit to a clear passing lane until the entire car is ahead. Repeated
     // steering nudges used to oscillate behind a slower car, or aim at grass.
+    // Sideways clearance to another car: our half-width plus its reach across
+    // the road (more for a car stopped at an angle) plus a margin.
+    const myHalf = spec.chassisHalf ?? { x: 0.92, z: 2.18 };
+    const clear = (t, margin, floor) => Math.max(floor, myHalf.x + t.reach + margin);
     const laneClear = (offset, ignore) => traffic.every((t) => {
       if (t.car === ignore) return true;
       const rearRoom = 9 + Math.max(0, t.speed - speed) * 1.2;
       const frontRoom = 10 + Math.max(0, speed - t.speed) * 1.2;
-      const inSweep = t.lat > Math.min(here.lat, offset) - 2.7
-        && t.lat < Math.max(here.lat, offset) + 2.7;
+      const sweep = clear(t, 0.8, 2.7);
+      const inSweep = t.lat > Math.min(here.lat, offset) - sweep
+        && t.lat < Math.max(here.lat, offset) + sweep;
       return t.gap < -rearRoom || t.gap > frontRoom || !inSweep;
     });
     const passing = traffic.find((t) => t.car === passCar);
@@ -224,7 +249,7 @@ export function createAIDriver(track, options = {}) {
     if (!passCar) {
       const leader = traffic.filter((t) => t.gap > 0
         && t.gap < Math.max(25, speed * 1.6)
-        && Math.abs(t.lat - here.lat) < 2.7
+        && Math.abs(t.lat - here.lat) < clear(t, 0.8, 2.7)
         && t.speed < target - 2).sort((a, b) => a.gap - b.gap)[0];
       // Leave the available grip for the corner rather than start a lane
       // change at the limit. Slow queues can still be passed in a bend.
@@ -235,7 +260,8 @@ export function createAIDriver(track, options = {}) {
         distance += ds[i];
       }
       if (leader && speed * speed * bend < aLatMax * 0.7) {
-        const lanes = [leader.lat + PASS_CLEARANCE, leader.lat - PASS_CLEARANCE]
+        const side = clear(leader, 1.45, PASS_CLEARANCE);
+        const lanes = [leader.lat + side, leader.lat - side]
           .filter((offset) => Math.abs(offset) <= roadLimit && laneClear(offset, leader.car))
           .sort((a, b) => Math.abs(a - here.lat) - Math.abs(b - here.lat));
         if (lanes.length) { passCar = leader.car; passOffset = lanes[0]; }
@@ -246,34 +272,45 @@ export function createAIDriver(track, options = {}) {
     if (!laneClear(desiredOffset, passCar)) desiredOffset = laneOffset;
     laneOffset += THREE.MathUtils.clamp(desiredOffset - laneOffset, -2.5 * dt, 2.5 * dt);
     laneOffset = THREE.MathUtils.clamp(laneOffset, -roadLimit, roadLimit);
-    target *= Math.sqrt(Math.max(0.65, 1 - Math.abs(laneOffset) * kSmooth[nearest]));
+    const laneFactor = Math.sqrt(Math.max(0.65, 1 - Math.abs(laneOffset) * kSmooth[nearest]));
+    target *= laneFactor;
 
-    let heldByPass = false;
+    let closePass = false, shortBy = 0;
     for (const t of traffic) {
       if (t.gap <= 0 || t.gap > Math.max(30, speed * 2)) continue;
       // Until the actual car has moved clear, it still needs braking room.
-      if (Math.abs(t.lat - here.lat) >= 2.4 && Math.abs(t.lat - laneOffset) >= 2.4) continue;
+      const skip = clear(t, 0.5, 2.4);
+      if (Math.abs(t.lat - here.lat) >= skip && Math.abs(t.lat - laneOffset) >= skip) continue;
       const leaderSpeed = Math.max(0, t.speed);
-      // Gaps are origin to origin, so the stand-off is both cars' half
-      // lengths plus the clearance: 0.64 m while pulling round a stopped car,
-      // 2.14 m when following.
+      // Gaps are origin to origin, so the stand-off is both cars' lengths
+      // along the road plus the clearance: 2.14 m when following, and when
+      // pulling round a stopped car 0.64 m plus the forward room the swerve
+      // still needs. A car that braked to a fixed stand-off with the last
+      // of its swerve undone could not finish it from there, and sat on its
+      // handbrake for as long as the other car stayed put.
       const stoppedPass = t.car === passCar && leaderSpeed < 3;
-      const lengths = (spec.chassisHalf?.z ?? 2.18) + (t.car.spec?.chassisHalf?.z ?? 2.18);
-      const standOff = lengths + (stoppedPass ? 0.64 : 2.14);
+      const lengths = myHalf.z + t.along;
+      const lanes = Math.abs(t.lat - laneOffset) >= skip;
+      const deficit = Math.max(0, clear(t, 0.2, 0) - Math.abs(t.lat - here.lat));
+      const sinOut = Math.sign(laneOffset - t.lat) * (tmpFwd.x * here.frame.left.x + tmpFwd.z * here.frame.left.z);
+      const swerve = swerveRoom(deficit, sinOut);
+      const standOff = lengths + (stoppedPass ? 0.64 + swerve : 2.14);
       const room = Math.max(0, t.gap - standOff - speed * 0.2);
       let limit = Math.sqrt(leaderSpeed * leaderSpeed + 2 * aBrake * room);
       if (t.gap < standOff) limit = Math.min(limit, Math.max(0, leaderSpeed - 2));
-      // Pulling round a stopped car: once the bodies already clear each
-      // other sideways and the chosen lane clears it too, driving on cannot
-      // touch it, so the car rolls on at a walking pace however close it has
-      // come. A car that braked to its stand-off with the last 20 cm of the
-      // swerve still to do used to sit there on its handbrake for as long as
-      // the other car stayed put (the V8 behind a stopped GT3, the hatch
-      // behind anything).
-      const widths = (spec.chassisHalf?.x ?? 0.92) + (t.car.spec?.chassisHalf?.x ?? 0.92);
-      if (stoppedPass && Math.abs(t.lat - here.lat) > widths + 0.2
-        && Math.abs(t.lat - laneOffset) >= 2.4) limit = Math.max(limit, CREEP);
-      if (stoppedPass && limit < 0.5) heldByPass = true;
+      // With the lane chosen, roll on at a walking pace once the bodies
+      // clear sideways, or while the room left still covers most of the
+      // swerve: steering out, the deficit and the room it needs shrink
+      // faster than the gap.
+      const ahead = t.gap - lengths - 0.64;
+      if (stoppedPass && lanes && (deficit === 0 || ahead >= 0.9 * swerve)) {
+        limit = Math.max(limit, CREEP);
+      }
+      if (stoppedPass && ahead < 12) closePass = true;
+      // Too close to swerve round it from here: how far to back out first.
+      if (stoppedPass && lanes && deficit > 0 && ahead < 0.9 * swerve) {
+        shortBy = Math.max(shortBy, swerveRoom(deficit) + 0.6 - ahead);
+      }
       target = Math.min(target, limit);
     }
 
@@ -282,7 +319,9 @@ export function createAIDriver(track, options = {}) {
     if (Math.abs(here.lat) > roadLimit + 0.5) target = Math.min(target, 12);
 
     // --- Pure-pursuit steering ---
-    const lookM = Math.max(7, speed * 0.55);
+    // Round a stopped car close ahead, look nearer so the swerve uses the
+    // lock it has instead of a lazy 7 m arc.
+    const lookM = Math.max(closePass ? 4 : 7, speed * 0.55);
     let lookI = nearest;
     let acc = 0;
     while (acc < lookM && lookI < nearest + n) {
@@ -325,12 +364,22 @@ export function createAIDriver(track, options = {}) {
     target = Math.min(target, getCornerSpeed(spec, Math.abs(needK), aLatMax));
 
     // --- Longitudinal ---
-    // Pedal for the deceleration the plan asks over the stretch the target
-    // was taken from, net of what the car sheds with no pedal (coastDecel).
-    let plannedDecel = 0;
-    for (let k = 0; k <= aheadFrames; k++) plannedDecel = Math.max(plannedDecel, planDecel[(nearest + k) % n]);
-    const netDecel = Math.max(0, plannedDecel - coastDecel(car, speed));
-    const feedForward = () => netDecel / pedalDecel;
+    // One brake law, continuous through the braking zone, against the plan
+    // where the car is: the deceleration the plan asks here, plus 3 m/s² for
+    // every m/s over the speed it wants here, less what the car sheds with no
+    // pedal at all (coastDecel). It aims 0.3 m/s over the plan: aimed at the
+    // plan itself, the car settled 0.2 m/s under it at the apexes and lost up
+    // to a second a lap. When traffic or the path sets the target instead,
+    // the law works on that target alone, with no margin over it. (Braking
+    // toward the lowest speed anywhere in the look-ahead, at the steepest
+    // deceleration in it, slowed every car 2.5-3.5 s a lap; a floor on the
+    // pedal, or a band between braking and throttle, made the light cars
+    // out-brake the plan, fall under it and brake again, ~20 times a second
+    // through every braking zone.)
+    const planBound = target >= planAhead * laneFactor - 1e-6;
+    const vRef = planBound ? Math.max(target, profile[nearest] * laneFactor) + 0.3 : target;
+    const aPlan = planBound ? planDecel[nearest] : 0;
+    const pedal = (aPlan + 3 * (speed - vRef) - coastDecel(car, speed)) / pedalDecel;
     // How much of the tyre the corner is already using, 0..1.
     const lateralLoad = speed * speed * 2 * Math.sin(ang) / Ld /
       getLateralAcceleration(spec, speed, aLatMax);
@@ -340,20 +389,14 @@ export function createAIDriver(track, options = {}) {
       ctrl.throttle = THREE.MathUtils.lerp(1, 0.82,
         THREE.MathUtils.clamp((lateralLoad - 0.6) / 0.4, 0, 1));
       ctrl.brake = 0;
-    } else if (speed > target + 1.0) {
+    } else if (pedal > 0.02) {
       ctrl.throttle = 0;
-      // Feed forward the deceleration the plan asks for over the stretch the
-      // target was taken from, and correct proportionally for being over it.
-      // Then keep the pedal inside the friction circle: what the corner is
-      // taking laterally is not available for braking, so the pedal tapers as
-      // the lateral load comes on, the way a trail-braking foot does. Without
-      // the feed-forward the pedal either under-brakes into the corner or, set
-      // flat, out-brakes the plan, falls under it, and pumps.
-      const demand = Math.max(feedForward(),
-        THREE.MathUtils.clamp((speed - target) / 4, 0.2, 1));
-      // Lateral load from the pursuit path, or from the yaw the car already
-      // carries if that is higher — a car rotating into a corner is loading
-      // its tyres before the path asks it to.
+      // Keep the pedal inside the friction circle: what the corner is taking
+      // laterally is not available for braking, so the pedal tapers as the
+      // lateral load comes on, the way a trail-braking foot does. Lateral
+      // load from the pursuit path, or from the yaw the car already carries
+      // if that is higher — a car rotating into a corner is loading its
+      // tyres before the path asks it to.
       const turning = speed * Math.abs(car.body.angularVelocity.y) /
         getLateralAcceleration(spec, speed, aLatMax);
       const l = THREE.MathUtils.clamp(Math.max(lateralLoad, turning), 0, 1);
@@ -363,16 +406,22 @@ export function createAIDriver(track, options = {}) {
       const tyreDecel = spec.mu.road * (9.82 +
         0.5 * spec.airDensity * spec.clA * speed * speed / spec.massKg);
       const room = Math.sqrt(Math.max(0.06, 1 - l * l)) * tyreDecel / pedalDecel;
-      ctrl.brake = Math.min(demand, room, 1);
-    } else if (feedForward() > 0.02) {
-      // On the plan inside a braking zone: coast rather than blip the
-      // throttle until the falling target catches up. (Holding the pedal
-      // here instead brakes while the car is still under the plan and cost
-      // the GT3 3 s a lap.)
+      ctrl.brake = Math.min(pedal, room, 1);
+    } else if (speed > vRef + 0.5 || aPlan > 0.1) {
+      // Drag alone is shedding what the plan asks: coast.
       ctrl.throttle = 0;
       ctrl.brake = 0;
     } else {
       ctrl.throttle = 0.35;
+      ctrl.brake = 0;
+    }
+
+    // Outside a recovery this driver never means to go backwards, and in
+    // reverse the brake pedal is the throttle: a car still rolling back when
+    // a recovery ends is stopped with the pedal that brakes in reverse.
+    const forwardSpeed = car.body.velocity.x * tmpFwd.x + car.body.velocity.z * tmpFwd.z;
+    if (recovery.reverseT <= 0 && backOut.metres <= 0 && forwardSpeed < -0.3) {
+      ctrl.throttle = 1;
       ctrl.brake = 0;
     }
 
@@ -400,6 +449,30 @@ export function createAIDriver(track, options = {}) {
       recovery.anchored = true;
     }
 
+    // Held behind a stopped car with the lane chosen but no room left to
+    // swerve round it: back out straight, wheel centred so the car keeps the
+    // sideways offset it has already made, by just the room the swerve
+    // needs, and never with a car close behind. (Reversing with the steering
+    // inverted, as the wall recovery does, swung the car back onto the
+    // stopped car's line and round again, indefinitely.)
+    if (backOut.metres > 0) {
+      backOut.t -= dt;
+      if (backOut.t <= 0 || carBehind
+        || Math.hypot(pos.x - backOut.x, pos.z - backOut.z) >= backOut.metres) {
+        backOut.metres = 0;
+      } else {
+        ctrl.throttle = 0;
+        ctrl.brake = 0.6;             // reverse (automatic box: brake at standstill)
+        ctrl.handbrake = false;
+        ctrl.steer = 0;
+        return ctrl;
+      }
+    }
+    backOut.heldT = shortBy > 0 && speed < 0.5 ? backOut.heldT + dt : 0;
+    if (backOut.heldT > 1 && !carBehind && recovery.reverseT <= 0) {
+      Object.assign(backOut, { metres: Math.min(4, shortBy + 1), t: 3, x: pos.x, z: pos.z, heldT: 0 });
+    }
+
     if (recovery.reverseT > 0) {
       recovery.reverseT -= dt;
       const backed = Math.hypot(pos.x - recovery.stuckX, pos.z - recovery.stuckZ);
@@ -418,10 +491,7 @@ export function createAIDriver(track, options = {}) {
         ctrl.steer = -ctrl.steer;     // rear-steer geometry points the nose back
       }
     } else {
-      // Held on the handbrake behind a stopped car with an open lane chosen
-      // but the bodies still overlapping sideways counts as stuck, with
-      // evidence: backing out a car length gives the swerve room to finish.
-      const pinned = speed < STUCK_SPEED && (ctrl.throttle > 0.5 || heldByPass);
+      const pinned = speed < STUCK_SPEED && ctrl.throttle > 0.5;
       const progress = Math.hypot(
         pos.x - recovery.anchorX, pos.z - recovery.anchorZ);
       if (pinned && progress < STUCK_PROGRESS_M) {
@@ -431,8 +501,7 @@ export function createAIDriver(track, options = {}) {
         recovery.anchorX = pos.x;
         recovery.anchorZ = pos.z;
       }
-      const limit = (nearWall || misaligned) ? STUCK_EVIDENT_S
-        : heldByPass ? STUCK_HELD_S : STUCK_BLIND_S;
+      const limit = (nearWall || misaligned) ? STUCK_EVIDENT_S : STUCK_BLIND_S;
       if (recovery.stuckT > limit && !carBehind) {
         recovery.stuckT = 0;
         recovery.reverseT = REVERSE_S;

@@ -1172,7 +1172,7 @@ export function buildBodyVents({
   bonnet = true, bonnetZ = 1.05, bonnetY = 0.45, bonnetX = 0.30,
   bonnetW = 0.30, bonnetL = 0.26, bonnetTilt = 0.0, bonnetLouvres = 3,
   gills = true, gillZ = 1.02, gillY = 0.22, gillX = 0.96,
-  gillW = 0.055, gillH = 0.12, gillCount = 3, gillGap = 0.075, gillStep = 0.004,
+  gillW = 0.055, gillH = 0.12, gillCount = 3, gillGap = 0.075, gillStep = 0.004, gillTilt = 0,
   intakes = true, intakeZ = -0.95, intakeY = 0.14, intakeX = 0.99,
   intakeW = 0.28, intakeH = 0.17, intakeMesh = true,
 } = {}) {
@@ -1213,10 +1213,13 @@ export function buildBodyVents({
       for (let i = 0; i < gillCount; i++) {
         const s = new THREE.Group();
         s.position.set(sx * (gillX - i * gillStep), gillY + i * 0.004, gillZ - i * gillGap);
-        s.rotation.y = sx * Math.PI / 2;     // outboard; see buildDoorFurniture
-        // Rake the slots back. The yaw sends local -x forward on the right
-        // and rearward on the left, so the rake changes sign with the side.
-        s.rotation.z = -sx * 0.16;
+        // Yaw outboard (see buildDoorFurniture), after tilting the slot's
+        // face down by `gillTilt` so it lies along a flank that tucks under
+        // (a vertical slot stood 10 mm off it at the bottom), after raking
+        // it back. The yaw sends local -x forward on the right and rearward
+        // on the left, so the rake changes sign with the side.
+        s.rotation.order = 'YXZ';
+        s.rotation.set(gillTilt, sx * Math.PI / 2, -sx * 0.16);
         addOpening(s, {
           w: gillW, h: gillH, depth: 0.026, wall: 0.008, lipT: 0.009,
           floorMat: black, wallMat: black, lipMat: trim,

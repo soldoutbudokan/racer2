@@ -109,11 +109,25 @@ function measure(id) {
   for (let i = 6; i < track.length - 6; i++) {
     fastGrip = Math.max(fastGrip, Math.abs(turn(track[i - 6][0], track[i + 6][0])) / (12 * DT) * track[i][1]);
   }
+  // Fast-bend stability: the most body slip when lifting into a fast bend
+  // (160 km/h, 35 % and 50 % steer, 3 s) or trail-braking into one (130
+  // km/h, 20 % brake, 30 % steer). A car can hold grip on paper for the
+  // instant fastGrip reads it and then swing round.
+  const bodySlip = () => {
+    const q = car.body.quaternion, v = car.body.velocity, sp = Math.hypot(v.x, v.z);
+    const fx = 2 * (q.x * q.z + q.w * q.y), fz = 1 - 2 * (q.x * q.x + q.y * q.y);
+    return sp < 2 ? 0 : Math.acos(Math.min(1, Math.abs(v.x * fx + v.z * fz) / Math.hypot(fx, fz) / sp)) * 180 / Math.PI;
+  };
+  let fastSlip = 0;
+  for (const [kmh, ctrl] of [[160, { ...COAST, steer: 0.35 }], [160, { ...COAST, steer: 0.5 }], [130, { ...COAST, steer: 0.3, brake: 0.2 }]]) {
+    reset(kmh);
+    for (let i = 0; i < 3 / DT; i++) { step(ctrl); fastSlip = Math.max(fastSlip, bodySlip()); }
+  }
   reset(100);
   for (let i = 0; i < 3 / DT; i++) step(POWER, GRASS);
   const grassSpeed = speed();
   car.dispose();
-  return { id, zero100, zero160, rolling, topSpeed, stopping, response, slowGrip, fastGrip, grassSpeed };
+  return { id, zero100, zero160, rolling, topSpeed, stopping, response, slowGrip, fastGrip, fastSlip, grassSpeed };
 }
 
 const results = ids.map(measure);
@@ -143,7 +157,8 @@ assert.ok(ratio('slowGrip') > 1.275, `slow-corner grip spreads over 27.5 % (${ra
 assert.ok(ratio('fastGrip') > 1.55, `fast-corner grip spreads over 55 % (${ratio('fastGrip').toFixed(2)}x)`);
 assert.ok(span('grassSpeed') > 40, `rough-surface pace spreads over 40 km/h (${span('grassSpeed').toFixed(0)})`);
 // A car must lose at least one measured discipline to every other car: no
-// universal winner on launch, top speed, brakes, turn-in, aero grip and runoff.
+// universal winner on launch, top speed, brakes, steering response, slow- and
+// fast-corner grip and runoff.
 const scores = r => [-r.zero100, r.topSpeed, -r.stopping, r.response, r.slowGrip, r.fastGrip, r.grassSpeed];
 for (const a of results) for (const b of results) {
   if (a === b) continue;
@@ -152,9 +167,7 @@ for (const a of results) for (const b of results) {
 }
 // The menu's ratings must continue to describe the measured cars after tuning.
 // Acceleration is judged on the launch and the pull to 160 together, so a
-// four-wheel-drive launch and a 780 hp top end both count. Handling combines
-// steering response and fast-corner grip, so its two distinct strengths are
-// checked below rather than reduced to a single misleading physical unit.
+// four-wheel-drive launch and a 780 hp top end both count.
 const ratings = Object.fromEntries(CAR_CHOICES.map(choice => [choice.id, choice.ratings]));
 const pull = r => r.zero100 + r.zero160;
 // Handling sums the three cornering measures, each as a share of the best
@@ -189,6 +202,9 @@ assert.ok(others('muscle', r => byId.muscle.response < r.response && byId.muscle
 assert.ok(byId.hatch.grassSpeed > byId['open-wheel'].grassSpeed + 40, 'rough surfaces reward the rally car');
 assert.ok(others('muscle', r => r === byId.hatch || byId.muscle.grassSpeed > r.grassSpeed),
   'the V8 rides rough ground better than everything but the rally car');
+assert.ok(others('muscle', r => r.fastSlip < 6),
+  'every car but the V8 stays planted when it lifts or trail-brakes in a fast bend');
+assert.ok(byId.muscle.fastSlip < 15, 'the V8 slides in a fast bend but does not spin');
 assert.ok(byId.muscle.zero100 > byId.gt.zero100 + 0.8, 'the big block spins its tyres off the line');
 console.log('PASS: six physical driving profiles, meaningful strengths and weaknesses, and no universal winner');
 

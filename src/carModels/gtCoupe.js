@@ -205,15 +205,17 @@ export function decorate(body, ctx) {
 
   // Bonnet extractors, seated on the crowned bonnet behind the lamps, and
   // three gills behind each front arch, seated on the measured flank: the
-  // fender falls away 9 mm over the stack, so each slot steps in to match.
+  // fender falls away 9 mm over the stack, so each slot steps in to match,
+  // and tucks under 7.5 % here, so each slot leans in with it (gillTilt).
   const vent = sampleSkin(keys, 1.52, F.crownEdge);
   const gill0 = flankPoint(keys, 0.92, 0.30).position.x;
   const gill2 = flankPoint(keys, 0.78, 0.30).position.x;
+  const gillTilt = -Math.asin(flankPoint(keys, 0.85, 0.30).normal.y);
   body.add(buildBodyVents({
     bonnet: true, bonnetZ: 1.52, bonnetY: vent.position.y + 0.002, bonnetX: vent.position.x,
     bonnetW: 0.30, bonnetL: 0.34, bonnetLouvres: 4, bonnetTilt: -0.04,
-    gills: true, gillZ: 0.92, gillY: 0.30, gillX: gill0 - 0.002,
-    gillW: 0.050, gillH: 0.11, gillCount: 3, gillGap: 0.070, gillStep: (gill0 - gill2) / 2,
+    gills: true, gillZ: 0.92, gillY: 0.30, gillX: gill0 - 0.005,
+    gillW: 0.050, gillH: 0.11, gillCount: 3, gillGap: 0.070, gillStep: (gill0 - gill2) / 2, gillTilt,
     intakes: false,
   }));
   body.add(buildWipers({ z: 0.60, y: 0.545, x: 0.26, len: 0.50, tilt: 0.08, rake: 0.42 }));

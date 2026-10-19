@@ -191,7 +191,7 @@ the 3D modelling much better."
   the live pedal starts at the planned deceleration for the car's own brake
   clamps and is capped by the lateral load from the pursuit path or the yaw
   the car already carries. Laps on all six circuits are clean for all six
-  cars; the GP spread is 91–99 s, the oval 30–37 s (aero decides the oval).
+  cars; the GP spread is 90–99 s, the oval 30–37 s (aero decides the oval).
   The recovery's keep-clear radius behind (`BEHIND_M`) is 7 m, origin to
   origin, since the new boxes are longer and the GT3 slides further along
   the armco under its first gear before it calls itself stuck.
@@ -250,6 +250,33 @@ the 3D modelling much better."
   everything. Loft: the untangle converges about the cap's own centre (no
   reversed cap faces), `skinTopY` follows a rolled end, pane corners get
   rows again, the gills rake back on both sides.
+- **Third review (2026-10-19).** Thirteen confirmed findings; all are fixed
+  but a claim in the last commit message, corrected in the next. The
+  two-second back-out never freed a held car: it reversed on the inverted
+  pursuit steer, undid the swerve each time and looped, and once it ended the
+  car kept rolling back into whoever followed. It is gone. The stand-off
+  behind a stopped car now leaves room for the swerve the car still has to
+  make (an arc of about 5 m radius) and reads how far a car stopped at an
+  angle reaches across the road; the car creeps past at 3 m/s once the swerve
+  fits, backs straight out with the wheel centred only when it is held short
+  of it, and never reverses outside a recovery. Stopped-car scenarios on
+  straights, at angles, on the grid, in bends and with a car following all
+  pass, as do 324 of 324 package pairings. The brake pedal is one continuous
+  law against the plan where the car is, 0.3 m/s over it: 41-51 brake
+  applications a GP lap against 115-247; averaged over the six circuits the
+  formula car is 0.8 s a lap quicker, the speedster 0.5, the GT3, hypercar and
+  hatch 0.2-0.3, and the V8 the same within 0.2 s. The automatic box kicks
+  down only into a gear that puts more force on the road, with load-sensitive
+  grip, so the V8 no longer drops into a spinning first. The speedster's rear
+  grip went from 0.97 to 1.03 of the front: it had swung round 19° when
+  lifting in a 160 km/h bend, and the balance test now measures body slip in
+  fast bends (under 3° for five cars, 11° for the V8). Loft: where a roll ring
+  folds over the same stretch as the next, both are straightened over the
+  union (444 folds across all ends to 214; the GT3 nose's dent from 127 to 21
+  cm²). The rally tailgate glass ends below the wing posts, and the GT3 gills
+  sit within 2.3 mm of the flank (9.6 before). Copy: every car runs the same
+  0.36 m tyres, so the V8 no longer credits "tall tyres", and the spec header
+  no longer claims a wider grip spread.
 
 ## Changelog (accepted to `main`)
 

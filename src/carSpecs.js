@@ -10,9 +10,10 @@
 // steering rate over 2.8–6.0, and shared one wheelbase, one collision box and
 // one drive layout — so the balance probe measured 0–100 km/h within a second
 // and steering response within about a fifth across the whole field. This
-// set widens the power-to-weight spread by half (300–550 hp/t) and the
-// grip (μ 1.40–1.78), keeps downforce as spread as before (0.1–3.4 m²), and
-// adds the things that were missing:
+// set widens the power-to-weight spread by half (300–550 hp/t), moves the
+// grip up the scale with about the same spread (μ 1.40–1.78), stretches
+// downforce at the low end (0.1–3.4 m², from 0.5–3.5), and adds the things
+// that were missing:
 //
 //   wheelbase      2.40 m (speedster) … 2.95 m (classic V8)
 //   trackWidth     1.68 m (speedster) … 1.86 m (hypercar)
@@ -146,8 +147,9 @@ export const CAR_SPECS = Object.freeze({
   // tyres, four long gears, little aero. 980 Nm and a tall top gear make it
   // the second-fastest car on a long straight, but it lights up its rears off
   // the line and is the slowest to 100. It rolls onto its outside tyre,
-  // steers slowly, and the rears let go before the fronts do. Its tall street
-  // tyres ride the grass better than anything but the rally car. The hard car.
+  // steers slowly, and the rears let go before the fronts do. Its treaded
+  // street tyres ride the grass better than anything but the rally car. The
+  // hard car.
   muscle: profile('muscle', {
     wheelbase: 2.95, massKg: 1600, cgHeight: 0.58, trackWidth: 1.78, hoodForward: 0.40,
     chassisHalf: { x: 0.95, y: 0.34, z: 2.42 },
@@ -170,7 +172,10 @@ export const CAR_SPECS = Object.freeze({
   // roof, no wing and the shortest wheelbase here. It carries speed through
   // slow corners on mechanical grip alone and answers the wheel quickest in
   // the field, but with no downforce the GT3 and the formula car out-corner
-  // it in fast bends, and it has nothing in reserve on the straights.
+  // it in fast bends, and it has nothing in reserve on the straights. With no
+  // aero load on the tail, the rears carry a little more grip than the
+  // fronts (gripBalance 1.03): at 0.97 it swung round 19 deg when it lifted
+  // in a 160 km/h bend.
   roadster: profile('roadster', {
     wheelbase: 2.40, massKg: 820, cgHeight: 0.46, trackWidth: 1.68, hoodForward: 0.40,
     chassisHalf: { x: 0.90, y: 0.28, z: 1.95 },
@@ -186,7 +191,7 @@ export const CAR_SPECS = Object.freeze({
     scrubCoef: 0.27, loadSensitivity: 0.08, slipGripFloor: 0.92,
     brakeFront: 44, brakeRear: 6, handbrake: 42,
     maxSteer: 0.74, steerRate: 7.0, steerSlipMargin: 2.3,
-    gripBalance: 0.97, yawInertia: 0.80, angularDamping: 0.20,
+    gripBalance: 1.03, yawInertia: 0.80, angularDamping: 0.20,
   }),
 
   // Hypercar — 1480 kg, a twin-turbo V12 near 780 hp through a seven-speed

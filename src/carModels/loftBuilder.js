@@ -493,20 +493,34 @@ function insetHalf(half, d) {
   return out;
 }
 
+// Lay half[a+1 .. b-1] evenly on the chord from half[a] to half[b].
+function straighten(half, a, b) {
+  const A = half[a], B = half[b], n = b - a;
+  for (let k = a + 1; k < b; k++) {
+    const t = (k - a) / n;
+    half[k].x = A.x + (B.x - A.x) * t;
+    half[k].y = A.y + (B.y - A.y) * t;
+  }
+}
+
 /**
- * Make a rolled half-profile star-shaped about its own centre (0, mean y),
- * in place: walking from the floor centre up the flank to the crown centre,
- * the angle about that centre must never go backwards. insetHalf moves each
- * point along its own bisector, so on a low end section with a large roll
- * radius (a bonnet curling down 16 cm over a section 7.5 cm tall) the crown
- * points pass below the roof-rail points and the ring folds over itself —
- * inverted faces in the roll and a cap fan with mixed winding. A run of
- * points that would go backwards is laid evenly along the chord between the
- * good points either side of it: the angle then rises monotonically, so the
- * ring cannot cross itself, and every point stays distinct, so no triangle
- * collapses to zero area (which left vertices with no normal at all).
+ * Make a rolled half-profile star-shaped about the centre its end cap fans
+ * from, in place: walking from the floor centre up the flank to the crown
+ * centre, the angle about that centre must never go backwards. insetHalf
+ * moves each point along its own bisector, so on a low end section with a
+ * large roll radius (a bonnet curling down 16 cm over a section 7.5 cm tall)
+ * the crown points pass below the roof-rail points and the ring folds over
+ * itself, which left a cap fan wound both ways. A run of points that would go
+ * backwards is laid evenly along the chord between the good points either
+ * side of it: the angle then rises monotonically, so the ring cannot cross
+ * itself, and every point stays distinct, so no triangle collapses to zero
+ * area. buildLoftHull's rollRings then straightens neighbouring rings over
+ * the same spans so the strips between them follow (see there); an
+ * asymmetric roll, whose rings blend two insets, still keeps a few small
+ * folds in its last strips.
  */
-function untangleHalf(half) {
+// `runs`, if given, collects every [a, b] span the untangle laid on a chord.
+function untangleHalf(half, runs) {
   // The end cap fans about the whole ring's centroid (buildLoftHull addCap):
   // both flanks, so every point but the two on the centreline counts twice,
   // and a hard crease's duplicate column once. Spreading a fold moves that
@@ -530,12 +544,8 @@ function untangleHalf(half) {
       const a = angle(half[i]);
       if (a < maxA - 1e-9) continue;
       if (good >= 0 && i - good > 1) {
-        const A = half[good], B = half[i], n = i - good;
-        for (let k = good + 1; k < i; k++) {
-          const t = (k - good) / n;
-          half[k].x = A.x + (B.x - A.x) * t;
-          half[k].y = A.y + (B.y - A.y) * t;
-        }
+        straighten(half, good, i);
+        runs?.push([good, i]);
         moved = true;
       }
       maxA = a;
@@ -713,7 +723,7 @@ export function buildLoftHull(keys, opts = {}) {
       const s = i / steps;
       const top = path(roll.top, s), bot = path(roll.bottom, s);
       if (roll.top === roll.bottom) {
-        out.push({ z: top.z, half: untangleHalf(insetHalf(L.half(stationAtZ(keys, top.z, L.feat)), top.d)) });
+        out.push({ z: top.z, half: insetHalf(L.half(stationAtZ(keys, top.z, L.feat)), top.d) });
         continue;
       }
       const hTop = insetHalf(L.half(stationAtZ(keys, top.z, L.feat)), top.d);
@@ -725,7 +735,25 @@ export function buildLoftHull(keys, opts = {}) {
         return p;
       });
       // The last ring is the cap plane for every point.
-      out.push({ z: top.z, half: untangleHalf(half) });
+      out.push({ z: top.z, half });
+    }
+    // Untangle from the cap back, and where a ring folds over the same
+    // stretch as the ring after it, straighten both over the same span.
+    // Untangled one by one, neighbouring rings laid slightly different runs
+    // on their chords (k 26-38 against 26-39 on the GT3's nose), up to 18 mm
+    // apart in a strip 0.5 mm deep, and the strip between them folded over.
+    let after = [];
+    for (let i = out.length - 1; i >= 0; i--) {
+      const runs = [];
+      untangleHalf(out[i].half, runs);
+      for (const [a2, b2] of after) {
+        const own = runs.filter(([a, b]) => a < b2 && a2 < b);
+        if (!own.length) continue;
+        const a = Math.min(a2, ...own.map((r) => r[0])), b = Math.max(b2, ...own.map((r) => r[1]));
+        straighten(out[i].half, a, b);
+        runs.push([a, b]);
+      }
+      after = runs;
     }
     return out;
   };

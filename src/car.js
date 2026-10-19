@@ -310,21 +310,44 @@ export function createCar(world, materials, options = {}) {
     const wheelRps = Math.abs(fwdSpd) / (2 * Math.PI * WHEEL_RADIUS); // rev/s
     const roadRpm = THREE.MathUtils.clamp(
       wheelRps * 60 * driveRatio, SPEC.idleRpm, SPEC.redlineRpm);
-    // Kick-down and rev-matched braking downshifts: asked for power or
-    // braking, the box drops a gear whenever the lower one keeps the engine
-    // under 90 % of the upshift point, so it cannot hunt straight back up.
-    // Without them a car braked from top speed for a hairpin left it in the
-    // gear it arrived in (the formula car in seventh at 6,000 rpm), and the
-    // AI and the line aid, which plan each exit in the gear the box picks
-    // from a standstill (carSpecs boxGear), over-promised every exit.
-    const wantsLower = ctrl.throttle > 0.6 || ctrl.brake > 0.2;
+    // Kick-down and rev-matched braking downshifts. Asked for power or
+    // braking, the box drops a gear when the lower one keeps the engine under
+    // 90 % of the upshift point (so it cannot hunt straight back up) AND puts
+    // more force on the road than the gear it is in, once the driven tyres'
+    // grip caps both: a V8 dropped into first at 90 km/h only lights up its
+    // rears. On power the gain has to pay for the shift cut too. Without a
+    // kick-down a car braked from top speed for a hairpin left it in the gear
+    // it arrived in (the formula car in seventh at 6,000 rpm), and the AI and
+    // the line aid, which plan each exit in the gear the box picks from a
+    // standstill (carSpecs boxGear), over-promised every exit.
+    const onPower = ctrl.throttle > 0.6, onBrake = ctrl.brake > 0.2;
     const lowerRpm = drive.gear > 1 ? wheelRps * 60 * ratioFor(drive.gear - 1) : Infinity;
+    let kickDown = false;
+    if ((onPower || onBrake) && lowerRpm < SPEC.shiftUpRpm * 0.9) {
+      // The driven tyres' grip as the traction budget below counts it: per
+      // wheel, load-sensitive, the rears scaled by the car's grip balance.
+      const wheelGrip = (i) => loadMu(SPEC, SPEC.mu[drive.surfaces[i]] ?? SPEC.mu.road, loads[i], avgLoad) * loads[i];
+      const drivenGrip = (wheelGrip(2) + wheelGrip(3)) * gripBalance
+        + (frontDrive > 0 ? wheelGrip(0) + wheelGrip(1) : 0);
+      const usable = (g) => Math.min(drivenGrip, torqueAt(SPEC,
+        Math.max(SPEC.idleRpm, wheelRps * 60 * ratioFor(g))) * ratioFor(g) * SPEC.drivelineEff / WHEEL_RADIUS);
+      if (onBrake) {
+        kickDown = usable(drive.gear - 1) > usable(drive.gear) * 1.02;
+      } else {
+        // On power the lower gear has to win over the time it lasts before
+        // its own upshift, after both shift cuts (down now, up again later);
+        // one that is gone again in under a second loses more than it gains.
+        const aLow = usable(drive.gear - 1) / SPEC.massKg, aNow = usable(drive.gear) / SPEC.massKg;
+        const vUp = SPEC.shiftUpRpm / 60 / ratioFor(drive.gear - 1) * 2 * Math.PI * WHEEL_RADIUS;
+        const stay = aLow > 0 ? Math.max(0, vUp - Math.abs(fwdSpd)) / aLow : 0;
+        kickDown = aLow * (stay - 1.6 * SPEC.shiftTime) > aNow * stay * 1.05;
+      }
+    }
     if (drive.mode === 'D' && drive.shiftT <= 0) {
       if (roadRpm > SPEC.shiftUpRpm && drive.gear < SPEC.gears.length) {
         drive.gear += 1;
         drive.shiftT = SPEC.shiftTime;
-      } else if (drive.gear > 1 && (roadRpm < SPEC.shiftDownRpm
-          || (wantsLower && lowerRpm < SPEC.shiftUpRpm * 0.9))) {
+      } else if (drive.gear > 1 && (roadRpm < SPEC.shiftDownRpm || kickDown)) {
         drive.gear -= 1;
         drive.shiftT = SPEC.shiftTime * 0.6;
       }

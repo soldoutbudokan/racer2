@@ -19,7 +19,7 @@ export const CAR_CHOICES = Object.freeze([
     tradeoff: 'A brick through the air, so the straights belong to others, and helpless off the asphalt.',
     ratings: { acceleration: 9, speed: 4, handling: 9, braking: 10 } }),
   choice({ id: 'muscle', name: 'Classic V8', color: 0xd86632, colorName: 'Burnt copper', role: 'Big-block torque',
-    strength: 'A seven-litre V8 in a 1,600 kg fastback: the second-highest top speed, on tall tyres that shrug off the grass.',
+    strength: 'A seven-litre V8 in a 1,600 kg fastback: the second-highest top speed, and treaded street tyres that only the rally car beats on grass.',
     tradeoff: 'Slow steering, little grip, a tail that steps out under power, and four long gears to light up.',
     ratings: { acceleration: 5, speed: 8, handling: 4, braking: 6 } }),
   choice({ id: 'roadster', name: 'Speedster', color: 0x248b76, colorName: 'Racing green', role: 'Lightweight',

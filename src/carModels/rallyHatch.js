@@ -60,7 +60,9 @@ const GLASS = [
   { zStart: 0.56, zStartTop: 0.50, zEnd: 0.16, beltFrac: F.topCorner, topFrac: 1, steps: 12 },
   { zStart: 0.44, zStartTop: 0.06, zEnd: -0.50, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 14 },
   { zStart: -0.58, zEnd: -1.42, zEndTop: -1.36, beltFrac: F.beltTuck, topFrac: F.topCorner, steps: 12 },
-  { zStart: -1.56, zEnd: -1.86, beltFrac: F.tumble, topFrac: 1, steps: 10 },   // steep tailgate glass
+  // Steep tailgate glass, stopping 15 cm short of the tail so the wing
+  // posts stand on the painted top of the tailgate.
+  { zStart: -1.56, zEnd: -1.78, beltFrac: F.tumble, topFrac: 1, steps: 8 },
 ];
 const TAILLAMPS = [-1, 1].map(side => ({
   zStart: -1.74, zEnd: -1.86, beltFrac: F.flankFoot, topFrac: F.crease, steps: 6, side,
@@ -165,9 +167,10 @@ export function decorate(body, ctx) {
   // A matte bumper bar wraps the lower tail, skid plate under it.
   body.add(box(1.72, 0.12, 0.10, makeTrim(), 0, -0.02, -1.93));
   body.add(box(0.80, 0.035, 0.18, makeSatin(), 0, -0.13, -1.90));
-  // Tailgate wing: a hoop-mounted blade off the roof's trailing edge. The
-  // posts span z -1.93..-1.83 over a roof falling 11 cm toward the tail, so
-  // their feet go to the skin at the trailing face and sink in from there.
+  // Tailgate wing: a hoop-mounted blade off the top of the tailgate. The
+  // posts span z -1.93..-1.83, behind the glass, over a tailgate falling
+  // 11 cm toward the tail, so their feet go to the skin at the trailing face
+  // and sink in from there.
   body.add(buildWing({
     z: -1.90, y: 1.04, span: 1.30, deckY: skinTopY(keys, -1.93, 0.57, { capRoll: CAP_ROLL }) + 0.01, style: 'gt', gurney: true,
   }));

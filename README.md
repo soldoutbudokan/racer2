@@ -76,7 +76,7 @@ an old "gt" or "hatch" preference selects the GT3 Coupe or the Rally Hatch.
 | **GT3 Coupe** | 555 hp V8, 1,300 kg, slicks, real wing, 2.75 m wheelbase | Dependable everywhere; strong brakes and downforce | Neither the best launch nor the highest top speed |
 | **Rally Hatch** | 367 hp turbo four, four-wheel drive, 1,230 kg, 2.5 m wheelbase, gravel tyres | The best launch in the field, darts into corners, barely slowed by grass | 230 km/h ceiling, small brakes, pushes when hurried |
 | **Formula** | 440 hp V10 to 11,500 rpm, 800 kg, the most wing | Fast-corner speeds and braking nothing else can touch | A brick through the air; helpless off the asphalt |
-| **Classic V8** | 7-litre big block, 1,600 kg, four long gears, 2.95 m wheelbase | Second-highest top speed; tall tyres shrug off the grass | Slow steering, the least grip, the tail steps out under power |
+| **Classic V8** | 7-litre big block, 1,600 kg, four long gears, 2.95 m wheelbase | Second-highest top speed; on grass its street tyres trail only the rally car | Slow steering, the least grip, the tail steps out under power |
 | **Speedster** | 265 hp flat four, 820 kg, no roof, 2.4 m wheelbase | The quickest steering and the most grip in slow corners | No power to spare on straights; no wing, so the GT3 and formula car out-corner it in fast bends |
 | **Hypercar** | 780 hp twin-turbo V12, 1,480 kg, seven-speed, slipperiest body | The only car past 300 km/h | Wheelspin in the low gears; mass tells on brakes and direction changes |
 
