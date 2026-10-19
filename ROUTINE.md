@@ -168,10 +168,12 @@ the 3D modelling much better."
   roofless speedster with deck humps. The formula car is untouched; the
   hypercar (`supercar`) was reworked on the new builder features.
 - **Balance** (`src/carSpecs.js`). Power-to-weight now 300–550 hp/t (was
-  310–480), μ 1.40–1.68, downforce 0.45–3.4 m², top speed 224–325 km/h,
-  0–100 from 3.1 s (four-wheel-drive hatch) to 4.7 s (V8), 100–0 from 16 m
-  (formula) to 30 m (hatch), steering response 0.52–0.76 rad/s (was
-  0.54–0.68). New per-car fields the physics honours
+  310–480), μ 1.40–1.78 (was 1.31–1.68), downforce 0.1–3.4 m², top speed
+  224–325 km/h, 0–100 from 3.1 s (four-wheel-drive hatch) to 4.7 s (V8),
+  100–0 from 16 m (formula) to 30 m (hatch). Measured on the balance test's
+  procedures, against the old six: steering response 0.31–0.51 rad/s
+  (0.33–0.43), slow-corner grip 13.2–17.1 m/s² (12.7–16.0), fast-corner
+  grip 14.6–24.3 m/s² (14.4–21.1). New per-car fields the physics honours
   (`car.js`): `wheelbase` and `trackWidth` (the visual arches follow),
   `cgHeight` (centre of mass over the wheels, through `stance.js`), `frontDrive`
   (per-axle traction budgets and a centre coupling), `gripBalance` (rear μ
@@ -189,7 +191,7 @@ the 3D modelling much better."
   the live pedal starts at the planned deceleration for the car's own brake
   clamps and is capped by the lateral load from the pursuit path or the yaw
   the car already carries. Laps on all six circuits are clean for all six
-  cars; the GP spread is 91–99 s, the oval 30–36 s (aero decides the oval).
+  cars; the GP spread is 91–99 s, the oval 30–37 s (aero decides the oval).
   The recovery's keep-clear radius behind (`BEHIND_M`) is 7 m, origin to
   origin, since the new boxes are longer and the GT3 slides further along
   the armco under its first gear before it calls itself stuck.
@@ -217,10 +219,8 @@ the 3D modelling much better."
   first draft had narrowed the grip spread (μ 1.40–1.56 against the old
   1.31–1.68), so steady cornering differed less than before the redraw; the
   speedster's grip, the hatch's and the formula car's wing went up and the
-  hypercar's tyres down, and the balance test now measures steering response
-  (yaw rate 0.25 s into a 40 % step at 60 km/h) as well as full-lock turn-in.
-  AI: the friction-circle pass reads the next frame's speed, the pedal
-  follows the planned deceleration instead of pumping, and the racing-line
+  hypercar's tyres down. AI: the friction-circle pass reads the next frame's
+  speed, the pedal starts from the planned deceleration, and the racing-line
   aid shares the same braking pass. Modelling: raked panes are clipped
   exactly instead of leaving notched cells, folded roll rings are untangled
   (8–24 self-crossing rings per car before, none now), door decals follow
@@ -229,6 +229,27 @@ the 3D modelling much better."
   and the speedster's lip sit on their decks, arch lips sit below the
   shoulder crease so it runs straight, liners and flaps follow the spec
   wheelbase, and the shared hump geometry survives a car's disposal.
+- **Second review (2026-10-19).** A review of that follow-up confirmed 17
+  defects and two older ones; all are fixed but eight 12 mm T-junctions
+  where a lamp edge falls inside a rolled nose or tail. The worst: an AI V8
+  parked for good behind a stopped car, as the hatch always had, because it
+  braked to its stand-off with the last 20 cm of the swerve undone; it now
+  rolls on at walking pace once the bodies clear sideways, and backs out if
+  held two seconds (324 of 324 pass, every car past every car, against 272
+  before). The brake feed-forward is net of drag, rolling and engine
+  braking, and the car coasts on the plan instead of blipping 35 % throttle
+  between pulses (GT3: 313 brake applications a GP lap to 135, throttle
+  blips 293 to 1). The automatic box kicks down and rev-matches under
+  braking: the formula car had left hairpins in seventh. The balance test's
+  "steering response" measured grip (the yaw rate was already saturated) and
+  its fast-corner figure counted the V8's slide as grip; both are now taken
+  inside the grip limit and from the turn of the velocity vector, a steady
+  slow-corner measure was added, and the speedster (μ 1.78, almost no
+  downforce) now leads slow corners and loses fast ones while the V8 rides
+  the grass second only to the hatch, so the hypercar no longer beats it at
+  everything. Loft: the untangle converges about the cap's own centre (no
+  reversed cap faces), `skinTopY` follows a rolled end, pane corners get
+  rows again, the gills rake back on both sides.
 
 ## Changelog (accepted to `main`)
 

@@ -1214,7 +1214,9 @@ export function buildBodyVents({
         const s = new THREE.Group();
         s.position.set(sx * (gillX - i * gillStep), gillY + i * 0.004, gillZ - i * gillGap);
         s.rotation.y = sx * Math.PI / 2;     // outboard; see buildDoorFurniture
-        s.rotation.z = 0.16;                     // rake the slots back
+        // Rake the slots back. The yaw sends local -x forward on the right
+        // and rearward on the left, so the rake changes sign with the side.
+        s.rotation.z = -sx * 0.16;
         addOpening(s, {
           w: gillW, h: gillH, depth: 0.026, wall: 0.008, lipT: 0.009,
           floorMat: black, wallMat: black, lipMat: trim,
@@ -1235,9 +1237,10 @@ export function buildBodyVents({
         w: intakeW, h: intakeH, depth: 0.052, wall: 0.011, lipT: 0.012,
         floorMat: intakeMesh ? makeGrille() : black, wallMat: black, lipMat: trim,
       });
-      // leading-edge scoop lip, so the intake looks like it swallows air
-      const scoop = box(0.014, intakeH + 0.024, 0.055, trim, -intakeW / 2 - 0.014, 0, 0.030);
-      scoop.rotation.y = -0.30;
+      // leading-edge scoop lip, so the intake looks like it swallows air; the
+      // group's local -x is forward on the right and rearward on the left
+      const scoop = box(0.014, intakeH + 0.024, 0.055, trim, -sx * (intakeW / 2 + 0.014), 0, 0.030);
+      scoop.rotation.y = -sx * 0.30;
       s.add(scoop);
       s.add(box(intakeW - 0.02, 0.012, 0.024, trim, 0, 0, 0.030));
       g.add(s);

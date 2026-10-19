@@ -65,27 +65,55 @@ function measure(id) {
   for (let i = 0; i < 10 / DT && speed() > 1; i++) step(BRAKE);
   const stopping = car.body.position.distanceTo(start);
   assert.ok(speed() <= 1, `${id}: brakes stop the car`);
-  reset(80);
-  for (let i = 0; i < 0.5 / DT; i++) step({ ...COAST, steer: 1 });
-  const turnIn = Math.abs(car.body.angularVelocity.y);
-  // Steering response: yaw rate a quarter of a second into a 40 % steer step
-  // at 60 km/h, before the tyres saturate. Full lock (turnIn above) mostly
-  // measures grip; this measures how quickly the car answers the wheel, which
-  // is what steering rate, wheelbase and yaw inertia change.
+  // Steering response: yaw rate 0.1 s into a 20 % steer step at 60 km/h,
+  // well inside the grip limit (the steady yaw rate is about half what the
+  // tyres hold). It is set by yaw inertia and by how much angle the
+  // traction-limited steering hands out per unit of input (grip). The
+  // column's rate barely shows at this size of input; it tells on big
+  // inputs at low speed, in hairpins.
   reset(60);
-  for (let i = 0; i < 0.25 / DT; i++) step({ ...COAST, steer: 0.4, throttle: 0.2 });
+  for (let i = 0; i < Math.round(0.1 / DT); i++) step({ ...COAST, steer: 0.2, throttle: 0.2 });
   const response = Math.abs(car.body.angularVelocity.y);
+  // Lateral acceleration is read from the turn of the velocity vector, not
+  // from speed x yaw rate: a car rotating faster than its path (the V8
+  // oversteering) would otherwise score its slide as grip.
+  const heading = () => Math.atan2(car.body.velocity.x, car.body.velocity.z);
+  const turn = (a, b) => { let d = b - a; if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI; return d; };
+  // Slow-corner grip: the best steady cornering at a held 60 km/h, coasting,
+  // over a sweep of steering inputs, with the body under 8 deg of slip.
+  let slowGrip = 0;
+  for (let s = 0.15; s <= 1.001; s += 0.05) {
+    reset(60);
+    let previous = heading(), sum = 0, samples = 0, slip = 0;
+    for (let i = 0; i < 3 / DT; i++) {
+      step({ ...COAST, steer: s });
+      const v = car.body.velocity, k = 60 / 3.6 / Math.hypot(v.x, v.z);
+      v.x *= k; v.z *= k;
+      const h = heading();
+      if (i >= 2 / DT) {
+        sum += Math.abs(turn(previous, h)) / DT * 60 / 3.6; samples++;
+        const q = car.body.quaternion;
+        const fx = 2 * (q.x * q.z + q.w * q.y), fz = 1 - 2 * (q.x * q.x + q.y * q.y);
+        slip = Math.max(slip, Math.acos(Math.min(1, Math.abs(v.x * fx + v.z * fz) / Math.hypot(fx, fz) / (60 / 3.6))));
+      }
+      previous = h;
+    }
+    if (slip < 8 * Math.PI / 180) slowGrip = Math.max(slowGrip, sum / samples);
+  }
+  // Fast-corner grip: the most path acceleration in 1.2 s at 180 km/h with
+  // 60 % steer, coasting.
   reset(180);
+  const track = [];
+  for (let i = 0; i < 1.2 / DT; i++) { step({ ...COAST, steer: 0.6 }); track.push([heading(), speed() / 3.6]); }
   let fastGrip = 0;
-  for (let i = 0; i < 1.2 / DT; i++) {
-    step({ ...COAST, steer: 0.6 });
-    fastGrip = Math.max(fastGrip, speed() / 3.6 * Math.abs(car.body.angularVelocity.y));
+  for (let i = 6; i < track.length - 6; i++) {
+    fastGrip = Math.max(fastGrip, Math.abs(turn(track[i - 6][0], track[i + 6][0])) / (12 * DT) * track[i][1]);
   }
   reset(100);
   for (let i = 0; i < 3 / DT; i++) step(POWER, GRASS);
   const grassSpeed = speed();
   car.dispose();
-  return { id, zero100, zero160, rolling, topSpeed, stopping, turnIn, response, fastGrip, grassSpeed };
+  return { id, zero100, zero160, rolling, topSpeed, stopping, response, slowGrip, fastGrip, grassSpeed };
 }
 
 const results = ids.map(measure);
@@ -101,19 +129,22 @@ for (const result of results) {
 }
 // The field has to be spread, not merely ordered. The six cars before the
 // 2026-10-18 redraw measured, on these same procedures, 3.3-4.3 s to 100,
-// 236-311 km/h, 20-35 m from 100 km/h, 0.54-0.68 rad/s of steering response
-// and 92-122 km/h on grass. Each bound below is wider than that, except
-// braking, which was already spread and must stay so.
+// 236-310 km/h, 20-35 m from 100 km/h, 0.33-0.43 rad/s of steering response
+// (x1.32), 12.7-16.0 m/s² of slow-corner grip (x1.27), 14.4-21.1 m/s² of
+// fast-corner grip (x1.46) and 92-122 km/h on grass. Each bound below is
+// wider than that, except braking, which was already spread and must stay so.
 const span = key => Math.max(...results.map(r => r[key])) - Math.min(...results.map(r => r[key]));
 const ratio = key => Math.max(...results.map(r => r[key])) / Math.min(...results.map(r => r[key]));
 assert.ok(span('zero100') > 1.2, `0-100 km/h spreads over 1.2 s (${span('zero100').toFixed(2)} s)`);
 assert.ok(span('topSpeed') > 90, `terminal speed spreads over 90 km/h (${span('topSpeed').toFixed(0)})`);
 assert.ok(span('stopping') > 13, `100-0 km/h spreads over 13 m (${span('stopping').toFixed(1)})`);
-assert.ok(ratio('response') > 1.35, `steering response spreads over 35 % (${ratio('response').toFixed(2)}x)`);
+assert.ok(ratio('response') > 1.45, `steering response spreads over 45 % (${ratio('response').toFixed(2)}x)`);
+assert.ok(ratio('slowGrip') > 1.275, `slow-corner grip spreads over 27.5 % (${ratio('slowGrip').toFixed(3)}x)`);
+assert.ok(ratio('fastGrip') > 1.55, `fast-corner grip spreads over 55 % (${ratio('fastGrip').toFixed(2)}x)`);
 assert.ok(span('grassSpeed') > 40, `rough-surface pace spreads over 40 km/h (${span('grassSpeed').toFixed(0)})`);
 // A car must lose at least one measured discipline to every other car: no
 // universal winner on launch, top speed, brakes, turn-in, aero grip and runoff.
-const scores = r => [-r.zero100, r.topSpeed, -r.stopping, r.response, r.fastGrip, r.grassSpeed];
+const scores = r => [-r.zero100, r.topSpeed, -r.stopping, r.response, r.slowGrip, r.fastGrip, r.grassSpeed];
 for (const a of results) for (const b of results) {
   if (a === b) continue;
   assert.ok(scores(a).some((value, i) => value < scores(b)[i] - Math.abs(scores(b)[i]) * 0.005),
@@ -126,7 +157,13 @@ for (const a of results) for (const b of results) {
 // checked below rather than reduced to a single misleading physical unit.
 const ratings = Object.fromEntries(CAR_CHOICES.map(choice => [choice.id, choice.ratings]));
 const pull = r => r.zero100 + r.zero160;
+// Handling sums the three cornering measures, each as a share of the best
+// in the field, so quick steering, slow-corner grip and aero grip all count.
+const best = key => Math.max(...results.map(r => r[key]));
+const handling = r => r.response / best('response') + r.slowGrip / best('slowGrip') + r.fastGrip / best('fastGrip');
 for (const a of results) for (const b of results) {
+  if (handling(a) > handling(b) + 0.05) assert.ok(ratings[a.id].handling >= ratings[b.id].handling,
+    `${a.id}/${b.id}: handling ratings agree with the cornering measures`);
   if (pull(a) < pull(b) - 0.15) assert.ok(ratings[a.id].acceleration >= ratings[b.id].acceleration,
     `${a.id}/${b.id}: acceleration ratings agree with the pull to 160`);
   if (a.topSpeed > b.topSpeed + 3) assert.ok(ratings[a.id].speed >= ratings[b.id].speed,
@@ -138,13 +175,20 @@ assert.ok(byId.supercar.topSpeed > byId.hatch.topSpeed + 60, 'long straights rew
 assert.ok(results.every(r => r === byId.hatch || byId.hatch.zero100 < r.zero100 - 0.3),
   'the four-wheel-drive hatch launches best');
 assert.ok(byId['open-wheel'].stopping < byId.gt.stopping - 5, 'late braking rewards the formula car');
-assert.ok(results.every(r => r === byId.roadster || byId.roadster.response > r.response * 1.04),
+const others = (id, test) => results.every(r => r === byId[id] || test(r));
+assert.ok(others('roadster', r => byId.roadster.response > r.response * 1.04),
   'the speedster answers the wheel quickest');
-assert.ok(results.every(r => r === byId['open-wheel'] || byId['open-wheel'].fastGrip > r.fastGrip * 1.08),
+assert.ok(others('roadster', r => byId.roadster.slowGrip > r.slowGrip * 1.04),
+  'slow corners reward the speedster');
+assert.ok(byId.gt.fastGrip > byId.roadster.fastGrip && byId['open-wheel'].fastGrip > byId.roadster.fastGrip,
+  'the winged GT3 and formula car out-corner the speedster in fast bends');
+assert.ok(others('open-wheel', r => byId['open-wheel'].fastGrip > r.fastGrip * 1.08),
   'fast corners reward the formula car');
-assert.ok(results.every(r => r === byId.muscle || byId.muscle.response < r.response),
-  'the V8 is the slowest to answer the wheel');
+assert.ok(others('muscle', r => byId.muscle.response < r.response && byId.muscle.slowGrip < r.slowGrip),
+  'the V8 is the slowest to answer the wheel and has the least grip');
 assert.ok(byId.hatch.grassSpeed > byId['open-wheel'].grassSpeed + 40, 'rough surfaces reward the rally car');
+assert.ok(others('muscle', r => r === byId.hatch || byId.muscle.grassSpeed > r.grassSpeed),
+  'the V8 rides rough ground better than everything but the rally car');
 assert.ok(byId.muscle.zero100 > byId.gt.zero100 + 0.8, 'the big block spins its tyres off the line');
 console.log('PASS: six physical driving profiles, meaningful strengths and weaknesses, and no universal winner');
 

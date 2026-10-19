@@ -138,14 +138,15 @@ function buildScreen(color) {
 // and rising 4 cm at the tail, sunk 1 cm into the skin all round. It follows
 // the crown across its span, so no corner hangs off the deck or cuts a hump.
 function buildLip() {
-  const nx = 16, nz = 4, x0 = 0.70, zF = -1.68, zB = -1.83, sink = 0.010;
+  const nx = 16, nz = 8, x0 = 0.70, zF = -1.68, zB = -1.83, sink = 0.010;
   const rise = (t) => 0.004 + 0.036 * t * t;
   const zAt = (j) => zF + (zB - zF) * j / nz;
   const xAt = (i) => -x0 + 2 * x0 * i / nx;
   const pos = [];
   const tri = (a, b, c) => pos.push(...a, ...b, ...c);
-  const top = (i, j) => [xAt(i), skinTopY(keys, zAt(j), xAt(i)) + rise(j / nz), zAt(j)];
-  const foot = (i, j) => [xAt(i), skinTopY(keys, zAt(j), xAt(i)) - sink, zAt(j)];
+  const deck = (i, j) => skinTopY(keys, zAt(j), xAt(i), { capRoll: CAP_ROLL });
+  const top = (i, j) => [xAt(i), deck(i, j) + rise(j / nz), zAt(j)];
+  const foot = (i, j) => [xAt(i), deck(i, j) - sink, zAt(j)];
   for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
     tri(top(i, j), top(i + 1, j), top(i, j + 1));             // +x by -z: faces up
     tri(top(i + 1, j), top(i + 1, j + 1), top(i, j + 1));

@@ -507,30 +507,48 @@ function insetHalf(half, d) {
  * collapses to zero area (which left vertices with no normal at all).
  */
 function untangleHalf(half) {
-  let cy = 0;
-  for (const q of half) cy += q.y;
-  cy /= half.length;
-  const angle = (q) => Math.atan2(q.y - cy, Math.max(0, q.x));
-  let maxA = -Infinity, good = -1;
-  for (let i = 0; i < half.length; i++) {
-    const a = angle(half[i]);
-    if (a < maxA - 1e-9) continue;
-    if (good >= 0 && i - good > 1) {
-      const A = half[good], B = half[i], n = i - good;
-      for (let k = good + 1; k < i; k++) {
-        const t = (k - good) / n;
-        half[k].x = A.x + (B.x - A.x) * t;
-        half[k].y = A.y + (B.y - A.y) * t;
-      }
+  // The end cap fans about the whole ring's centroid (buildLoftHull addCap):
+  // both flanks, so every point but the two on the centreline counts twice,
+  // and a hard crease's duplicate column once. Spreading a fold moves that
+  // centre, so straighten about it and repeat until nothing moves.
+  const centreY = () => {
+    let sum = 0, weight = 0;
+    for (let i = 0; i < half.length; i++) {
+      const q = half[i], p = half[i - 1];
+      if (p && p.x === q.x && p.y === q.y) continue;
+      const w = i === 0 || i === half.length - 1 ? 1 : 2;
+      sum += q.y * w;
+      weight += w;
     }
-    maxA = a;
-    good = i;
-  }
-  // The crown centre ends the walk at +90 deg, so a run cannot be left open;
-  // if one ever is, it collapses onto the last good point as a fallback.
-  for (let k = good + 1; k < half.length; k++) {
-    half[k].x = half[good].x;
-    half[k].y = half[good].y;
+    return sum / weight;
+  };
+  for (let pass = 0; pass < 12; pass++) {
+    const cy = centreY();
+    const angle = (q) => Math.atan2(q.y - cy, Math.max(0, q.x));
+    let maxA = -Infinity, good = -1, moved = false;
+    for (let i = 0; i < half.length; i++) {
+      const a = angle(half[i]);
+      if (a < maxA - 1e-9) continue;
+      if (good >= 0 && i - good > 1) {
+        const A = half[good], B = half[i], n = i - good;
+        for (let k = good + 1; k < i; k++) {
+          const t = (k - good) / n;
+          half[k].x = A.x + (B.x - A.x) * t;
+          half[k].y = A.y + (B.y - A.y) * t;
+        }
+        moved = true;
+      }
+      maxA = a;
+      good = i;
+    }
+    // The crown centre ends the walk at +90 deg, so a run cannot be left
+    // open; if one ever is, it collapses onto the last good point.
+    for (let k = good + 1; k < half.length; k++) {
+      half[k].x = half[good].x;
+      half[k].y = half[good].y;
+      moved = true;
+    }
+    if (!moved) break;
   }
   half[0].x = 0;
   half[half.length - 1].x = 0;
@@ -641,9 +659,11 @@ export function buildLoftHull(keys, opts = {}) {
   samples.push(uT, uN);
   // A RAKED edge (zStartTop / zEndTop differing from the belt z) runs
   // diagonally across the ring grid; the cells it crosses are clipped along
-  // it below, so it needs rows only at its two ends.
+  // it below. Every pane corner, belt and top, still gets a row of its own:
+  // a corner that is a vertex of the cells on one side only leaves a crack
+  // (a T-junction) along the neighbouring cell's long edge.
   for (const pane of panes) {
-    for (const z of [pane.zStartTop, pane.zEndTop]) {
+    for (const z of [pane.zStart, pane.zEnd, pane.zStartTop, pane.zEndTop]) {
       if (z === undefined) continue;
       const u = uAtZ(z);
       if (u <= uT || u >= uN) continue;
@@ -818,7 +838,10 @@ export function buildLoftHull(keys, opts = {}) {
       if (!touching.length) { for (const t of tris) indices.push(...t); continue; }
       const corners = [vert(v00, cols[j].k), vert(v01, cols[j1].k), vert(v10, cols[j].k), vert(v11, cols[j1].k)];
       const byId = new Map(corners.map((c) => [c.id, c]));
-      const relevant = touching.filter((r) => !r.planes.some((plane) => corners.every((c) => plane(c) > EPS)));
+      // A cell with every corner on or outside one of a region's planes
+      // cannot overlap the opening; only touching its edge line, it must not
+      // be split along the edges extended past the pane.
+      const relevant = touching.filter((r) => !r.planes.some((plane) => corners.every((c) => plane(c) >= -EPS)));
       if (!relevant.length) { for (const t of tris) indices.push(...t); continue; }
       for (const t of tris) {
         let polys = [t.map((id) => byId.get(id))];
@@ -1035,13 +1058,49 @@ export function buildFlankDecal(keys, {
   return geo;
 }
 
+// How far a cap roll's top radius has turned the deck down at z, using the
+// same quarter-circle path as buildLoftHull's rollRings; 0 outside the roll.
+function rollInsetAt(keys, capRoll, z) {
+  const ends = [[resolveRoll(capRoll?.tail), keys[0].z, -1], [resolveRoll(capRoll?.nose), keys[keys.length - 1].z, 1]];
+  for (const [roll, zEnd, dir] of ends) {
+    if (!roll) continue;
+    const R = Math.max(roll.top, roll.bottom), r = roll.top;
+    const at = (s) => {
+      const straight = Math.max(0, R - r - s * R);
+      const phi = r > 0 ? clamp((s * R - (R - r)) / r, 0, 1) * Math.PI / 2 : Math.PI / 2;
+      return { z: zEnd - dir * (r * (1 - Math.sin(phi)) + straight), d: r * (1 - Math.cos(phi)) };
+    };
+    if ((z - at(0).z) * dir <= 0 || (z - zEnd) * dir > 0) continue;
+    let a = 0, b = 1;
+    for (let i = 0; i < 40; i++) {
+      const m = (a + b) / 2;
+      if ((at(m).z - z) * dir < 0) a = m; else b = m;
+    }
+    return at((a + b) / 2).d;
+  }
+  return 0;
+}
+
 /**
  * Height of the top surface (deck, roof, bonnet) at station z and lateral
  * offset x, so a part can stand on it by measurement: the skin between the
- * roof rail and the crown centre, bisected on x.
+ * roof rail and the crown centre, bisected on x. Pass the hull's `capRoll`
+ * to measure inside a rolled end, where the deck curls down to the fascia.
  */
-export function skinTopY(keys, z, x) {
+export function skinTopY(keys, z, x, { capRoll } = {}) {
   const L = profileFor(keys, 16);
+  const inset = capRoll ? rollInsetAt(keys, capRoll, z) : 0;
+  if (inset > 0) {
+    // The roll ring itself: the station's profile inset by the roll, as the
+    // hull builds it. Walk out from the crown centre until x is passed.
+    const half = untangleHalf(insetHalf(L.half(stationAtZ(keys, z, L.feat)), inset));
+    const ax = Math.abs(x);
+    for (let k = half.length - 1; k > 0; k--) {
+      const p = half[k], q = half[k - 1];
+      if (q.x >= ax) return p.y + (q.y - p.y) * (ax - p.x) / Math.max(1e-9, q.x - p.x);
+    }
+    return half[0].y;
+  }
   const F = profileFractions(keys);
   const cache = new Map();
   let a = F.beltTuck, b = 1;

@@ -75,9 +75,9 @@ an old "gt" or "hatch" preference selects the GT3 Coupe or the Rally Hatch.
 | --- | --- | --- | --- |
 | **GT3 Coupe** | 555 hp V8, 1,300 kg, slicks, real wing, 2.75 m wheelbase | Dependable everywhere; strong brakes and downforce | Neither the best launch nor the highest top speed |
 | **Rally Hatch** | 367 hp turbo four, four-wheel drive, 1,230 kg, 2.5 m wheelbase, gravel tyres | The best launch in the field, darts into corners, barely slowed by grass | 230 km/h ceiling, small brakes, pushes when hurried |
-| **Formula** | 440 hp V10 to 11,500 rpm, 800 kg, the most wing | Corner speeds and braking nothing else can touch | A brick through the air; helpless off the asphalt |
-| **Classic V8** | 7-litre big block, 1,600 kg, four long gears, 2.95 m wheelbase | Monstrous mid-range, second-highest top speed | Slow steering, little grip, the tail steps out under power |
-| **Speedster** | 265 hp flat four, 820 kg, no roof, 2.4 m wheelbase | The quickest steering and the most mechanical grip in slow and medium corners | No wing and no power to spare on straights |
+| **Formula** | 440 hp V10 to 11,500 rpm, 800 kg, the most wing | Fast-corner speeds and braking nothing else can touch | A brick through the air; helpless off the asphalt |
+| **Classic V8** | 7-litre big block, 1,600 kg, four long gears, 2.95 m wheelbase | Second-highest top speed; tall tyres shrug off the grass | Slow steering, the least grip, the tail steps out under power |
+| **Speedster** | 265 hp flat four, 820 kg, no roof, 2.4 m wheelbase | The quickest steering and the most grip in slow corners | No power to spare on straights; no wing, so the GT3 and formula car out-corner it in fast bends |
 | **Hypercar** | 780 hp twin-turbo V12, 1,480 kg, seven-speed, slipperiest body | The only car past 300 km/h | Wheelspin in the low gears; mass tells on brakes and direction changes |
 
 The six are original designs and game-balanced setups, not manufacturer
@@ -137,15 +137,16 @@ brakes:
 
 - **Engine & flywheel** — a real torque curve through an automatic gearbox
   (four speeds in the V8, seven in the formula car and the hypercar) with
-  shift cuts, engine braking and reverse. The engine has rotating inertia, so
+  shift cuts, kick-down, rev-matched downshifts under braking, engine braking
+  and reverse. The engine has rotating inertia, so
   RPM is a genuine state, not a readout of road speed: when the driven tyres
   can't put all the torque down the surplus spins them up and the tach flares —
   wheelspin — and when grip is in hand the wheels just roll and RPM tracks the
   road. The tachometer shows that real flywheel speed.
 - **Aerodynamics** — quadratic drag (top speeds run from about 225 km/h in
   the formula car to 325 km/h in the hypercar) plus downforce that loads the
-  tyres at speed: 0.45 m² of it on the speedster, 3.4 m² on the formula car.
-- **Tyres** — finite grip (μ 1.40 in the V8 to 1.68 in the speedster on the
+  tyres at speed: 0.1 m² of it on the speedster, 3.4 m² on the formula car.
+- **Tyres** — finite grip (μ 1.40 in the V8 to 1.78 in the speedster on the
   racing surface) with a true combined-slip friction circle: cornering at the
   limit leaves nothing for throttle, hard cornering scrubs off speed, and the
   handbrake breaks the rears loose. Grip is **load-sensitive** — a tyre carrying more than its
@@ -330,7 +331,7 @@ Screenshots and render measurements are attached as a workflow artifact.
 Run `node scripts/car-balance-test.mjs` (or add `--all-tracks` to cover every
 circuit) to measure the actual simulation on
 a flat road: 0–100 km/h, 80–160 km/h, terminal speed, 100–0 km/h stopping
-distance, steering response, fast-corner grip and rough-surface recovery. The
+distance, steering response, slow- and fast-corner grip and rough-surface pace. The
 suite checks meaningful differences and rejects a car that beats another in
 every measured discipline. It also exercises each setup on a full circuit and
 checks that the driving aid changes its recommendations with the selected car.

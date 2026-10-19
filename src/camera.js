@@ -9,8 +9,9 @@ import * as THREE from 'three';
  * Smoothing uses critically-damped springs for both position and look-at.
  */
 // The presets were tuned when every chassis origin rode 0.677 m above the
-// road (the stance before 2026-10-18: tyre radius 0.36, anchor 0.05 and a
-// 0.32 m spring less its 53 mm static compression). Origins now sit at each
+// road (the stance before 2026-10-18: tyre radius 0.36, the suspension
+// anchor 0.05 m below the origin and a 0.32 m spring less its 53 mm static
+// compression). Origins now sit at each
 // car's centre-of-mass height, so the camera adds back the difference and
 // frames every car from the same height over the road.
 export const CAMERA_DATUM = 0.677;

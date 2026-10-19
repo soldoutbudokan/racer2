@@ -10,9 +10,9 @@
 // steering rate over 2.8–6.0, and shared one wheelbase, one collision box and
 // one drive layout — so the balance probe measured 0–100 km/h within a second
 // and steering response within about a fifth across the whole field. This
-// set widens the power-to-weight spread by half (300–550 hp/t), the steering
-// rates (2.6–7.0) and the downforce (0.45–3.4 m²), keeps grip at μ 1.40–1.68,
-// and adds the things that were missing:
+// set widens the power-to-weight spread by half (300–550 hp/t) and the
+// grip (μ 1.40–1.78), keeps downforce as spread as before (0.1–3.4 m²), and
+// adds the things that were missing:
 //
 //   wheelbase      2.40 m (speedster) … 2.95 m (classic V8)
 //   trackWidth     1.68 m (speedster) … 1.86 m (hypercar)
@@ -120,9 +120,10 @@ export const CAR_SPECS = Object.freeze({
 
   // Formula single-seater — 800 kg with the driver, a 440 hp V10 that lives
   // above 9,500 rpm through seven close ratios, and the most downforce in the
-  // field. Corner speeds and braking points nothing else can touch. But it is
-  // a brick through the air with that wing stack, so it tops out lowest and
-  // the straights belong to others, and off the asphalt it is helpless.
+  // field. Fast-corner speeds and braking points nothing else can touch;
+  // slow corners belong to the speedster's grip. It is a brick through the
+  // air with that wing stack, so it tops out lowest and the straights belong
+  // to others, and off the asphalt it is helpless.
   'open-wheel': profile('open-wheel', {
     wheelbase: 2.90, massKg: 800, cgHeight: 0.40, trackWidth: 1.72, hoodForward: 0.10,
     chassisHalf: { x: 0.92, y: 0.22, z: 2.18 },
@@ -145,7 +146,8 @@ export const CAR_SPECS = Object.freeze({
   // tyres, four long gears, little aero. 980 Nm and a tall top gear make it
   // the second-fastest car on a long straight, but it lights up its rears off
   // the line and is the slowest to 100. It rolls onto its outside tyre,
-  // steers slowly, and the rears let go before the fronts do. The hard car.
+  // steers slowly, and the rears let go before the fronts do. Its tall street
+  // tyres ride the grass better than anything but the rally car. The hard car.
   muscle: profile('muscle', {
     wheelbase: 2.95, massKg: 1600, cgHeight: 0.58, trackWidth: 1.78, hoodForward: 0.40,
     chassisHalf: { x: 0.95, y: 0.34, z: 2.42 },
@@ -156,8 +158,8 @@ export const CAR_SPECS = Object.freeze({
     drivelineEff: 0.86,
     engineInertia: 0.32, engineBrakeNm: 45,
     cdA: 1.05, clA: 0.90, downforcePos: -0.10,
-    mu: { road: 1.40, kerb: 1.10, grass: 0.55, gravel: 0.48 },
-    surfaceDrag: { road: 0, kerb: 0, grass: 0.12, gravel: 0.20 },
+    mu: { road: 1.40, kerb: 1.10, grass: 0.62, gravel: 0.54 },
+    surfaceDrag: { road: 0, kerb: 0, grass: 0.06, gravel: 0.12 },
     scrubCoef: 0.44, loadSensitivity: 0.20, slipGripFloor: 0.78,
     brakeFront: 60, brakeRear: 30, handbrake: 62,
     maxSteer: 0.55, steerRate: 2.6, steerSlipMargin: 2.2,
@@ -166,9 +168,9 @@ export const CAR_SPECS = Object.freeze({
 
   // Speedster — 820 kg, a 2.0 flat-four that makes 265 hp at 8,000 rpm, no
   // roof, no wing and the shortest wheelbase here. It carries speed through
-  // slow and medium corners on mechanical grip alone and has the quickest
-  // steering in the field, but it has nothing to lean on in fast bends and
-  // nothing in reserve on the straights.
+  // slow corners on mechanical grip alone and answers the wheel quickest in
+  // the field, but with no downforce the GT3 and the formula car out-corner
+  // it in fast bends, and it has nothing in reserve on the straights.
   roadster: profile('roadster', {
     wheelbase: 2.40, massKg: 820, cgHeight: 0.46, trackWidth: 1.68, hoodForward: 0.40,
     chassisHalf: { x: 0.90, y: 0.28, z: 1.95 },
@@ -178,8 +180,8 @@ export const CAR_SPECS = Object.freeze({
     gears: [3.20, 2.65, 2.19, 1.81, 1.50, 1.24], finalDrive: 3.90,
     drivelineEff: 0.90,
     engineInertia: 0.10, engineBrakeNm: 26,
-    cdA: 0.86, clA: 0.45, downforcePos: -0.15,
-    mu: { road: 1.68, kerb: 1.49, grass: 0.60, gravel: 0.52 },
+    cdA: 0.86, clA: 0.10, downforcePos: -0.15,
+    mu: { road: 1.78, kerb: 1.58, grass: 0.60, gravel: 0.52 },
     surfaceDrag: { road: 0, kerb: 0, grass: 0.10, gravel: 0.18 },
     scrubCoef: 0.27, loadSensitivity: 0.08, slipGripFloor: 0.92,
     brakeFront: 44, brakeRear: 6, handbrake: 42,
@@ -273,7 +275,8 @@ const tractiveForceAt = (spec, v) => boxGear(spec, v).force;
 // cannon damps every body's velocity by (1 - linearDamping)^dt, 0.01 by
 // default and left there by car.js: a drag of m·v·−ln(0.99) on top of the
 // aerodynamic one, ~1 kN on a GT3 at 270 km/h. The force balance has to
-// carry it or it overstates every car's top speed by 5–9 %.
+// carry it: left out, the solved top speed comes out 4–9 % high on the cars
+// drag holds back, and the V8 runs on into its fourth-gear limiter.
 const BODY_DAMPING = -Math.log(1 - 0.01);
 
 export function getTerminalSpeed(spec) {
@@ -305,8 +308,9 @@ export function getCarPerformance(spec = CAR_SPECS.gt) {
     aLat: 13 * gripRatio,
     aBrake: 10 * Math.min(gripRatio, brakeRatio),
     aAccel: 7.5 * gripRatio * traction,
-    // Half a percent under the force balance: the physics loses a little to
-    // shift cuts and suspension that the balance does not model.
+    // Half a percent under the force balance. On a flat road every car
+    // settles 0–0.6 % above it, so the planner never counts on more straight-
+    // line speed than the car reaches.
     vMax: 0.995 * getTerminalSpeed(spec).speed,
     // Best-gear force at the road at speed v (N), 8 % under the ideal for
     // shift cuts: what an exit can actually build.

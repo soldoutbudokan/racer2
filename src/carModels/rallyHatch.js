@@ -169,7 +169,7 @@ export function decorate(body, ctx) {
   // posts span z -1.93..-1.83 over a roof falling 11 cm toward the tail, so
   // their feet go to the skin at the trailing face and sink in from there.
   body.add(buildWing({
-    z: -1.90, y: 1.04, span: 1.30, deckY: skinTopY(keys, -1.93, 0.57) + 0.01, style: 'gt', gurney: true,
+    z: -1.90, y: 1.04, span: 1.30, deckY: skinTopY(keys, -1.93, 0.57, { capRoll: CAP_ROLL }) + 0.01, style: 'gt', gurney: true,
   }));
 
   // Nose cap plane z 2.00; face y -0.13 .. 0.20.
@@ -203,8 +203,12 @@ export function decorate(body, ctx) {
       numberPanel()));
   }
   body.add(buildMudFlaps(ctx.arches));
-  // Rocker protection: a satin sill guard along the floor edge.
-  for (const side of [-1, 1]) body.add(box(0.06, 0.07, 1.70, makeTrim(), side * 0.905, -0.17, 0.0));
+  // Rocker protection: a satin sill guard along the floor edge, stopping
+  // short of the front flaps (which hang 0.44 behind the front axle).
+  const sillFront = ctx.arches.zF - 0.47, sillRear = ctx.arches.zR + 0.42;
+  for (const side of [-1, 1]) {
+    body.add(box(0.06, 0.07, sillFront - sillRear, makeTrim(), side * 0.905, -0.17, (sillFront + sillRear) / 2));
+  }
 
   body.add(buildInterior({
     floorY: -0.03, dashZ: 0.48, dashH: 0.17, seatZ: -0.40, bulkheadZ: -1.10,

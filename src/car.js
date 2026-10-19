@@ -310,11 +310,21 @@ export function createCar(world, materials, options = {}) {
     const wheelRps = Math.abs(fwdSpd) / (2 * Math.PI * WHEEL_RADIUS); // rev/s
     const roadRpm = THREE.MathUtils.clamp(
       wheelRps * 60 * driveRatio, SPEC.idleRpm, SPEC.redlineRpm);
+    // Kick-down and rev-matched braking downshifts: asked for power or
+    // braking, the box drops a gear whenever the lower one keeps the engine
+    // under 90 % of the upshift point, so it cannot hunt straight back up.
+    // Without them a car braked from top speed for a hairpin left it in the
+    // gear it arrived in (the formula car in seventh at 6,000 rpm), and the
+    // AI and the line aid, which plan each exit in the gear the box picks
+    // from a standstill (carSpecs boxGear), over-promised every exit.
+    const wantsLower = ctrl.throttle > 0.6 || ctrl.brake > 0.2;
+    const lowerRpm = drive.gear > 1 ? wheelRps * 60 * ratioFor(drive.gear - 1) : Infinity;
     if (drive.mode === 'D' && drive.shiftT <= 0) {
       if (roadRpm > SPEC.shiftUpRpm && drive.gear < SPEC.gears.length) {
         drive.gear += 1;
         drive.shiftT = SPEC.shiftTime;
-      } else if (roadRpm < SPEC.shiftDownRpm && drive.gear > 1) {
+      } else if (drive.gear > 1 && (roadRpm < SPEC.shiftDownRpm
+          || (wantsLower && lowerRpm < SPEC.shiftUpRpm * 0.9))) {
         drive.gear -= 1;
         drive.shiftT = SPEC.shiftTime * 0.6;
       }

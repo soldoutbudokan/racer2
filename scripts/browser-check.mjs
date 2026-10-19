@@ -125,9 +125,23 @@ try {
   assert.equal(aspect, 1280 / 720);
   await measure('after-restart', 'balanced');
   // Quality switches and restarts must release resources instead of accumulating.
+  // Quick-race rivals are drawn at random and the cars hold different numbers
+  // of geometries (207-222 across rosters on the GP), so pin the six draws a
+  // start makes (the grid shuffle, then the roster) and compare like with like.
+  const pinnedStart = () => page.evaluate(() => {
+    const real = Math.random, draws = [0.3, 0.6, 0.2, 0.7, 0.4, 0.5];
+    let n = 0;
+    Math.random = () => {
+      if (n < draws.length) return draws[n++];
+      Math.random = real;
+      return real();
+    };
+    document.querySelector('button.mode[data-mode="quick-race"]').click();
+    window.__ctx.mode = null;
+  });
   const memory = [];
   for (let i = 0; i < 4; i++) {
-    await start('quick-race');
+    await pinnedStart();
     await page.evaluate(() => { const c = window.__ctx; c.graphics.select('high'); c.composer.render(); c.graphics.select('performance'); c.composer.render(); });
     memory.push(await page.evaluate(() => window.__ctx.renderer.info.memory.geometries));
   }

@@ -101,19 +101,20 @@ function buildFace() {
 }
 
 // Side pipes: a satin exhaust under each rocker with a slotted heat shield.
-// The tip ends at z -1.12, 4 cm clear of the rear tyre with the wheel at
-// full droop (axle -1.475, tyre radius 0.36, pipe 0.215 under the hub).
+// The tip ends at z -1.08: its top edge (0.163 under the hub) is 6.7 cm
+// clear of the rear tyre at rest and 5 cm with the wheel at full droop,
+// 5.3 cm lower (axle -1.475, tyre radius 0.36).
 function buildSidePipes() {
   const g = new THREE.Group();
   const satin = makeSatin(), trim = makeTrim();
   for (const side of [-1, 1]) {
-    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.052, 1.42, 14, 1, true), satin);
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.052, 1.38, 14, 1, true), satin);
     pipe.geometry.rotateX(Math.PI / 2);
-    pipe.position.set(side * 0.99, -0.215, -0.25);
+    pipe.position.set(side * 0.99, -0.215, -0.23);
     g.add(pipe);
     const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.056, 0.052, 0.16, 14, 1, true), satin);
     tip.geometry.rotateX(Math.PI / 2);
-    tip.position.set(side * 0.99, -0.215, -1.04);
+    tip.position.set(side * 0.99, -0.215, -1.00);
     g.add(tip);
     // heat shield with slots
     g.add(box(0.03, 0.12, 1.10, trim, side * 1.015, -0.18, -0.20));

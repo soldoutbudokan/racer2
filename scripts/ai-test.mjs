@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { createPhysicsWorld } from '../src/physics.js';
 import { createAIDriver } from '../src/ai.js';
+import { CAR_SPECS } from '../src/carSpecs.js';
 import { TRACKS } from '../src/tracks.js';
 import { wheelSurfaces, nearestFrameIndex } from '../src/surfaces.js';
 
@@ -93,6 +94,34 @@ for (const def of TRACKS.filter((t) => !process.argv[2] || t.id === process.argv
     console.log('pass stopped car', JSON.stringify(pass));
     assert.ok(pass.z > 85 && pass.maxLat < track.width / 2 - 1 && pass.contacts === 0 && pass.reverse === 0,
       'pass a stopped car without contact, leaving the road or selecting reverse');
+
+    // Every package, not just the GT3, must get past the longest car in the
+    // field stopped in its lane, with the driver updated at 60 Hz as in the
+    // game. Each car's stand-off is its own length, so a car that braked to
+    // it before finishing its swerve used to park there for good.
+    place(car, 1060, 1000);
+    blockers.forEach((c, i) => place(c, 1000 + i * 20, 1000));
+    for (const id of Object.keys(CAR_SPECS)) {
+      const ai = createCar(world, materials, { archetype: id });
+      const stopped = createCar(world, materials, { archetype: 'muscle' });
+      let touches = 0;
+      ai.body.addEventListener('collide', (event) => { if (event.body === stopped.body) touches++; });
+      ai.reset({ x: 0, y: 0.7, z: 0 }, 0); stopped.reset({ x: 0, y: 0.7, z: 65 }, 0);
+      for (let i = 0; i < 90; i++) { for (const c of [ai, stopped]) c.applyControls(HOLD, DT); world.step(DT); }
+      ai.body.velocity.z = 20;
+      const passer = createAIDriver(track);
+      let command = HOLD, backed = 0;
+      for (let i = 0; i < 12 / DT; i++) {
+        if (i % 2 === 0) command = { ...passer.update(ai, [stopped], DT * 2) };
+        ai.applyControls(command, DT, wheelSurfaces(track, ai));
+        stopped.applyControls(HOLD, DT);
+        world.step(DT);
+        if (ai.telemetry.gearLabel === 'R') backed += DT;
+      }
+      console.log('pass stopped V8', id, JSON.stringify({ z: +ai.body.position.z.toFixed(2), touches, backed: +backed.toFixed(2) }));
+      assert.ok(ai.body.position.z > 85 && touches === 0, `${id}: pass a stopped V8 without contact`);
+      ai.dispose(); stopped.dispose();
+    }
 
     // Both adjacent lanes occupied: wait in drive, then move when it clears.
     place(car, 0, 59.5);
