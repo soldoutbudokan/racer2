@@ -312,6 +312,12 @@ the 3D modelling much better."
 
 ## Changelog (accepted to `main`)
 
+- **2026-10-19** (accepted → `main` 2026-10-19, owner: "push to main"; was
+  branch `claude/vibrant-thompson-ujml6z`, 97f3f42..e4ddc72; owner-directed,
+  not a routine run) — **Six-car redesign and rebalance, and four review
+  rounds of fixes.** The full account, with the measurements and what is
+  still open, is the "Owner-requested: six-car redesign and rebalance
+  (2026-10-18)" section above.
 - **2026-09-24** (accepted → `main` 2026-09-24, owner: "push to main and close
   PR 7"; was PR #7 `codex/improve-ai-driving`, reviewed and merged through
   `claude/peaceful-ramanujan-eahwts`; owner-directed, not a routine run)
