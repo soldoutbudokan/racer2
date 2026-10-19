@@ -310,44 +310,76 @@ export function createCar(world, materials, options = {}) {
     const wheelRps = Math.abs(fwdSpd) / (2 * Math.PI * WHEEL_RADIUS); // rev/s
     const roadRpm = THREE.MathUtils.clamp(
       wheelRps * 60 * driveRatio, SPEC.idleRpm, SPEC.redlineRpm);
-    // Kick-down and rev-matched braking downshifts. Asked for power or
-    // braking, the box drops a gear when the lower one keeps the engine under
-    // 90 % of the upshift point (so it cannot hunt straight back up) AND puts
-    // more force on the road than the gear it is in, once the driven tyres'
-    // grip caps both: a V8 dropped into first at 90 km/h only lights up its
-    // rears. On power the gain has to pay for the shift cut too. Without a
-    // kick-down a car braked from top speed for a hairpin left it in the gear
-    // it arrived in (the formula car in seventh at 6,000 rpm), and the AI and
-    // the line aid, which plan each exit in the gear the box picks from a
-    // standstill (carSpecs boxGear), over-promised every exit.
+    // Downshifts. Asked for power, braking, or with the revs under the
+    // downshift point, the box drops a gear when the lower one keeps the
+    // engine under 90 % of the upshift point (so it cannot hunt straight back
+    // up) and puts more force on the road. A gear's force counts in full
+    // while the driven tyres can hold it, and up to their grip while it is
+    // at most 15 % over; further over, the tyres spin and keep less, down to
+    // slipGripFloor at 40 % over (measured: the hypercar's second at 100
+    // km/h, 16 % over, still pulls at the grip; the V8's first at 54 km/h,
+    // 36 % over, keeps four fifths of it). So a V8 dropped into first at
+    // 50-90 km/h gains nothing. On power the
+    // lower gear must also win over the whole time it lasts, both shift
+    // cuts included. Braking or coasting, the gears are judged against the
+    // grip the driven tyres will have on the exit: static axle loads, the
+    // downforce at this speed, and the weight each gear's pull moves onto
+    // the rears. Judged mid-braking, with the rears unloaded, both gears
+    // came out capped at the same figure and the cars arrived at the corner
+    // one or two gears too tall.
     const onPower = ctrl.throttle > 0.6, onBrake = ctrl.brake > 0.2;
     const lowerRpm = drive.gear > 1 ? wheelRps * 60 * ratioFor(drive.gear - 1) : Infinity;
-    let kickDown = false;
-    if ((onPower || onBrake) && lowerRpm < SPEC.shiftUpRpm * 0.9) {
-      // The driven tyres' grip as the traction budget below counts it: per
-      // wheel, load-sensitive, the rears scaled by the car's grip balance.
-      const wheelGrip = (i) => loadMu(SPEC, SPEC.mu[drive.surfaces[i]] ?? SPEC.mu.road, loads[i], avgLoad) * loads[i];
-      const drivenGrip = (wheelGrip(2) + wheelGrip(3)) * gripBalance
-        + (frontDrive > 0 ? wheelGrip(0) + wheelGrip(1) : 0);
-      const usable = (g) => Math.min(drivenGrip, torqueAt(SPEC,
-        Math.max(SPEC.idleRpm, wheelRps * 60 * ratioFor(g))) * ratioFor(g) * SPEC.drivelineEff / WHEEL_RADIUS);
-      if (onBrake) {
-        kickDown = usable(drive.gear - 1) > usable(drive.gear) * 1.02;
+    let downshift = false;
+    if ((onPower || onBrake || roadRpm < SPEC.shiftDownRpm) && lowerRpm < SPEC.shiftUpRpm * 0.9) {
+      const engineForce = (g) => torqueAt(SPEC, Math.max(SPEC.idleRpm, wheelRps * 60 * ratioFor(g)))
+        * ratioFor(g) * SPEC.drivelineEff / WHEEL_RADIUS;
+      const usable = (g, grip) => {
+        const f = engineForce(g), floor = SPEC.slipGripFloor ?? 0.8;
+        const over = f / grip - 1;
+        return over <= 0 ? f
+          : grip * Math.max(floor, 1 - Math.max(0, over - 0.15) * (1 - floor) / 0.25);
+      };
+      // Driven tyres' grip, per wheel and load-sensitive, the rears scaled
+      // by the grip balance, from a load per wheel.
+      const drivenGrip = (load, avg) => {
+        const g = (i) => loadMu(SPEC, SPEC.mu[drive.surfaces[i]] ?? SPEC.mu.road, load(i), avg) * load(i);
+        return (g(2) + g(3)) * gripBalance + (frontDrive > 0 ? g(0) + g(1) : 0);
+      };
+      // Over the time from now until the lower gear reaches its own upshift,
+      // it gains fLow·stay while the gear it is in would have kept pulling
+      // through the cuts as well: a gear gone again within a second loses.
+      const vUp = SPEC.shiftUpRpm / 60 / ratioFor(drive.gear - 1) * 2 * Math.PI * WHEEL_RADIUS;
+      const wins = (fLow, fNow, cuts) => {
+        const stay = fLow > fNow ? Math.max(0, vUp - Math.abs(fwdSpd)) * SPEC.massKg / fLow : 0;
+        return fLow * stay > fNow * (stay + cuts * SPEC.shiftTime) * 1.02;
+      };
+      if (onPower) {
+        const grip = drivenGrip((i) => loads[i], avgLoad);
+        downshift = wins(usable(drive.gear - 1, grip), usable(drive.gear, grip), 1.6);
       } else {
-        // On power the lower gear has to win over the time it lasts before
-        // its own upshift, after both shift cuts (down now, up again later);
-        // one that is gone again in under a second loses more than it gains.
-        const aLow = usable(drive.gear - 1) / SPEC.massKg, aNow = usable(drive.gear) / SPEC.massKg;
-        const vUp = SPEC.shiftUpRpm / 60 / ratioFor(drive.gear - 1) * 2 * Math.PI * WHEEL_RADIUS;
-        const stay = aLow > 0 ? Math.max(0, vUp - Math.abs(fwdSpd)) / aLow : 0;
-        kickDown = aLow * (stay - 1.6 * SPEC.shiftTime) > aNow * stay * 1.05;
+        const weight = SPEC.massKg * 9.82;
+        const df = 0.5 * SPEC.airDensity * SPEC.clA * fwdSpd * fwdSpd;
+        const hw = SPEC.wheelbase / 2;
+        const rear = (weight / 2 + df * (hw - SPEC.downforcePos) / (2 * hw)) / 2;
+        const front = (weight + df) / 2 - rear;
+        const staticGrip = drivenGrip((i) => (i < 2 ? front : rear), (weight + df) / 4);
+        const exitUsable = (g) => {
+          const shift = Math.min(engineForce(g), staticGrip * 1.3) * SPEC.cgHeight / SPEC.wheelbase / 2;
+          return usable(g, drivenGrip((i) => (i < 2 ? front - shift : rear + shift), (weight + df) / 4));
+        };
+        // Braking, the downshift's own cut costs nothing; the upshift's
+        // will. A car slowing to a stop still reaches first: once the
+        // engine would sit at idle in the gear it is in, it comes down
+        // regardless.
+        downshift = wins(exitUsable(drive.gear - 1), exitUsable(drive.gear), 1)
+          || wheelRps * 60 * ratioFor(drive.gear) <= SPEC.idleRpm * 1.05;
       }
     }
     if (drive.mode === 'D' && drive.shiftT <= 0) {
       if (roadRpm > SPEC.shiftUpRpm && drive.gear < SPEC.gears.length) {
         drive.gear += 1;
         drive.shiftT = SPEC.shiftTime;
-      } else if (drive.gear > 1 && (roadRpm < SPEC.shiftDownRpm || kickDown)) {
+      } else if (drive.gear > 1 && downshift) {
         drive.gear -= 1;
         drive.shiftT = SPEC.shiftTime * 0.6;
       }

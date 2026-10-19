@@ -18,7 +18,7 @@ import {
 export function createAIDriver(track, options = {}) {
   const skill = THREE.MathUtils.clamp(options.skill ?? 0.85, 0, 1);
   let spec = options.spec ?? getCarSpec();
-  let aLatMax, aBrake, vMax, pedalDecel, capability;
+  let aLatMax, aBrake, vMax, pedalDecel, capability, swerveR;
 
   const ctrl = {
     throttle: 0,
@@ -68,6 +68,11 @@ export function createAIDriver(track, options = {}) {
     // per 1/120 s step and wheel → force at the road), so the pedal can be
     // set to the deceleration the plan asks for.
     pedalDecel = (spec.brakeFront + spec.brakeRear) * 2 * 120 / spec.massKg;
+    // Full-lock turning radius of the body origin, 30 % over the geometric
+    // figure: the tyres' slip at walking pace puts the measured circles
+    // 8-24 % wider (formula car 6.2 m, V8 5.7, hypercar 5.4, GT3 5.0,
+    // hatch 3.9, speedster 3.6).
+    swerveR = 1.3 * Math.hypot(spec.wheelbase / Math.tan(spec.maxSteer), spec.wheelbase / 2);
     for (let i = 0; i < n; i++) {
       profile[i] = Math.min(vMax, getCornerSpeed(spec, kSmooth[i], aLatMax));
     }
@@ -86,14 +91,14 @@ export function createAIDriver(track, options = {}) {
   const roadLimit = Math.max(0, (track.width ?? 14) / 2 - 2);
   const PASS_CLEARANCE = 3.3;  // car width plus space between the mirrors
   const CREEP = 3;             // m/s past a stopped car, once the swerve fits
-  // Forward room a swerve of `d` metres sideways needs at the curvature the
-  // short pursuit lookahead asks for round a stopped car (R ~5 m, near full
-  // lock), for a car already heading out at sin θ toward its lane: along an
-  // arc, d = x·sin θ + x²/2R.
-  const SWERVE_R = 5.1;
+  // Forward room a swerve of `d` metres sideways needs on full lock, for a
+  // car already heading out at sin θ toward its lane: along an arc,
+  // d = x·sin θ + x²/2R. R is the car's own turning circle at walking pace
+  // (planFor): from 3.8 m on the speedster to 7.5 m on the formula car,
+  // which a fixed 5.1 m had called a swerve it could not make.
   const swerveRoom = (d, sinOut = 0) => {
     const s = THREE.MathUtils.clamp(sinOut, -1, 1);
-    return SWERVE_R * (Math.sqrt(s * s + 2 * Math.max(0, d) / SWERVE_R) - s);
+    return swerveR * (Math.sqrt(s * s + 2 * Math.max(0, d) / swerveR) - s);
   };
   let passCar = null, passOffset = 0, laneOffset = null;
   // Backing straight out from behind a stopped car the swerve no longer
@@ -275,7 +280,7 @@ export function createAIDriver(track, options = {}) {
     const laneFactor = Math.sqrt(Math.max(0.65, 1 - Math.abs(laneOffset) * kSmooth[nearest]));
     target *= laneFactor;
 
-    let closePass = false, shortBy = 0;
+    let closePass = false, shortBy = 0, swerveK = 0, swerveSide = 0;
     for (const t of traffic) {
       if (t.gap <= 0 || t.gap > Math.max(30, speed * 2)) continue;
       // Until the actual car has moved clear, it still needs braking room.
@@ -300,17 +305,29 @@ export function createAIDriver(track, options = {}) {
       if (t.gap < standOff) limit = Math.min(limit, Math.max(0, leaderSpeed - 2));
       // With the lane chosen, roll on at a walking pace once the bodies
       // clear sideways, or while the room left still covers most of the
-      // swerve: steering out, the deficit and the room it needs shrink
-      // faster than the gap.
+      // swerve. Otherwise back out by what the swerve lacks. The two tests
+      // are exact complements on the same heading: with a gap between them
+      // (the back-out judged the swerve as if the car pointed straight down
+      // the road) a car whose nose had swung away from its lane could
+      // neither creep nor back out, and sat on its handbrake for good.
       const ahead = t.gap - lengths - 0.64;
-      if (stoppedPass && lanes && (deficit === 0 || ahead >= 0.9 * swerve)) {
+      const fits = deficit === 0 || ahead >= 0.9 * swerve;
+      if (stoppedPass && lanes && fits) {
         limit = Math.max(limit, CREEP);
+        // The curvature that swerve needs from here (d = x·sin θ + κx²/2),
+        // for the steering below to hold the car to at least.
+        if (deficit > 0) {
+          const x = Math.max(0.3, ahead);
+          const k = THREE.MathUtils.clamp(2 * (deficit - x * sinOut) / (x * x), 0, 1 / swerveR);
+          if (k > swerveK) {
+            swerveK = k;
+            const toward = Math.sign(laneOffset - t.lat);
+            swerveSide = Math.sign(tmpFwd.x * here.frame.left.z - tmpFwd.z * here.frame.left.x) * toward;
+          }
+        }
       }
       if (stoppedPass && ahead < 12) closePass = true;
-      // Too close to swerve round it from here: how far to back out first.
-      if (stoppedPass && lanes && deficit > 0 && ahead < 0.9 * swerve) {
-        shortBy = Math.max(shortBy, swerveRoom(deficit) + 0.6 - ahead);
-      }
+      if (stoppedPass && lanes && !fits) shortBy = Math.max(shortBy, swerve + 0.6 - ahead);
       target = Math.min(target, limit);
     }
 
@@ -357,6 +374,13 @@ export function createAIDriver(track, options = {}) {
       ctrl.steer = signed < 0 ? -1 : 1;
     } else {
       ctrl.steer = THREE.MathUtils.clamp(needK * spec.wheelbase / cap, -1, 1);
+    }
+    // Creeping round a stopped car, steer at least as hard as the swerve the
+    // creep was allowed on. Pure pursuit straightens the wheel as soon as the
+    // nose points at its lookahead point, and the car then ran straight into
+    // the other car's corner, stopped, backed out and did it again.
+    if (swerveK > 0 && ctrl.steer * swerveSide < swerveK * swerveR) {
+      ctrl.steer = swerveSide * Math.min(1, swerveK * swerveR);
     }
 
     // A passing line or a correction after contact can turn more sharply
@@ -416,15 +440,6 @@ export function createAIDriver(track, options = {}) {
       ctrl.brake = 0;
     }
 
-    // Outside a recovery this driver never means to go backwards, and in
-    // reverse the brake pedal is the throttle: a car still rolling back when
-    // a recovery ends is stopped with the pedal that brakes in reverse.
-    const forwardSpeed = car.body.velocity.x * tmpFwd.x + car.body.velocity.z * tmpFwd.z;
-    if (recovery.reverseT <= 0 && backOut.metres <= 0 && forwardSpeed < -0.3) {
-      ctrl.throttle = 1;
-      ctrl.brake = 0;
-    }
-
     // Brake is also the automatic gearbox's reverse pedal. Hold a stopped
     // queue with the handbrake; only the recovery state may request reverse.
     if (target < 0.5 && speed < 1.2) {
@@ -455,6 +470,9 @@ export function createAIDriver(track, options = {}) {
     // needs, and never with a car close behind. (Reversing with the steering
     // inverted, as the wall recovery does, swung the car back onto the
     // stopped car's line and round again, indefinitely.)
+    // Walking pace only: at full reverse throttle the car reached 6-7 m/s
+    // and rolled on to twice the distance asked for.
+    const forwardSpeed = car.body.velocity.x * tmpFwd.x + car.body.velocity.z * tmpFwd.z;
     if (backOut.metres > 0) {
       backOut.t -= dt;
       if (backOut.t <= 0 || carBehind
@@ -462,12 +480,27 @@ export function createAIDriver(track, options = {}) {
         backOut.metres = 0;
       } else {
         ctrl.throttle = 0;
-        ctrl.brake = 0.6;             // reverse (automatic box: brake at standstill)
+        ctrl.brake = -forwardSpeed < 2 ? 0.6 : 0;   // reverse (automatic box: brake at standstill)
         ctrl.handbrake = false;
         ctrl.steer = 0;
         return ctrl;
       }
     }
+    // Outside a recovery or a back-out this driver never means to go
+    // backwards. In reverse gear the throttle is the brake, so a car still
+    // rolling back when one ends is stopped with it, wheel centred: left on
+    // the pursuit lock it swung its nose away from its lane. In a forward
+    // gear the throttle is power, and a car sliding backwards after a spin
+    // is left to coast round; full throttle there spun its tyres and put it
+    // in the barrier.
+    if (recovery.reverseT <= 0 && backOut.metres <= 0
+      && car.telemetry?.gear === 0 && forwardSpeed < -0.3) {
+      ctrl.throttle = 1;
+      ctrl.brake = 0;
+      ctrl.steer = 0;
+      ctrl.handbrake = false;
+    }
+
     backOut.heldT = shortBy > 0 && speed < 0.5 ? backOut.heldT + dt : 0;
     if (backOut.heldT > 1 && !carBehind && recovery.reverseT <= 0) {
       Object.assign(backOut, { metres: Math.min(4, shortBy + 1), t: 3, x: pos.x, z: pos.z, heldT: 0 });

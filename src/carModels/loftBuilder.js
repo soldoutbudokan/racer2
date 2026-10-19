@@ -737,23 +737,36 @@ export function buildLoftHull(keys, opts = {}) {
       // The last ring is the cap plane for every point.
       out.push({ z: top.z, half });
     }
-    // Untangle from the cap back, and where a ring folds over the same
+    // Untangle from the cap back, and where a ring folds over much the same
     // stretch as the ring after it, straighten both over the same span.
     // Untangled one by one, neighbouring rings laid slightly different runs
     // on their chords (k 26-38 against 26-39 on the GT3's nose), up to 18 mm
     // apart in a strip 0.5 mm deep, and the strip between them folded over.
+    // Only spans that mostly overlap are joined: joining any overlap carried
+    // the cap's long chord (k 25-40) back to a ring that folds over three
+    // points, and cut a 4-5 cm step into the bonnet behind it.
+    // The untangle may lay the same stretch on several passes: merge first.
+    const merge = (spans) => spans.slice().sort((p, q) => p[0] - q[0]).reduce((acc, [a, b]) => {
+      const last = acc[acc.length - 1];
+      if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+      else acc.push([a, b]);
+      return acc;
+    }, []);
     let after = [];
     for (let i = out.length - 1; i >= 0; i--) {
       const runs = [];
       untangleHalf(out[i].half, runs);
-      for (const [a2, b2] of after) {
-        const own = runs.filter(([a, b]) => a < b2 && a2 < b);
-        if (!own.length) continue;
-        const a = Math.min(a2, ...own.map((r) => r[0])), b = Math.max(b2, ...own.map((r) => r[1]));
+      const spans = merge(runs).map(([a, b]) => {
+        for (const [a2, b2] of after) {
+          const overlap = Math.min(b, b2) - Math.max(a, a2);
+          if (overlap < 0.6 * Math.max(b - a, b2 - a2)) continue;
+          a = Math.min(a, a2);
+          b = Math.max(b, b2);
+        }
         straighten(out[i].half, a, b);
-        runs.push([a, b]);
-      }
-      after = runs;
+        return [a, b];
+      });
+      after = merge(spans);
     }
     return out;
   };
