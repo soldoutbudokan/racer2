@@ -110,9 +110,9 @@ margin from the kerb. It is the car's own, because the model carries that
 car's grip, wing, brakes and gearing: the formula car turns in later and
 carries more speed where its wing works, the V8 brakes earlier and squares
 off its exits to get its torque down, the speedster leans on mechanical
-grip through the slow corners, and on the oval the GT3 runs the outside of
-the turns for radius while the flat-out formula car takes the shortest way
-round. The ideal-speed profile over that line is the AI's plan at full
+grip through the slow corners, and on the oval the flat-out formula car
+hugs the inside kerb while the road cars, held by corner speed, swing from
+the outside edge to the inside through each turn. The ideal-speed profile over that line is the AI's plan at full
 skill: corner speeds from the line's curvature with the aero load counted,
 anticipatory braking inside the friction circle, and an acceleration pass so
 it never demands speed the car can't actually build. Changing cars moves the

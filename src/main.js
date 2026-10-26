@@ -112,7 +112,6 @@ async function bootstrap() {
   const hud = createHud(MAX_KMH, ENGINE_BAND);
   hud.buildMinimap(track);
   const racingLine = createRacingLine(scene, track);
-  warmIdealLines(track);
 
   // Second camera lives in main.js (composer only knows about the primary).
   const camera2 = new THREE.PerspectiveCamera(
@@ -142,6 +141,7 @@ async function bootstrap() {
     // Created on the first mode start (a click, so the browser lets it play).
     audio: null,
   };
+  warmIdealLines(ctx);
   // Dev hooks for headless screenshot/test harnesses (harmless in production).
   if (typeof window !== 'undefined') {
     window.__ctx = ctx;
@@ -232,7 +232,7 @@ async function bootstrap() {
     ctx.racingLine.setVisible(false);
     ctx.hud.buildMinimap(ctx.track);
     ctx.selectedTrackId = def.id;
-    warmIdealLines(ctx.track);
+    warmIdealLines(ctx);
   }
   buildTrackSelector(document.getElementById('track-list'), ctx, rebuildTrack);
 
@@ -377,14 +377,21 @@ function buildTrackSelector(container, ctx, rebuildTrack) {
 // solves the GT3's; the other five are solved here in the menu's idle time,
 // one per callback, so picking a car or starting a race against three rivals
 // finds them ready instead of stalling the click. A line asked for before its
-// turn is simply solved then.
-function warmIdealLines(track) {
+// turn is simply solved then. Switching circuits starts a new chain and ends
+// the old one (its track is gone), and a chain waits while a race runs: a
+// 0.2 s solve in the game loop is a hitch, and the race has already solved
+// what it needs.
+let warmGeneration = 0;
+function warmIdealLines(ctx) {
+  const generation = ++warmGeneration;
+  const track = ctx.track;
   const ids = Object.keys(CAR_SPECS);
   const schedule = (fn) => (typeof requestIdleCallback === 'function'
-    ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 60));
+    ? requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 60));
   let i = 0;
   const step = () => {
-    idealLineFor(track, CAR_SPECS[ids[i++]]);
+    if (generation !== warmGeneration || ctx.track !== track) return;
+    if (!ctx.mode) idealLineFor(track, CAR_SPECS[ids[i++]]);
     if (i < ids.length) schedule(step);
   };
   schedule(step);

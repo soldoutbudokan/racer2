@@ -337,8 +337,9 @@ was the same for every car; only its speeds changed with the car.
   the menu's idle time (`warmIdealLines`) so a race starts without a stall.
   Predicted gains over the centreline, same model: 8–13 % on the road
   circuits, 6–10 % on the oval. The lines differ by car (formula vs V8:
-  1.0–2.3 m rms on the road circuits; on the oval the GT3 runs the outside
-  of the turns and the flat-out formula car the inside).
+  1.0–2.3 m rms on the road circuits; on the oval the flat-out formula car
+  hugs the inside kerb while the road cars swing from the outside edge to
+  the inside through each turn).
 - **Limits from the car's own physics** (`getDrivingLimits` in
   `src/carSpecs.js`, replacing `getCarPerformance`, `getCornerSpeed`,
   `getLateralAcceleration` and `applyBrakingPasses`). Steady grip is μ less
@@ -379,6 +380,15 @@ was the same for every car; only its speeds changed with the car.
   every car on every circuit tried, with no wheel off the road at skill 0.85
   or 1.0 (the aid's own plan is drivable). The four-car race keeps every car
   on the road and the pole-sitter untouched.
+- **Review (2026-10-26).** An adversarial review of the commit confirmed
+  one defect, fixed: the turn-rate filter in `ai.js` divided by `dt`, so a
+  frame of no time (equal animation-frame stamps under a coarse timer, or a
+  harness ticking 0) made the pedal NaN and the car read that as no brake
+  until it slowed below walking pace. It also found the oval description
+  wrong (corrected here and in the README) and that the menu warm-up kept
+  solving lines for a circuit the player had switched away from and could
+  run a solve inside a race (it now ends on a switch and pauses while a
+  race runs).
 - **Checks.** New `scripts/line-test.mjs` (in the Verify game physics job):
   every car's line on every circuit stays inside its margin, bends no
   tighter than full lock, crosses the road under 31°, beats the centreline

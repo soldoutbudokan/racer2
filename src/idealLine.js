@@ -8,9 +8,10 @@ import { getCarSpec, getDrivingLimits, planSpeedProfile } from './carSpecs.js';
  * model carries its grip, its wing, its brakes and its gearing, so the formula
  * car's fast-corner speed, the V8's long braking and slow exits and the
  * speedster's mechanical grip each shape where their driver turns in, how
- * deep the apex sits and how early the exit straightens. On the oval the GT3
- * runs the outside of the turns for radius while the formula car, flat out
- * on its wing, takes the shortest way round.
+ * deep the apex sits and how early the exit straightens. On the oval the
+ * formula car, flat out on its wing, hugs the inside kerb while the road
+ * cars, held by corner speed, swing from the outside edge to the inside
+ * through each turn.
  *
  * The solver is coordinate descent with raised-cosine bumps, coarse to fine:
  * a bump the length of a corner first moves the whole corner out (a wider

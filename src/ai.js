@@ -527,8 +527,13 @@ export function createAIDriver(track, options = {}) {
     // inside kerb.
     if (travel > 4) {
       const vx = car.body.velocity.x / speed, vz = car.body.velocity.z / speed;
-      const raw = prevValid ? speed * Math.abs(vx * prevVz - vz * prevVx) / dt / limits.gripAt(speed) : 0;
-      turnLoad += (raw - turnLoad) * Math.min(1, dt / 0.1);
+      // A frame of no time (equal animation-frame stamps under a coarse
+      // timer, or a harness ticking 0) has no rate to read; left in, 0/0
+      // made the load NaN, the pedal NaN, and the car read that as no brake.
+      if (prevValid && dt > 1e-6) {
+        const raw = speed * Math.abs(vx * prevVz - vz * prevVx) / dt / limits.gripAt(speed);
+        turnLoad += (raw - turnLoad) * Math.min(1, dt / 0.1);
+      }
       prevVx = vx; prevVz = vz; prevValid = true;
     } else {
       prevValid = false;
