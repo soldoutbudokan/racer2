@@ -23,6 +23,8 @@ import {
 } from './scenery/roadwork.js';
 import { rand, seedCircuit, beginStream } from './scenery/rng.js';
 import { segmentsForLength } from './tracks.js';
+import { getCarSpec } from './carSpecs.js';
+import { idealLineFor } from './idealLine.js';
 import { roadMarkingGeometry } from './scenery/roadMarkings.js';
 
 // Stable per-circuit seed so a track's hills are the same every reload.
@@ -105,8 +107,10 @@ export function createTrack(scene, world, materials, def) {
   bodies.push(groundBody);
 
   // ---- Racing-line lateral offset (out-in-out through corners) ----
-  // Used to weave the rubbered groove across the road like real tracks.
-  const lineOffset = computeRacingLineOffset(frames, curvature);
+  // The rubbered groove and the skid marks follow the GT3's ideal line, the
+  // same solve the aid draws and the AI drives for that car (idealLine.js);
+  // it is cached on these frames, so the GT3's drivers get it for free.
+  const lineOffset = idealLineFor({ frames, width: ROAD_WIDTH }, getCarSpec()).offset;
 
   // ---- Asphalt ribbon with a baked racing groove (vertex colours) ----
   beginStream('asphalt');
@@ -340,8 +344,9 @@ export function createTrack(scene, world, materials, def) {
     // columns (0 = all out = go). Driven by the race-start sequence in main.js.
     startLights,
     armcoOffset: ARMCO_OFFSET,
-    // Lateral offset (m, +left) of the baked racing groove per frame — the
-    // "perfect line" driving aid follows the same path the visuals rubber in.
+    // Lateral offset (m, +left) of the baked racing groove per frame: the
+    // GT3's ideal line. The aid and the AI take each car's own from
+    // idealLine.js, which the groove's solve already seeded.
     racingLineOffset: lineOffset,
     // Gravel traps will register frame ranges here (filled by scenery pass).
     isGravel: (frameIdx) => gravelFrames.has(frameIdx),
@@ -430,30 +435,6 @@ function computeKerbActive(curvature, threshold, dilate) {
     if (len < minGap && len < n) {
       for (let k = 0; k < len; k++) out[(i + k) % n] = true;
     }
-  }
-  return out;
-}
-
-function computeRacingLineOffset(frames, curvature) {
-  const n = frames.length;
-  const raw = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const t1 = frames[i].tan;
-    const t2 = frames[(i + 1) % n].tan;
-    const crossY = t1.x * t2.z - t1.z * t2.x; // >0 → turning right (toward -left)
-    const mag = Math.min(3.2, curvature[i] * 900);
-    raw[i] = (crossY > 0 ? -1 : 1) * mag * (curvature[i] > 0.0008 ? 1 : 0);
-  }
-  // heavy smoothing (≈60 m window) → flowing line
-  let out = raw;
-  for (let pass = 0; pass < 3; pass++) {
-    const next = new Float32Array(n);
-    for (let i = 0; i < n; i++) {
-      let s = 0;
-      for (let k = -6; k <= 6; k++) s += out[(i + k + n) % n];
-      next[i] = s / 13;
-    }
-    out = next;
   }
   return out;
 }

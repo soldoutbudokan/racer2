@@ -294,77 +294,167 @@ export function getTerminalSpeed(spec) {
   return { speed: v, gear: boxGear(spec, Math.max(5, v - 0.5)).gear };
 }
 
-const wheelPowerW = spec => peakPowerW(spec) * spec.drivelineEff;
+const G = 9.82;
 
-// Planning estimates for the AI and the perfect-line aid. Grip and braking
-// are calibrated against the GT3 (the reference car) and scale from its
-// package to the others; the top speed is each car's own force balance. So
-// changing cars changes the AI's braking points and the player's
-// recommended pace.
-export function getCarPerformance(spec = CAR_SPECS.gt) {
-  const gt = CAR_SPECS.gt;
-  const wheelPower = wheelPowerW(spec);
-  const gripRatio = spec.mu.road / gt.mu.road;
-  const brakeRatio = ((spec.brakeFront + spec.brakeRear) / spec.massKg) /
-    ((gt.brakeFront + gt.brakeRear) / gt.massKg);
-  // Four driven tyres put more of the engine down out of a slow corner.
-  const traction = spec.frontDrive > 0 ? 1.25 : 1;
-  return {
-    aLat: 13 * gripRatio,
-    aBrake: 10 * Math.min(gripRatio, brakeRatio),
-    aAccel: 7.5 * gripRatio * traction,
-    // Half a percent under the force balance. On a flat road every car
-    // settles 0–0.6 % above it, so the planner never counts on more straight-
-    // line speed than the car reaches.
-    vMax: 0.995 * getTerminalSpeed(spec).speed,
-    // Best-gear force at the road at speed v (N), 8 % under the ideal for
-    // shift cuts: what an exit can actually build.
-    tractiveForce: (v) => 0.92 * tractiveForceAt(spec, v),
-    wheelPower,
-    mass: spec.massKg,
-    halfRhoCdA: 0.5 * spec.airDensity * spec.cdA,
-    rollingDrag: spec.crr * spec.massKg * 9.82,
-    bodyDamping: BODY_DAMPING * spec.massKg,   // N per m/s (see above)
+/**
+ * What a driver can plan against in this car, from the car's own physics:
+ * the tyres' grip with the aerodynamic load on top, the brakes against those
+ * tyres (whichever gives up first), the force at the road in the gear the
+ * automatic box holds, drag, and the terminal speed. Every figure follows
+ * speed where the physics does, so a winged car brakes and corners harder
+ * from 200 km/h than from 80. It replaced a set of ratios to the GT3 (13 m/s²
+ * of grip, 10 m/s² of braking, scaled by μ and brake clamps) that planned
+ * every car at little more than half of what it measured under braking.
+ *
+ * `skill` is how much of each limit the driver uses: 1 is the perfect lap the
+ * aid shows; the rivals drive at 0.78-0.86. The lateral budget is referenced
+ * to what the car holds in a steady corner (car-balance-test's slowGrip reads
+ * 0.96-0.99 of μg across the field, the V8 lowest because its tyres are the
+ * most load-sensitive); braking to the lesser of the brake clamps and that
+ * grip, with the downforce counted; acceleration to the gear the box holds,
+ * 8 % under for shift cuts, inside the driven axle's share of the grip.
+ */
+export function getDrivingLimits(spec = CAR_SPECS.gt, skill = 1) {
+  const s = Math.min(1, Math.max(0, skill));
+  const m = spec.massKg;
+  // Steady-state grip: the outside tyre carries more than its share and
+  // gives up μ for it (loadMu in car.js); the loss measures ~0.2 × the
+  // sensitivity at the limit. A car whose rear tyres hold less than its
+  // fronts (gripBalance under 1: the V8, the formula car) is limited by the
+  // rear, and lets go from the back when it is asked for more.
+  const mu = spec.mu.road * (1 - 0.2 * spec.loadSensitivity) * Math.min(1, spec.gripBalance ?? 1);
+  const q = 0.5 * spec.airDensity * spec.clA / m;      // downforce per (m/s)², as m/s²
+  const latUse = 0.80 + 0.15 * s;                        // 0.95 at the top, 0.92 at 0.78
+  const brakeUse = 0.72 + 0.20 * s;                      // 0.92 at the top, 0.88 at 0.78
+  const terminal = getTerminalSpeed(spec).speed;
+  const vMax = terminal * (0.955 + 0.04 * s);           // 0.995 at the top
+  // Full-pedal deceleration from the brake clamps (impulse per 1/120 s step
+  // and wheel, to force at the road).
+  const pedalDecel = (spec.brakeFront + spec.brakeRear) * 2 * 120 / m;
+  const halfRhoCdA = 0.5 * spec.airDensity * spec.cdA;
+  const rollingDrag = spec.crr * m * G;
+  const bodyDamping = BODY_DAMPING * m;
+  // The driven axle's share of the grip under squat: measured 0-100 km/h
+  // runs put the rear-drive cars at 0.52-0.55 μg and the four-wheel-drive
+  // hatch at 0.6.
+  const tractionAccel = mu * G * (spec.frontDrive > 0 ? 0.62 : 0.52);
+  // Braking or driving while cornering loads one tyre with most of the
+  // work, and the tyres give up more of their grip for it than a point-mass
+  // friction circle allows: the plan's cornering budget inside a braking or
+  // acceleration zone is cut by the tyre's load sensitivity (the V8, at
+  // 0.20, trail-braked at the circle's edge, arrived over its plan and
+  // understeered off), and again where the brakes sit mostly on the front
+  // axle, whose tyres then brake and turn at once (the speedster, 88 %
+  // front, trail-braking at 60 % pedal through a 77 % bend at 180 km/h, let
+  // go at the back and spun). The hard braking is done in a straight line
+  // and the pedal eases as the wheel turns.
+  const frontShare = spec.brakeFront / (spec.brakeFront + spec.brakeRear);
+  const combined = (1 - spec.loadSensitivity) * (1 - 2.5 * Math.max(0, frontShare - 0.8));
+  // Engine force at the road per unit mass, in the gear the box holds, with
+  // 8 % off for shift cuts, tabulated every half metre per second.
+  const STEP = 0.5;
+  const engine = new Float32Array(Math.ceil(terminal / STEP) + 3);
+  for (let i = 0; i < engine.length; i++) engine[i] = 0.92 * tractiveForceAt(spec, i * STEP) / m;
+  const muLat = latUse * mu;
+  const limits = {
+    spec, skill: s, vMax, pedalDecel, mass: m, tractionAccel,
+    halfRhoCdA, rollingDrag, bodyDamping,
+    aLat: muLat * G,                                      // on a flat road at rest, no aero
+    aBrake: brakeUse * Math.min(pedalDecel, mu * G),
+    // Scalars for planSpeedProfile's inner loops.
+    muLatG: muLat * G, muLatQ: muLat * q, combined,
+    brakeMax: brakeUse * pedalDecel, brakeMuG: brakeUse * mu * G, brakeMuQ: brakeUse * mu * q,
+    dragA: halfRhoCdA / m, dragB: bodyDamping / m, dragC: rollingDrag / m,
+    engine, engineStep: STEP,
   };
-}
-
-// Preserve the proven planning margin while accounting for each package's
-// gain or loss in aerodynamic grip. The speed-squared term matters in fast
-// bends; it cannot turn a low-grip aero car into a hairpin specialist.
-function aeroGripDelta(spec) {
-  const gt = CAR_SPECS.gt;
-  return 0.5 * spec.airDensity *
-    (spec.mu.road * spec.clA / spec.massKg - gt.mu.road * gt.clA / gt.massKg);
-}
-
-export function getCornerSpeed(spec, curvature, baseAcceleration) {
-  return Math.sqrt(baseAcceleration / Math.max(1e-4, curvature - aeroGripDelta(spec)));
-}
-
-export function getLateralAcceleration(spec, speed, baseAcceleration) {
-  return Math.max(baseAcceleration * 0.65, baseAcceleration + aeroGripDelta(spec) * speed * speed);
+  // Lateral acceleration the plan budgets at speed v.
+  limits.lateralAt = (v) => limits.muLatG + limits.muLatQ * v * v;
+  // Lateral acceleration the tyres hold at speed v, before the driver's
+  // margin: what a live friction-circle check should judge the car against,
+  // so a car a little over its plan can still brake for it.
+  limits.gripAt = (v) => mu * (G + q * v * v);
+  // Steady speed through curvature κ (1/m): v²κ = μ(g + q v²). Past the
+  // speed where the wing alone keeps up with the bend, the straight limit.
+  limits.cornerSpeed = (kappa) => {
+    const d = kappa - limits.muLatQ;
+    return d <= 1e-7 ? vMax : Math.min(vMax, Math.sqrt(limits.muLatG / d));
+  };
+  // Deceleration the brakes give at speed v, before drag.
+  limits.brakeAt = (v) => Math.min(limits.brakeMax, limits.brakeMuG + limits.brakeMuQ * v * v);
+  // Deceleration with no pedal: aerodynamic drag, rolling resistance and
+  // cannon's body damping (engine braking depends on the gear; ai.js adds it).
+  limits.dragDecel = (v) => (limits.dragA * v + limits.dragB) * v + limits.dragC;
+  // Engine force per unit mass at speed v, before drag and traction.
+  limits.engineAccel = (v) => {
+    const x = v / STEP, i = Math.floor(x);
+    if (i + 1 >= engine.length) return 0;
+    return engine[i] + (engine[i + 1] - engine[i]) * (x - i);
+  };
+  return limits;
 }
 
 /**
- * Anticipatory braking over a lap's speed profile, in place: each frame is
- * capped by what the brakes can shed before the next one. The braking
- * available at a frame is what the tyres have left after the cornering
- * there (a friction circle), judged at the speed the car arrives with —
- * the next frame's — so a braking zone that falls inside a bend is
- * stretched rather than asking for full braking at the cornering limit.
- * Shared by the AI planner and the perfect-line aid so the two agree.
- *   profile  corner-limited speeds (m/s), modified in place
- *   kappa    curvature per frame (1/m), ds  arc length to the next frame (m)
- *   aLat     the lateral budget the corner speeds were planned against
+ * Speed profile over a closed path, written into `out` (m/s per sample):
+ *   1. the steady speed each sample's curvature allows,
+ *   2. a backward pass capping each sample by what the brakes can shed before
+ *      the next one, inside the friction circle: the cornering the tyres are
+ *      doing at the next sample (judged at its speed) leaves less for braking,
+ *      so a braking zone that falls inside a bend is stretched rather than
+ *      asking for full braking at the cornering limit,
+ *   3. a forward pass capping each sample by what the engine can build from
+ *      the one before, inside the same circle: nothing is gained through an
+ *      apex taken at the limit; the exit opens as the curvature falls.
+ * Inside both, the cornering budget is the car's combined-grip share
+ * (getDrivingLimits), smaller on a load-sensitive tyre. Both passes start at
+ * the slowest corner, which neither can lower, so one of each settles the
+ * whole loop without a seam. Shared by the line solver,
+ * the AI planner and the perfect-line aid so the three agree. `kappa` is the
+ * unsigned curvature per sample (1/m) and `ds` the arc to the next sample
+ * (m). Returns the lap time (s).
  */
-export function applyBrakingPasses(profile, kappa, ds, spec, aLat, aBrake, passes = 3) {
-  const n = profile.length;
+export function planSpeedProfile(limits, kappa, ds, out, passes = 1) {
+  const n = kappa.length;
+  const { vMax, muLatG, muLatQ, combined, brakeMax, brakeMuG, brakeMuQ, dragA, dragB, dragC,
+    engine, engineStep, tractionAccel } = limits;
+  const latG = muLatG * combined, latQ = muLatQ * combined;
+  const last = engine.length - 1;
+  let slowest = 0;
+  for (let i = 0; i < n; i++) {
+    const d = kappa[i] - muLatQ;
+    out[i] = d <= 1e-7 ? vMax : Math.min(vMax, Math.sqrt(muLatG / d));
+    if (out[i] < out[slowest]) slowest = i;
+  }
   for (let pass = 0; pass < passes; pass++) {
-    for (let i = n - 1; i >= 0; i--) {
-      const next = profile[(i + 1) % n];
-      const lateral = Math.min(1, next * next * kappa[i] / getLateralAcceleration(spec, next, aLat));
-      const room = Math.sqrt(Math.max(0.15, 1 - lateral * lateral));
-      profile[i] = Math.min(profile[i], Math.sqrt(next * next + 2 * aBrake * room * ds[i]));
+    let i = slowest === 0 ? n - 1 : slowest - 1;
+    for (let k = 1; k < n; k++) {
+      const next = out[i === n - 1 ? 0 : i + 1], v2 = next * next;
+      const lateral = Math.min(1, v2 * kappa[i] / (latG + latQ * v2));
+      // A fifth of the brakes is always planned on: a braking zone that falls
+      // inside a bend is stretched back onto the straight before it rather
+      // than planned at full pedal through the bend. (A floor of 39 % had the
+      // V8 planned at half its pedal through the oval's turns at 89 % of its
+      // grip, and it swapped ends.)
+      const room = Math.sqrt(Math.max(0.04, 1 - lateral * lateral));
+      const brake = Math.min(brakeMax, brakeMuG + brakeMuQ * v2) * room
+        + (dragA * next + dragB) * next + dragC;
+      const v = Math.sqrt(v2 + 2 * ds[i] * brake);
+      if (v < out[i]) out[i] = v;
+      i = i === 0 ? n - 1 : i - 1;
+    }
+    i = slowest;
+    for (let k = 1; k < n; k++) {
+      const j = i === n - 1 ? 0 : i + 1, v = out[i], v2 = v * v;
+      const lateral = Math.min(1, v2 * kappa[i] / (latG + latQ * v2));
+      const room = Math.sqrt(Math.max(0, 1 - lateral * lateral));
+      const x = v / engineStep, t = Math.min(last - 1, Math.floor(x));
+      const thrust = engine[t] + (engine[t + 1] - engine[t]) * Math.min(1, x - t);
+      const a = Math.min(thrust, tractionAccel * room) - ((dragA * v + dragB) * v + dragC);
+      const w = a <= 0 ? v : Math.sqrt(v2 + 2 * a * ds[i]);
+      if (w < out[j]) out[j] = w;
+      i = j;
     }
   }
+  let t = 0;
+  for (let i = 0; i < n; i++) t += 2 * ds[i] / (out[i] + out[i === n - 1 ? 0 : i + 1]);
+  return t;
 }

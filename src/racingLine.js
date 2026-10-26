@@ -1,19 +1,23 @@
 import * as THREE from 'three';
 import { hideFromOverridePasses } from './scenery/noise.js';
-import { getCarSpec, getCarPerformance, getCornerSpeed, applyBrakingPasses } from './carSpecs.js';
+import { getCarSpec } from './carSpecs.js';
+import { idealLineFor } from './idealLine.js';
 
 /**
- * "Perfect line" driving aid: a ribbon drawn along the ideal racing line (the
- * same groove the track bakes into the asphalt), recoloured every frame by
- * comparing the ideal speed at each point against the player's CURRENT speed:
+ * "Perfect line" driving aid: a ribbon drawn along the ideal racing line for
+ * the car the player is in (idealLine.js: the lap-time optimum for its grip,
+ * wing, brakes and gearing over the whole road; the asphalt's rubbered groove
+ * is the GT3's), recoloured every frame by comparing the ideal speed at each
+ * point against the player's CURRENT speed:
  *   red    — the perfect lap is slower here than you are going (brake!)
  *   white  — you are on the ideal pace
  *   green  — the perfect lap carries more speed here (you could go faster)
  *
- * The ideal-speed profile mirrors the AI planner: corner-limited speed from
- * line curvature with anticipatory-braking back-passes, plus a forward
- * acceleration pass so the aid never demands speed the car cannot actually
- * build out of a corner.
+ * The ideal-speed profile is the same plan the AI drives, at full skill:
+ * corner-limited speed from the line's curvature with the aero load counted,
+ * anticipatory braking inside the friction circle, and a forward pass so the
+ * aid never demands speed the car cannot actually build out of a corner.
+ * Switching cars moves the line as well as the speeds.
  */
 
 const LINE_WIDTH = 0.8;
@@ -77,100 +81,24 @@ const fragmentShader = /* glsl */`
 
 export function createRacingLine(scene, track) {
   const frames = track.frames;
-  const offset = track.racingLineOffset;
   const n = frames.length;
 
-  // Ideal-line points: centreline + groove offset.
-  const pts = [];
-  for (let i = 0; i < n; i++) {
-    const f = frames[i];
-    pts.push(new THREE.Vector3(
-      f.pos.x + f.left.x * offset[i],
-      f.pos.y,
-      f.pos.z + f.left.z * offset[i],
-    ));
-  }
-
-  const ds = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    ds[i] = Math.max(0.5, pts[i].distanceTo(pts[(i + 1) % n]));
-  }
-
-  // Curvature of the offset line from the turn angle between adjacent chords.
-  const kappa = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const a = pts[(i - 1 + n) % n];
-    const b = pts[i];
-    const c = pts[(i + 1) % n];
-    const v1x = b.x - a.x, v1z = b.z - a.z;
-    const v2x = c.x - b.x, v2z = c.z - b.z;
-    const l1 = Math.hypot(v1x, v1z);
-    const l2 = Math.hypot(v2x, v2z);
-    const dot = (v1x * v2x + v1z * v2z) / Math.max(1e-6, l1 * l2);
-    const theta = Math.acos(Math.min(1, Math.max(-1, dot)));
-    kappa[i] = theta / Math.max(0.5, (l1 + l2) / 2);
-  }
-  const kSmooth = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    let s = 0;
-    for (let k = -2; k <= 2; k++) s += kappa[(i + k + n) % n];
-    kSmooth[i] = s / 5;
-  }
-
-  // --- Ideal speed profile (m/s per frame) ---
+  // The ideal speed per frame (m/s) for the current car; main.js reads it
+  // for the pace readout, so it is one array refilled on every car change.
   const profile = new Float32Array(n);
-  let currentSpec;
-  function setCarSpec(spec = getCarSpec()) {
-    if (currentSpec === spec) return;
-    currentSpec = spec;
-    const { aLat, aBrake, aAccel, vMax, tractiveForce, mass,
-      halfRhoCdA, rollingDrag, bodyDamping } = getCarPerformance(spec);
-    for (let i = 0; i < n; i++) {
-      profile[i] = Math.min(vMax, getCornerSpeed(spec, kSmooth[i], aLat));
-    }
-    // Braking begins earlier in heavier cars with weaker brakes, and inside
-    // a bend the tyres' cornering load leaves less for braking: the same
-    // pass the AI plans with, so the aid and the field agree.
-    applyBrakingPasses(profile, kSmooth, ds, spec, aLat, aBrake);
-    // Reachability keeps the line's acceleration demand inside this engine's
-    // gearing, tyre and aerodynamic limits, including exits from slow corners.
-    const accelAt = v => Math.min(aAccel, Math.max(0,
-      (tractiveForce(v) - halfRhoCdA * v * v - rollingDrag - bodyDamping * v) / mass));
-    for (let pass = 0; pass < 2; pass++) {
-      for (let i = 0; i < n; i++) {
-        const j = (i + 1) % n;
-        profile[j] = Math.min(profile[j], Math.sqrt(
-          profile[i] * profile[i] + 2 * accelAt(profile[i]) * ds[i]));
-      }
-    }
-  }
-  setCarSpec();
 
   // --- Ribbon mesh: two vertices per frame, dynamic colours ---
   // The first frame is repeated at the end with the full lap length, so the
   // chevrons run straight through the start line instead of squeezing a whole
   // lap of pattern into the closing segment.
   const m = n + 1;
-  let lapLength = 0;
-  for (let i = 0; i < n; i++) lapLength += ds[i];
-  const pitch = lapLength / Math.max(1, Math.round(lapLength / CHEVRON_M));
   const positions = new Float32Array(m * 2 * 3);
   const colors = new Float32Array(m * 2 * 3);
   const line = new Float32Array(m * 2 * 2);
   const half = LINE_WIDTH / 2;
-  let along = 0;
   for (let k = 0; k < m; k++) {
-    const i = k % n;
-    const f = frames[i];
-    const p = pts[i];
-    positions.set(
-      [p.x + f.left.x * half, p.y + LIFT, p.z + f.left.z * half], k * 6);
-    positions.set(
-      [p.x - f.left.x * half, p.y + LIFT, p.z - f.left.z * half], k * 6 + 3);
     colors.set(COL_WHITE, k * 6);
     colors.set(COL_WHITE, k * 6 + 3);
-    line.set([along, 1, along, -1], k * 4);
-    along += ds[i];
   }
   const indices = [];
   for (let k = 0; k < n; k++) {
@@ -181,19 +109,48 @@ export function createRacingLine(scene, track) {
     indices.push(a, c, b, b, c, d);
   }
   const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const posAttr = new THREE.BufferAttribute(positions, 3);
+  geo.setAttribute('position', posAttr);
   const colorAttr = new THREE.BufferAttribute(colors, 3);
   colorAttr.setUsage(THREE.DynamicDrawUsage);
   geo.setAttribute('color', colorAttr);
-  geo.setAttribute('aLine', new THREE.BufferAttribute(line, 2));
+  const lineAttr = new THREE.BufferAttribute(line, 2);
+  geo.setAttribute('aLine', lineAttr);
   geo.setIndex(indices);
 
   const uniforms = {
     uFocus: { value: new THREE.Vector3(1e6, 0, 1e6) },
     uHeading: { value: new THREE.Vector2(0, 0) },
-    uPitch: { value: pitch },
+    uPitch: { value: CHEVRON_M },
     uOpacity: { value: 0.78 },
   };
+
+  // Lay the ribbon along this car's line and take its speeds.
+  let currentSpec;
+  function setCarSpec(spec = getCarSpec()) {
+    if (currentSpec === spec) return;
+    currentSpec = spec;
+    const ideal = idealLineFor(track, spec);
+    profile.set(ideal.profile);
+    let lapLength = 0;
+    for (let i = 0; i < n; i++) lapLength += ideal.ds[i];
+    uniforms.uPitch.value = lapLength / Math.max(1, Math.round(lapLength / CHEVRON_M));
+    let along = 0;
+    for (let k = 0; k < m; k++) {
+      const i = k % n;
+      const f = frames[i];
+      const lat = ideal.offset[i];
+      const x = f.pos.x + f.left.x * lat, z = f.pos.z + f.left.z * lat;
+      positions.set([x + f.left.x * half, f.pos.y + LIFT, z + f.left.z * half], k * 6);
+      positions.set([x - f.left.x * half, f.pos.y + LIFT, z - f.left.z * half], k * 6 + 3);
+      line.set([along, 1, along, -1], k * 4);
+      along += ideal.ds[i];
+    }
+    posAttr.needsUpdate = true;
+    lineAttr.needsUpdate = true;
+    geo.computeBoundingSphere();
+  }
+  setCarSpec();
   const mesh = new THREE.Mesh(geo, new THREE.ShaderMaterial({
     name: 'racing-line',
     uniforms, vertexShader, fragmentShader,

@@ -96,15 +96,27 @@ layout and grip balance as well as power, weight, aero, tyres and brakes.
 - **Two player** — split-screen, WASD vs. arrows.
 
 Single-screen modes show the **perfect-line aid** (toggle with `L`): painted
-chevrons along the ideal racing line, drawn only ahead of your car and
-recoloured live against your current speed —
+chevrons along the ideal racing line for the car you are in, drawn only
+ahead of your car and recoloured live against your current speed —
 red where the ideal lap is slower than you're going (brake!), white where
 you're on pace, green where it carries more speed than you have (push on).
 The HUD pill shows the ideal speed for where you are plus a verdict
-(`TOO FAST` / `ON PACE` / `COULD GO FASTER`). The ideal-speed profile uses
-the same physics planning as the AI — corner speeds from line curvature,
-anticipatory braking — plus an acceleration-reachability pass so it never
-demands speed the car can't actually build.
+(`TOO FAST` / `ON PACE` / `COULD GO FASTER`).
+
+The line is solved, not drawn: `src/idealLine.js` searches the lateral
+offset at every frame of the circuit for the lap-time minimum of the same
+point-mass model the AI plans with, using the whole road to the tyres'
+margin from the kerb. It is the car's own, because the model carries that
+car's grip, wing, brakes and gearing: the formula car turns in later and
+carries more speed where its wing works, the V8 brakes earlier and squares
+off its exits to get its torque down, the speedster leans on mechanical
+grip through the slow corners, and on the oval the GT3 runs the outside of
+the turns for radius while the flat-out formula car takes the shortest way
+round. The ideal-speed profile over that line is the AI's plan at full
+skill: corner speeds from the line's curvature with the aero load counted,
+anticipatory braking inside the friction circle, and an acceleration pass so
+it never demands speed the car can't actually build. Changing cars moves the
+chevrons as well as the speeds.
 
 ## Circuits
 
@@ -172,18 +184,28 @@ brakes:
   column, so turn-in has weight and full lock at speed means understeer, not
   a magic pivot.
 
-The AI runs the same per-car physics through a pre-computed lap speed profile
-(corner speeds from curvature and the selected car’s grip/aero, anticipatory
-braking from its brakes inside a friction circle, so a braking zone that would
-fall inside a bend is pushed back before it), pure-pursuit steering and
-stuck-recovery. Its pedal starts at the planned deceleration for its own
-brakes and tapers as the corner takes the tyre. In traffic a driver picks a clear lane past a slower car,
-checks it for cars alongside or closing from behind, and holds it until it is
-clear ahead. Gaps are measured along the track, so a car just over the start
-line is not mistaken for one a lap behind. The driver brakes for the path it
-is about to take, not only the centreline, and waits behind stopped traffic
-on the handbrake: the automatic gearbox reads the brake at a standstill as a
-request for reverse.
+The AI drives its own car's ideal line (above) with a speed profile planned
+from that car's limits, scaled by the driver's skill: corner speeds from the
+line's curvature and the car's grip with the aero load at that speed,
+braking from the lesser of its brake clamps and its tyres inside a friction
+circle (so a braking zone that would fall inside a bend is pushed back before
+it; the hard braking is done in a straight line and the pedal eases as the
+wheel turns), and exits from the gear the box holds. The planner used to
+reference every car to the GT3 at about half its braking, down the middle of
+the road; the field now laps 6-10 % quicker and uses the kerb-to-kerb width.
+The wheel is fed the line's own curvature a column's lag ahead, with pure
+pursuit (measured from the direction of travel, not the nose) for the error
+only, and yaw damping for a heavy nose that keeps rotating; the pedal starts
+at the planned deceleration for its own brakes, aims a little under the plan
+through braking zones, and tapers as the corner takes the tyre; traction
+control eases the throttle from the driven wheels' measured slip. In traffic a
+driver picks a clear lane past a slower car, checks it for cars alongside or
+closing from behind, and holds it until it is clear ahead; the lane is a
+deviation from the line, planned on its own bends, and it is only moved on
+the straights. Gaps are measured along the track, so a car just over the
+start line is not mistaken for one a lap behind. The driver waits behind
+stopped traffic on the handbrake: the automatic gearbox reads the brake at a
+standstill as a request for reverse.
 
 ## Sound
 
@@ -221,7 +243,7 @@ pass. `M` mutes; the choice is remembered.
   order, start lights mirroring the gantry, pace readout, a sharp minimap
   with a heading arrow, and a results card with the full classification.
 - **Tracks**: Catmull-Rom circuits with a vertex-coloured racing groove that
-  weaves with the racing line, 3D profiled rumble kerbs, dirt verges, skid
+  follows the GT3's solved ideal line, 3D profiled rumble kerbs, dirt verges, skid
   marks, gravel traps wired into the physics, armco with posts, debris
   fencing, a 12-bay pit complex, tiered grandstands with an instanced crowd,
   a lattice start gantry with light rig, brake markers, sponsor boards, tyre
@@ -268,10 +290,11 @@ src/
   sky.js        sky dome: gradient, sun glow, per-circuit horizon
   garage.js     menu showroom render
   car.js        visual + physics car: engine, gearbox, aero, tyres, render interpolation
-  ai.js         lap speed profile, pure pursuit, traffic, recovery
+  ai.js         drives the car's ideal line: speed plan, feed-forward steering, traffic, recovery
+  idealLine.js  lap-time-optimal line per car and circuit (the aid, the AI and the groove share it)
   tracks.js     circuit catalogue: centrelines + per-circuit themes
   track.js      circuit geometry, groove, kerbs, gravel, themed scenery
-  racingLine.js perfect-line aid: ideal line, speed profile, live colours
+  racingLine.js perfect-line aid: the car's line as chevrons, speed profile, live colours
   physics.js    Cannon world & contact materials
   controls.js   keyboard input with smoothing
   camera.js     chase / hood / cinematic cameras
@@ -281,6 +304,7 @@ src/
 scripts/
   physics-test.mjs  deterministic driving-model assertions (55 checks)
   ai-test.mjs       AI laps on every circuit plus traffic scenarios, in Node
+  line-test.mjs     every car's ideal line on every circuit: on the road, drivable, deterministic, quick
   viewshot.mjs      deterministic drive + multi-angle screenshots
   trackshots.mjs    every circuit: chase / high / trackside / aerial / oblique
   uishots.mjs       menu, HUD, cameras, split screen and results screen
@@ -317,9 +341,13 @@ lineups, distinct opponent models and independence from the starting grid.
 `node scripts/car-shapes.mjs` renders all registered cars in identical paint
 from the side, front and rear so shape differences can be reviewed directly.
 
-`node scripts/ai-test.mjs` laps every circuit and runs the passing, queueing
-and four-car scenarios through the real car, tracks, surfaces and barriers in
-Node. Nothing is rendered; only canvas drawing is stubbed. Pass a circuit ID
+`node scripts/line-test.mjs` solves every car's ideal line on every circuit
+and checks it stays inside the tyres' margin, bends no tighter than full lock,
+beats the centreline by a clear margin, differs between cars, carries a
+profile inside the car's grip, solves identically twice and in well under a
+second. `node scripts/ai-test.mjs` laps every circuit and runs the passing,
+queueing and four-car scenarios through the real car, tracks, surfaces and
+barriers in Node. Nothing is rendered; only canvas drawing is stubbed. Pass a circuit ID
 to run one, for example `node scripts/ai-test.mjs gp`.
 
 The **Verify game** pull-request workflow runs these checks, the driving-model

@@ -310,6 +310,88 @@ the 3D modelling much better."
   the balance test's 3 s slip window ends while the V8's slide is still
   growing (it peaks near 20° at 5 s).
 
+## Owner-requested: the ideal line and a more aggressive AI (2026-10-26)
+
+Branch `claude/affectionate-gauss-58niyr`, not a scheduled run. The owner's
+brief: "Improve the AI and ideal line in the game - there are a lot of
+corners you can cut and you can be more aggressive and the perfect line
+depends on the car."
+
+What was there: the AI pure-pursued the **centreline** (its lane offset was
+0 outside traffic) with a speed profile planned against the GT3 by ratio
+(13 m/s² of grip, 10 m/s² of braking, scaled by μ and brake clamps, then
+0.85 of that), so it braked at about half of what the cars measure (the GT3
+stops from 100 km/h at 16.4 m/s²; the plan used 8.5). The aid drew a
+heuristic groove (curvature × 900, capped at 3.2 m, heavily smoothed) that
+was the same for every car; only its speeds changed with the car.
+
+- **The line is solved** (`src/idealLine.js`). Coordinate descent with
+  raised-cosine bumps, coarse (176 m half-width, 2 m steps) to fine (11 m,
+  0.25 m), on the lateral offset at every frame, minimising the lap time of
+  the point-mass model in `planSpeedProfile`, inside the road to the tyres'
+  margin (`EDGE_MARGIN` 1.1 m from the kerb edge). Solved on every second
+  frame and interpolated back (within 0.2 s of a full-resolution solve at a
+  quarter of the cost), 150–250 ms per car and circuit in V8, cached per
+  circuit and car (`idealLineFor`). The groove and skid marks are baked from
+  the GT3's line at the circuit's build; `main.js` solves the other five in
+  the menu's idle time (`warmIdealLines`) so a race starts without a stall.
+  Predicted gains over the centreline, same model: 8–13 % on the road
+  circuits, 6–10 % on the oval. The lines differ by car (formula vs V8:
+  1.0–2.3 m rms on the road circuits; on the oval the GT3 runs the outside
+  of the turns and the flat-out formula car the inside).
+- **Limits from the car's own physics** (`getDrivingLimits` in
+  `src/carSpecs.js`, replacing `getCarPerformance`, `getCornerSpeed`,
+  `getLateralAcceleration` and `applyBrakingPasses`). Steady grip is μ less
+  0.2 × load sensitivity, referenced to the weaker axle (gripBalance under
+  1); downforce is counted in the corner speeds and the braking; braking is
+  the lesser of the brake clamps and the tyres; the exit is the force in the
+  gear the box holds (8 % off for shift cuts) inside the driven axle's share.
+  Skill scales the use: lateral 0.80 + 0.15 s, braking 0.72 + 0.20 s, top
+  speed 0.955 + 0.04 s (the aid is skill 1; rivals drive 0.78–0.86). The
+  cornering budget inside a braking or acceleration zone is cut by the load
+  sensitivity and again by front brake bias past 80 % (`combined`: GT3 0.85,
+  V8 0.80, speedster 0.74), and the braking pass plans on no less than a
+  fifth of the brakes, so the hard braking is done in a straight line.
+- **The AI drives the line** (`src/ai.js`). The wheel gets the path's own
+  curvature a column's lag ahead (0.25 s / steerRate), pure pursuit measured
+  from the direction of travel when the car is moving forward (from the
+  nose, a car at the limit with its nose a few degrees inside read as on
+  target and never came back out; rolling backwards out of a recovery the
+  nose is used again), a 0.45 s lookahead, and yaw damping (0.5 × the
+  body's rotation over the path's). Traffic is a deviation from the line,
+  planned on the lane's own bends, eased only on the straights and from
+  lanes 2.5 m inside the edge; with the wanted lane blocked the car holds
+  its place across the road rather than an offset from a line that sweeps
+  across it. The pedal aims 2.5 % under the plan in braking zones, judges
+  the friction circle on the current frame against the car's full grip (the
+  plan keeps the margin), with the turn rate read from the direction of
+  travel filtered over 0.1 s, and keeps a 45 % floor when a car ahead sets
+  the speed (a quarter otherwise, so a car beside another keeps its wheel).
+  Traction control from the car's own slip reading. "Pinned" for the stuck
+  recovery is judged on the throttle intent before traction control.
+- **The aid** (`src/racingLine.js`) lays its ribbon along the selected car's
+  line and takes that line's full-skill profile; `setCarSpec` moves the
+  chevrons as well as the colours.
+- **Measurements** (`scripts/ai-test.mjs`, GT3 at skill 0.85, standing
+  start): GP 91.7 → 84.8 s, oval 32.7 → 29.8, Marina 100.8 → 93.8, Col du
+  Pin 104.1 → 93.0, Red Mesa 96.9 → 89.8, Parco 85.5 → 79.2. Flying laps
+  run within 2 % of the car's own plan; tracking error 0.1–0.4 m rms for
+  every car on every circuit tried, with no wheel off the road at skill 0.85
+  or 1.0 (the aid's own plan is drivable). The four-car race keeps every car
+  on the road and the pole-sitter untouched.
+- **Checks.** New `scripts/line-test.mjs` (in the Verify game physics job):
+  every car's line on every circuit stays inside its margin, bends no
+  tighter than full lock, crosses the road under 31°, beats the centreline
+  by over 4 %, carries a profile inside the car's grip and under its top
+  speed, solves identically twice, differs between the formula car and the
+  V8 by over 0.5 m rms, and solves in under 1.5 s. `ai-test`,
+  `car-balance-test --all-tracks` and the browser `physics-test` are green.
+- **Not done / open.** The line stays on the asphalt; the kerbs are a real
+  step with less grip and nothing rides them yet. The oval's standing start
+  leaves the rivals a lap-and-a-bit's worth of drifting onto their line (the
+  grid is on the centreline, the line 6–8 m out). The AI's own stuck and
+  spin logic is as before.
+
 ## Changelog (accepted to `main`)
 
 - **2026-10-19** (accepted → `main` 2026-10-19, owner: "push to main"; was

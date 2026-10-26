@@ -29,6 +29,9 @@ jobs:
         run: |
           node scripts/world-audit.mjs
           node scripts/track-geometry.mjs qa/track-layouts
+      - name: Ideal line solver on every circuit and car
+        if: matrix.check == 'physics'
+        run: node scripts/line-test.mjs
       - name: AI laps and traffic regression suite
         if: matrix.check == 'physics'
         run: node scripts/ai-test.mjs
