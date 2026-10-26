@@ -404,6 +404,13 @@ was the same for every car; only its speeds changed with the car.
 
 ## Changelog (accepted to `main`)
 
+- **2026-10-26** (accepted → `main` 2026-10-26, owner: "i think there is a
+  branch that needs to be pushed to main"; was branch
+  `claude/affectionate-gauss-58niyr`, 96c6ef4..159104a; owner-directed, not
+  a routine run) — **The ideal line solved per car and circuit, and an AI
+  that drives it.** The full account, with the measurements and what is
+  still open, is the "Owner-requested: the ideal line and a more aggressive
+  AI (2026-10-26)" section above.
 - **2026-10-19** (accepted → `main` 2026-10-19, owner: "push to main"; was
   branch `claude/vibrant-thompson-ujml6z`, 97f3f42..e4ddc72; owner-directed,
   not a routine run) — **Six-car redesign and rebalance, and four review
