@@ -4,15 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Racer2 — Circuit Series</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%2305060a'/%3E%3Ctext x='8' y='12' text-anchor='middle' font-family='sans-serif' font-size='10' font-weight='800' fill='%23ff8055'%3ER%3C/text%3E%3C/svg%3E" />
-    <script type="module" crossorigin src="./assets/index-BG1h9_O_.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-BbbstTlV.css">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7.5' fill='%23cf3a1d'/%3E%3Ctext x='8' y='12.2' text-anchor='middle' font-family='Impact,sans-serif' font-size='11' fill='%23efe8da'%3E2%3C/text%3E%3C/svg%3E" />
+    <script type="module" crossorigin src="./assets/index-uxIUuHf_.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BVFGSVcx.css">
   </head>
   <body>
     <div id="loading">
       <div class="loading-inner">
-        <div class="title">RACER<span>2</span></div>
-        <div class="subtitle">LOADING ENVIRONMENT</div>
+        <div class="title">RACER<span class="roundel">2</span></div>
         <div class="bar"><div id="loading-fill"></div></div>
         <div id="loading-status">Initialising</div>
       </div>
@@ -20,72 +19,73 @@
 
     <div id="menu" class="hidden">
       <div class="race-menu">
-        <header class="menu-header">
-          <a class="wordmark" href="./" aria-label="Racer2 home">RACER<span>2</span><i></i></a>
-          <span class="header-caption">THE PURSUIT OF A PERFECT LAP</span>
-          <span class="edition"><span class="status-dot"></span> CIRCUIT SERIES <b>02</b></span>
+        <header class="masthead">
+          <a class="wordmark" href="./" aria-label="Racer2 home">RACER<span class="roundel">2</span></a>
+          <p class="masthead-note">Six circuits, six cars, three laps.<br>Keyboard only. Sound starts with the race.</p>
+          <p class="masthead-keys"><span>Drive <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows</span><span><kbd>F</kbd> full screen</span></p>
         </header>
         <main class="menu-layout">
-          <section class="garage-panel" aria-label="Your car">
-            <div class="eyebrow"><span class="eyebrow-line"></span> YOUR NEXT SESSION STARTS HERE</div>
-            <h1>Every corner.<br><em>All yours.</em></h1>
-            <p class="hero-copy">Choose your machine. Make the circuit yours.</p>
-            <div class="garage-stage"><canvas id="garage" aria-label="Rosso GT3 Coupe racing car"></canvas><span class="garage-caption" id="garage-caption">01 / GT3 COUPE</span></div>
+          <section class="garage-panel" aria-labelledby="entry-heading">
+            <h2 class="rubric" id="entry-heading">The entry <small>06 cars</small></h2>
+            <figure class="garage-stage">
+              <canvas id="garage" aria-label="Rosso GT3 Coupe racing car"></canvas>
+              <figcaption class="garage-caption" id="garage-caption">01 GT3 Coupe</figcaption>
+            </figure>
             <fieldset class="car-selector" aria-describedby="car-selection-note">
-              <legend>Your machine <span>01 — 06</span></legend>
+              <legend>Choose your car</legend>
               <div class="car-options"></div>
               <div id="car-performance" class="car-performance" aria-label="Relative car performance"></div>
               <p id="car-selection-note" aria-live="polite"></p>
               <p class="rating-note">Ratings compare this field. Acceleration counts the launch and the pull to 160 km/h.</p>
             </fieldset>
-            <div class="car-specs"><div><strong id="car-spec-power">555</strong><span>HORSEPOWER</span></div><div><strong id="car-spec-mass">1,300</strong><span>WEIGHT / KG</span></div><div><strong id="car-spec-gears">6</strong><span>SPEED AUTO</span></div></div>
-            <div class="garage-footer"><span>DRIVE WITH <kbd>W A S D</kbd> OR <kbd>↑ ← ↓ →</kbd></span><span>CHASE / HOOD / CINEMATIC</span></div>
+            <p class="car-specs"><span><strong id="car-spec-power">555</strong> hp</span><span><strong id="car-spec-mass">1,300</strong> kg</span><span><strong id="car-spec-gears">6</strong>-speed auto</span></p>
           </section>
           <section class="race-setup" aria-label="Race setup">
-            <div class="section-heading"><h2><span>01 /</span> Choose a circuit</h2><span>THE WORLD AWAITS</span></div>
+            <h2 class="rubric">The circuit <small>06 venues</small></h2>
             <div id="track-list" class="track-list"></div>
-            <div class="selected-circuit"><span id="circuit-description"></span><strong id="circuit-length"></strong></div>
-            <div class="section-heading mode-heading"><h2><span>02 /</span> Take the grid</h2></div>
+            <p class="selected-circuit"><span id="circuit-description"></span><strong id="circuit-length"></strong></p>
+            <h2 class="rubric mode-heading">The session</h2>
             <div class="mode-list">
-              <button class="mode featured" data-mode="quick-race"><span class="mode-icon" aria-hidden="true">▦</span><span><span class="mode-name">Start a race</span><span class="mode-desc">3 random rivals · 3 laps</span></span><span class="mode-arrow" aria-hidden="true">→</span></button>
-              <button class="mode" data-mode="time-trial"><span class="mode-icon" aria-hidden="true">02</span><span><span class="mode-name">Time trial</span><span class="mode-desc">An open track. Your fastest lap.</span></span><span class="mode-arrow" aria-hidden="true">↗</span></button>
-              <button class="mode" data-mode="two-player"><span class="mode-icon" aria-hidden="true">03</span><span><span class="mode-name">Two player</span><span class="mode-desc">Split screen · WASD vs. arrows</span></span><span class="mode-arrow" aria-hidden="true">↗</span></button>
+              <button class="mode featured" data-mode="quick-race"><span class="mode-main"><span class="mode-name">Start a race</span><span class="mode-desc">Three random rivals on the grid</span></span><span class="mode-stub" aria-hidden="true"><b>3</b>laps</span></button>
+              <button class="mode" data-mode="time-trial"><span class="mode-main"><span class="mode-name">Time trial</span><span class="mode-desc">One flying lap, empty track</span></span></button>
+              <button class="mode" data-mode="two-player"><span class="mode-main"><span class="mode-name">Two player</span><span class="mode-desc">Split screen, WASD vs arrows</span></span></button>
             </div>
-            <div class="graphics-settings"><div><label for="graphics-quality">GRAPHICS</label><p id="graphics-description">Adapts to keep your race smooth.</p></div><select id="graphics-quality"><option value="auto">Auto (recommended)</option><option value="performance">Performance</option><option value="balanced">Balanced</option><option value="high">High</option></select></div>
+            <div class="graphics-settings"><div><label for="graphics-quality">Graphics</label><p id="graphics-description">Adapts to keep your race smooth.</p></div><select id="graphics-quality"><option value="auto">Auto (recommended)</option><option value="performance">Performance</option><option value="balanced">Balanced</option><option value="high">High</option></select></div>
           </section>
         </main>
-        <footer class="menu-footer"><span>PRECISION. PACE. ONE MORE LAP.</span><span>KEYBOARD CONTROLS <span aria-hidden="true">/</span> SOUND ON AT START <span aria-hidden="true">/</span> F FOR FULL SCREEN</span></footer>
+        <footer class="menu-footer"><span>In the race</span><span><kbd>C</kbd> camera</span><span><kbd>L</kbd> racing line</span><span><kbd>M</kbd> sound</span><span><kbd>R</kbd> restart</span><span><kbd>P</kbd> pause</span><span><kbd>Esc</kbd> menu</span></footer>
       </div>
     </div>
 
     <div id="finish" class="hidden">
       <div class="finish-card" role="dialog" aria-labelledby="finish-title">
-        <div class="finish-eyebrow"><span class="status-dot"></span><span id="finish-mode">RACE COMPLETE</span><span id="finish-circuit"></span></div>
-        <div class="finish-title" id="finish-title">FINISH</div>
+        <div class="finish-eyebrow"><span id="finish-mode">RACE COMPLETE</span><span id="finish-circuit"></span></div>
+        <div class="finish-heading">
+          <div class="finish-title" id="finish-title">FINISH</div>
+          <span class="finish-stamp" aria-hidden="true">Provisional</span>
+        </div>
         <div class="finish-detail" id="finish-detail"></div>
         <div class="finish-stats" id="finish-stats"></div>
+        <div class="results-head" aria-hidden="true"><span>Pos</span><span>Driver</span><span>Time</span></div>
         <ol class="finish-results" id="finish-results"></ol>
         <div class="finish-actions">
-          <button class="mode" id="finish-restart"><span class="mode-name">Race again</span><span class="mode-arrow" aria-hidden="true">↻</span></button>
-          <button class="mode" id="finish-menu"><span class="mode-name">Main menu</span><span class="mode-arrow" aria-hidden="true">↗</span></button>
+          <button class="sheet-button primary" id="finish-restart">Race again</button>
+          <button class="sheet-button" id="finish-menu">Main menu</button>
         </div>
       </div>
     </div>
 
     <div id="pause" class="hidden">
-      <div class="finish-card pause-card" role="dialog" aria-labelledby="pause-title">
-        <div class="finish-eyebrow"><span class="status-dot"></span><span id="pause-mode">RACE</span><span id="pause-circuit"></span></div>
-        <div class="finish-title" id="pause-title">PAUSED</div>
-        <div class="finish-detail"><kbd>P</kbd> resume <span aria-hidden="true">·</span> <kbd>Esc</kbd> main menu</div>
-        <div class="finish-actions">
-          <button class="mode" id="pause-resume"><span class="mode-name">Resume</span><span class="mode-arrow" aria-hidden="true">▶</span></button>
-          <button class="mode" id="pause-menu"><span class="mode-name">Main menu</span><span class="mode-arrow" aria-hidden="true">↗</span></button>
-        </div>
+      <div class="pitboard" role="dialog" aria-labelledby="pause-title">
+        <div class="pitboard-head"><span id="pause-mode">RACE</span><span id="pause-circuit"></span></div>
+        <div class="pitboard-slat pitboard-title" id="pause-title">PAUSED</div>
+        <button class="pitboard-slat" id="pause-resume"><span>Resume</span><kbd>P</kbd></button>
+        <button class="pitboard-slat" id="pause-menu"><span>Menu</span><kbd>Esc</kbd></button>
       </div>
     </div>
 
     <div id="ui" class="hidden">
-      <div id="race-identity"><b>RACER<span>2</span><i></i></b><span id="race-circuit-name"></span></div>
+      <div id="race-identity"><b>RACER<span class="roundel">2</span></b><span id="race-circuit-name"></span></div>
       <ol id="standings" class="hidden" aria-label="Race order"></ol>
       <div id="graphics-status"></div>
       <div id="start-lights" class="hidden" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
