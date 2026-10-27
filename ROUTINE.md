@@ -420,15 +420,22 @@ typeface on."
   the canvas. If `--paper` changes, change `PAPER` in `garage.js` with it.
 - **Results and pause.** The finish card is a timing sheet (chequered band,
   "Provisional" stamp, the player's row highlighted); pause is a pit board.
-- **The HUD is instruments.** Follow-up brief: "Do the same type of thinking
-  for the HUD." A race-car dash bottom left (shift lights, speed, gear,
-  lap/best, pace row), a pit board top left (P and L) over a timing monitor,
-  the gantry's lights, LED marshal panels (lit dots over a dark dot grid) for
-  the banner and wrong-way, the programme map card bottom right and an index
-  card of controls. Split screen still shows player 1's instruments on the
-  left. All element ids the scripts read (`#pos-current`, `#standings`,
-  `#pace-pill`, `.track-card`, `button.mode[data-mode]`, `#garage-caption`,
-  the four meters, `#finish-restart` …) are kept.
+- **The HUD is instruments, printed flat.** Follow-up brief: "Do the same
+  type of thinking for the HUD." A race-car dash bottom left (shift bar,
+  speed, gear, lap/best, pace row), position and lap top left over the
+  running order, the gantry's lights, the headline and wrong-way blocks, the
+  circuit map bottom right and the controls. Split screen still shows player
+  1's instruments on the left. All element ids the scripts read
+  (`#pos-current`, `#standings`, `#pace-pill`, `.track-card`,
+  `button.mode[data-mode]`, `#garage-caption`, the four meters,
+  `#finish-restart` …) are kept.
+- **Rejected: skeuomorphic finishes.** The first HUD rendered those
+  instruments as objects: brushed-aluminium pit boards (HUD and pause),
+  glossy glowing LEDs, dot-matrix marshal panels, bevelled bezels. The owner:
+  "these screens look a little like 2004 pc game which i dont like". The HUD
+  is now the programme in negative (solid ink, paper type, one red, square
+  corners, no gradients, glows, shadows or textures) and pause is the
+  results sheet's paper card. Do not bring back metal, glow or LED effects.
 - **Menu speed.** Same follow-up: switching circuits and cars was "VERY slow
   and laggy". Measured in headless Chromium: a circuit switch held the page
   5.5-6.7 s, a car switch 150-720 ms, and the background line solves froze it

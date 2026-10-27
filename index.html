@@ -75,19 +75,22 @@
     </div>
 
     <div id="pause" class="hidden">
-      <div class="pitboard" role="dialog" aria-labelledby="pause-title">
-        <div class="pitboard-head"><span id="pause-mode">RACE</span><span id="pause-circuit"></span></div>
-        <div class="pitboard-slat pitboard-title" id="pause-title">PAUSED</div>
-        <button class="pitboard-slat" id="pause-resume"><span>Resume</span><kbd>P</kbd></button>
-        <button class="pitboard-slat" id="pause-menu"><span>Menu</span><kbd>Esc</kbd></button>
+      <div class="finish-card pause-card" role="dialog" aria-labelledby="pause-title">
+        <div class="finish-eyebrow"><span id="pause-mode">RACE</span><span id="pause-circuit"></span></div>
+        <div class="finish-title" id="pause-title">Paused</div>
+        <div class="finish-detail"><kbd>P</kbd> resume <span aria-hidden="true">&middot;</span> <kbd>Esc</kbd> main menu</div>
+        <div class="finish-actions">
+          <button class="sheet-button primary" id="pause-resume">Resume</button>
+          <button class="sheet-button" id="pause-menu">Main menu</button>
+        </div>
       </div>
     </div>
 
     <div id="ui" class="hidden">
-      <div id="pitboard">
+      <div id="race-status">
         <div id="race-identity"><b>RACER<span class="roundel">2</span></b></div>
-        <div class="board-slat hidden" id="hud-position-block"><span class="board-key">P</span><span id="pos-current">1</span><small>/<span id="pos-total">4</span></small></div>
-        <div class="board-slat"><span class="board-key">L</span><span id="lap-current">1</span><small>/<span id="lap-total">3</span></small></div>
+        <div class="status-row hidden" id="hud-position-block"><small>POS</small><span id="pos-current">1</span><small>/<span id="pos-total">4</span></small></div>
+        <div class="status-row"><small>LAP</small><span id="lap-current">1</span><small>/<span id="lap-total">3</span></small></div>
       </div>
       <ol id="standings" class="hidden" aria-label="Race order"></ol>
       <div id="graphics-status"></div>

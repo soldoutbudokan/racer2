@@ -1,15 +1,17 @@
 /**
- * Race HUD, built from the things a driver actually looks at: a race-car dash
- * (shift lights, speed, gear, lap and best times, the pace readout), a pit
- * board for position and lap, a timing monitor for the race order, the
- * gantry's start lights, LED marshal panels for the headlines, and the
- * programme's circuit map with every car's position and heading.
+ * Race HUD, built from the things a driver actually looks at (a race-car
+ * dash with its shift bar, speed, gear, lap and best times and the pace
+ * readout; position and lap; the running order; the gantry's start lights;
+ * the headlines; the circuit map with every car's position and heading) and
+ * printed flat, as the menu's programme in negative: ink blocks, paper type,
+ * one red.
  *
  * Everything that updates per frame writes only when the value it shows has
  * changed, so a 60 fps race does not rewrite the DOM 60 times a second.
  */
-// The programme's ink and red (--ink, --spot in style.css).
+// The programme's ink, paper and red (--ink, --paper, --spot in style.css).
 const INK = '#1b1813';
+const PAPER = '#ebe4d5';
 const SPOT = '#cf3a1d';
 
 export function createHud(maxSpeed = 320, engine = null) {
@@ -39,26 +41,26 @@ export function createHud(maxSpeed = 320, engine = null) {
   let bestTimer = null;
   let lightsTimer = null;
 
-  // ---- Shift lights ----
-  // A row of LEDs across the top of the dash, lit from the left with the
-  // revs: green through the pull, amber as they near the change-up point,
-  // red past it, and every lit LED blue at the change-up itself.
+  // ---- Shift bar ----
+  // A row of segments across the top of the dash, lit from the left with the
+  // revs: paper through the pull, amber as they near the change-up point,
+  // red past it, and the whole lit bar flashing red at the change-up itself.
   const SEGMENTS = 16;
   const shiftLights = document.getElementById('shift-lights');
   let segs = [], shiftFrac = 0.93;
   // The band is the player's car's: a formula car idles at 2,500 and shifts
-  // at 11,000, a big-block at 800 and 5,800. setEngine recolours the LEDs
-  // for the car on the grid.
+  // at 11,000, a big-block at 800 and 5,800. setEngine recolours the
+  // segments for the car on the grid.
   function setEngine(engine) {
     const idle = engine?.idleRpm ?? 1000;
     const redline = engine?.redlineRpm ?? 7600;
     shiftFrac = engine ? (engine.shiftUpRpm - idle) / (redline - idle) : 0.93;
     segs = [];
     for (let i = 0; i < SEGMENTS; i++) {
-      const led = document.createElement('i');
+      const seg = document.createElement('i');
       const t = (i + 0.5) / SEGMENTS;
-      led.className = t >= shiftFrac ? 'led-red' : t >= shiftFrac - 0.2 ? 'led-amber' : 'led-green';
-      segs.push(led);
+      seg.className = t >= shiftFrac ? 'seg-over' : t >= shiftFrac - 0.2 ? 'seg-near' : 'seg-pull';
+      segs.push(seg);
     }
     shiftLights.replaceChildren(...segs);
     litShown = -1;
@@ -133,8 +135,7 @@ export function createHud(maxSpeed = 320, engine = null) {
     }));
   }
 
-  // Big transient headline (lap changes, FINAL LAP, FINISH), lit on a
-  // trackside LED panel.
+  // Big transient headline (lap changes, FINAL LAP, FINISH).
   function flashBanner(text, ms = 1800) {
     raceBannerText.textContent = text;
     raceBanner.classList.remove('hidden');
@@ -234,7 +235,8 @@ export function createHud(maxSpeed = 320, engine = null) {
   // ----- Minimap -----
   // Drawn in a 220-unit logical space on a canvas with twice the pixels, so
   // the circuit stays sharp on high-density screens. It is the menu's
-  // programme map: ink on the paper card behind the canvas, red for the line.
+  // programme map in negative: paper on the ink card behind the canvas, red
+  // for the line.
   const minimap = document.getElementById('minimap');
   const mctx = minimap.getContext('2d');
   const LOGICAL = 220;
@@ -292,10 +294,10 @@ export function createHud(maxSpeed = 320, engine = null) {
     mctx.lineJoin = 'round';
     mctx.lineCap = 'round';
     mctx.lineWidth = 9;
-    mctx.strokeStyle = 'rgba(27, 24, 19, 0.12)';
+    mctx.strokeStyle = 'rgba(235, 228, 213, 0.12)';
     mctx.stroke(trackPath);
     mctx.lineWidth = 2.4;
-    mctx.strokeStyle = INK;
+    mctx.strokeStyle = PAPER;
     mctx.stroke(trackPath);
 
     if (startMarker) {
@@ -321,7 +323,7 @@ export function createHud(maxSpeed = 320, engine = null) {
         const hx = c.heading.x, hy = c.heading.z;
         mctx.beginPath();
         mctx.arc(x, y, 10, 0, Math.PI * 2);
-        mctx.fillStyle = 'rgba(207, 58, 29, 0.18)';
+        mctx.fillStyle = 'rgba(207, 58, 29, 0.3)';
         mctx.fill();
         mctx.beginPath();
         mctx.moveTo(x + hx * 8, y + hy * 8);
@@ -332,7 +334,7 @@ export function createHud(maxSpeed = 320, engine = null) {
         mctx.fillStyle = fill;
         mctx.fill();
         mctx.lineWidth = 1.6;
-        mctx.strokeStyle = INK;
+        mctx.strokeStyle = PAPER;
         mctx.stroke();
       } else {
         mctx.beginPath();
@@ -340,7 +342,7 @@ export function createHud(maxSpeed = 320, engine = null) {
         mctx.fillStyle = fill;
         mctx.fill();
         mctx.lineWidth = c.isPlayer ? 1.6 : 1.2;
-        mctx.strokeStyle = INK;
+        mctx.strokeStyle = c.isPlayer ? PAPER : INK;
         mctx.stroke();
       }
     }
