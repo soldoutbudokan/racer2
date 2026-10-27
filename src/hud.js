@@ -1,15 +1,19 @@
 /**
- * Race HUD: segmented tachometer with speed and gear, lap/time bar, pace
- * readout, start lights, race order, and a top-down minimap canvas that shows
- * the circuit and every car's position and heading.
+ * Race HUD, built from the things a driver actually looks at: a race-car dash
+ * (shift lights, speed, gear, lap and best times, the pace readout), a pit
+ * board for position and lap, a timing monitor for the race order, the
+ * gantry's start lights, LED marshal panels for the headlines, and the
+ * programme's circuit map with every car's position and heading.
  *
  * Everything that updates per frame writes only when the value it shows has
  * changed, so a 60 fps race does not rewrite the DOM 60 times a second.
  */
-const SVG_NS = 'http://www.w3.org/2000/svg';
+// The programme's ink and red (--ink, --spot in style.css).
+const INK = '#1b1813';
+const SPOT = '#cf3a1d';
 
 export function createHud(maxSpeed = 320, engine = null) {
-  const speedo = document.getElementById('speedo');
+  const dash = document.getElementById('dash');
   const speedNum = document.getElementById('speed-num');
   const gearNum = document.getElementById('gear-num');
   const lapCurrent = document.getElementById('lap-current');
@@ -21,6 +25,7 @@ export function createHud(maxSpeed = 320, engine = null) {
   const posCurrent = document.getElementById('pos-current');
   const posTotal = document.getElementById('pos-total');
   const raceBanner = document.getElementById('race-banner');
+  const raceBannerText = document.getElementById('race-banner-text');
   const wrongWay = document.getElementById('wrong-way');
   const pacePill = document.getElementById('pace-pill');
   const paceTarget = document.getElementById('pace-target');
@@ -34,62 +39,28 @@ export function createHud(maxSpeed = 320, engine = null) {
   let bestTimer = null;
   let lightsTimer = null;
 
-  // ---- Tachometer ----
-  // A 270° sweep of LED segments. Each segment is its own path so the lit
-  // count can change without rebuilding geometry, and each is coloured by its
-  // place in the rev band: ivory through the pull, amber as it nears the
-  // change-up point, red past it.
-  const cx = 120, cy = 120, rOuter = 106, rInner = 92;
-  const startA = Math.PI * 0.75;
-  const sweep = Math.PI * 1.5;
-  const SEGMENTS = 44;
-  const segGroup = document.getElementById('rpm-segments');
-  const ticks = document.getElementById('ticks');
-  const polar = (a, r) => `${(cx + Math.cos(a) * r).toFixed(2)} ${(cy + Math.sin(a) * r).toFixed(2)}`;
+  // ---- Shift lights ----
+  // A row of LEDs across the top of the dash, lit from the left with the
+  // revs: green through the pull, amber as they near the change-up point,
+  // red past it, and every lit LED blue at the change-up itself.
+  const SEGMENTS = 16;
+  const shiftLights = document.getElementById('shift-lights');
   let segs = [], shiftFrac = 0.93;
   // The band is the player's car's: a formula car idles at 2,500 and shifts
-  // at 11,000, a big-block at 800 and 5,800. setEngine rebuilds the segment
-  // colours and the numerals for the car on the grid.
+  // at 11,000, a big-block at 800 and 5,800. setEngine recolours the LEDs
+  // for the car on the grid.
   function setEngine(engine) {
     const idle = engine?.idleRpm ?? 1000;
     const redline = engine?.redlineRpm ?? 7600;
     shiftFrac = engine ? (engine.shiftUpRpm - idle) / (redline - idle) : 0.93;
-    segGroup.replaceChildren();
-    ticks.replaceChildren();
     segs = [];
     for (let i = 0; i < SEGMENTS; i++) {
-      const gap = 0.012;
-      const a0 = startA + (sweep * i) / SEGMENTS + gap;
-      const a1 = startA + (sweep * (i + 1)) / SEGMENTS - gap;
-      const p = document.createElementNS(SVG_NS, 'path');
-      p.setAttribute('d', `M ${polar(a0, rOuter)} A ${rOuter} ${rOuter} 0 0 1 ${polar(a1, rOuter)}`
-        + ` L ${polar(a1, rInner)} A ${rInner} ${rInner} 0 0 0 ${polar(a0, rInner)} Z`);
+      const led = document.createElement('i');
       const t = (i + 0.5) / SEGMENTS;
-      p.setAttribute('class', t >= shiftFrac ? 'seg seg-red' : t >= shiftFrac - 0.2 ? 'seg seg-amber' : 'seg');
-      segGroup.appendChild(p);
-      segs.push(p);
+      led.className = t >= shiftFrac ? 'led-red' : t >= shiftFrac - 0.2 ? 'led-amber' : 'led-green';
+      segs.push(led);
     }
-    // Numerals every 1000 rpm inside the band; every 2000 once the band is
-    // wide enough that thousands would crowd the dial.
-    const step = redline - idle > 8000 ? 2000 : 1000;
-    for (let k = Math.ceil(idle / step); k * step <= redline; k++) {
-      const t = (k * step - idle) / (redline - idle);
-      const a = startA + sweep * t;
-      const tick = document.createElementNS(SVG_NS, 'line');
-      const [x1, y1] = polar(a, rInner - 3).split(' ');
-      const [x2, y2] = polar(a, rInner - 9).split(' ');
-      tick.setAttribute('x1', x1); tick.setAttribute('y1', y1);
-      tick.setAttribute('x2', x2); tick.setAttribute('y2', y2);
-      tick.setAttribute('class', t >= shiftFrac ? 'tick tick-red' : 'tick');
-      ticks.appendChild(tick);
-      const label = document.createElementNS(SVG_NS, 'text');
-      const [lx, ly] = polar(a, rInner - 19).split(' ');
-      label.setAttribute('x', lx); label.setAttribute('y', (+ly + 3.5).toFixed(2));
-      label.setAttribute('text-anchor', 'middle');
-      label.setAttribute('class', t >= shiftFrac ? 'tick-label tick-red' : 'tick-label');
-      label.textContent = k * step / 1000;
-      ticks.appendChild(label);
-    }
+    shiftLights.replaceChildren(...segs);
     litShown = -1;
     shiftShown = null;
   }
@@ -110,7 +81,7 @@ export function createHud(maxSpeed = 320, engine = null) {
     if (kmh !== speedShown) { speedNum.textContent = kmh; speedShown = kmh; }
     if (gearLabel !== gearShown) { gearNum.textContent = gearLabel; gearShown = gearLabel; }
     const shift = t >= shiftFrac - 0.02;
-    if (shift !== shiftShown) { speedo.classList.toggle('shift', shift); shiftShown = shift; }
+    if (shift !== shiftShown) { dash.classList.toggle('shift', shift); shiftShown = shift; }
   }
 
   function setLap(curr, total) {
@@ -162,9 +133,10 @@ export function createHud(maxSpeed = 320, engine = null) {
     }));
   }
 
-  // Big transient headline (lap changes, FINAL LAP, FINISH).
+  // Big transient headline (lap changes, FINAL LAP, FINISH), lit on a
+  // trackside LED panel.
   function flashBanner(text, ms = 1800) {
-    raceBanner.textContent = text;
+    raceBannerText.textContent = text;
     raceBanner.classList.remove('hidden');
     raceBanner.classList.toggle('go', text === 'GO');
     if (bannerTimer) clearTimeout(bannerTimer);
@@ -261,7 +233,8 @@ export function createHud(maxSpeed = 320, engine = null) {
 
   // ----- Minimap -----
   // Drawn in a 220-unit logical space on a canvas with twice the pixels, so
-  // the circuit stays sharp on high-density screens.
+  // the circuit stays sharp on high-density screens. It is the menu's
+  // programme map: ink on the paper card behind the canvas, red for the line.
   const minimap = document.getElementById('minimap');
   const mctx = minimap.getContext('2d');
   const LOGICAL = 220;
@@ -318,21 +291,18 @@ export function createHud(maxSpeed = 320, engine = null) {
 
     mctx.lineJoin = 'round';
     mctx.lineCap = 'round';
-    mctx.lineWidth = 11;
-    mctx.strokeStyle = 'rgba(0, 0, 0, 0.45)';
+    mctx.lineWidth = 9;
+    mctx.strokeStyle = 'rgba(27, 24, 19, 0.12)';
     mctx.stroke(trackPath);
-    mctx.lineWidth = 7;
-    mctx.strokeStyle = 'rgba(120, 140, 150, 0.55)';
-    mctx.stroke(trackPath);
-    mctx.lineWidth = 2.2;
-    mctx.strokeStyle = 'rgba(236, 242, 244, 0.92)';
+    mctx.lineWidth = 2.4;
+    mctx.strokeStyle = INK;
     mctx.stroke(trackPath);
 
     if (startMarker) {
       const { x, y, nx, ny } = startMarker;
       mctx.lineWidth = 3;
       mctx.lineCap = 'butt';
-      mctx.strokeStyle = '#ff8055';
+      mctx.strokeStyle = SPOT;
       mctx.beginPath();
       mctx.moveTo(x - nx * 7, y - ny * 7);
       mctx.lineTo(x + nx * 7, y + ny * 7);
@@ -351,7 +321,7 @@ export function createHud(maxSpeed = 320, engine = null) {
         const hx = c.heading.x, hy = c.heading.z;
         mctx.beginPath();
         mctx.arc(x, y, 10, 0, Math.PI * 2);
-        mctx.fillStyle = 'rgba(255, 128, 85, 0.18)';
+        mctx.fillStyle = 'rgba(207, 58, 29, 0.18)';
         mctx.fill();
         mctx.beginPath();
         mctx.moveTo(x + hx * 8, y + hy * 8);
@@ -362,7 +332,7 @@ export function createHud(maxSpeed = 320, engine = null) {
         mctx.fillStyle = fill;
         mctx.fill();
         mctx.lineWidth = 1.6;
-        mctx.strokeStyle = '#fff';
+        mctx.strokeStyle = INK;
         mctx.stroke();
       } else {
         mctx.beginPath();
@@ -370,7 +340,7 @@ export function createHud(maxSpeed = 320, engine = null) {
         mctx.fillStyle = fill;
         mctx.fill();
         mctx.lineWidth = c.isPlayer ? 1.6 : 1.2;
-        mctx.strokeStyle = c.isPlayer ? '#fff' : 'rgba(5, 10, 14, 0.85)';
+        mctx.strokeStyle = INK;
         mctx.stroke();
       }
     }

@@ -402,7 +402,7 @@ was the same for every car; only its speeds changed with the car.
   grid is on the centreline, the line 6–8 m out). The AI's own stuck and
   spin logic is as before.
 
-## Owner-requested: menus that don't look generated (2026-10-27)
+## Owner-requested: menus and HUD that don't look generated, and a faster menu (2026-10-27)
 
 Branch `claude/stoic-hypatia-3blwb3`, not a scheduled run. The owner's brief:
 "The menu screens look very AI-y. Think outside the box and make it look less
@@ -420,10 +420,32 @@ typeface on."
   the canvas. If `--paper` changes, change `PAPER` in `garage.js` with it.
 - **Results and pause.** The finish card is a timing sheet (chequered band,
   "Provisional" stamp, the player's row highlighted); pause is a pit board.
-- **Not changed.** The in-race HUD keeps its dark glass and system type; only
-  its wordmark took the new roundel. All element ids and classes the scripts
-  use (`.track-card`, `button.mode[data-mode]`, `#garage-caption`, the four
-  meters, `#finish-restart` …) are kept.
+- **The HUD is instruments.** Follow-up brief: "Do the same type of thinking
+  for the HUD." A race-car dash bottom left (shift lights, speed, gear,
+  lap/best, pace row), a pit board top left (P and L) over a timing monitor,
+  the gantry's lights, LED marshal panels (lit dots over a dark dot grid) for
+  the banner and wrong-way, the programme map card bottom right and an index
+  card of controls. Split screen still shows player 1's instruments on the
+  left. All element ids the scripts read (`#pos-current`, `#standings`,
+  `#pace-pill`, `.track-card`, `button.mode[data-mode]`, `#garage-caption`,
+  the four meters, `#finish-restart` …) are kept.
+- **Menu speed.** Same follow-up: switching circuits and cars was "VERY slow
+  and laggy". Measured in headless Chromium: a circuit switch held the page
+  5.5-6.7 s, a car switch 150-720 ms, and the background line solves froze it
+  for 0.15-0.2 s five times after each switch. Now about 1.5-2 s, 30-40 ms
+  and none. How: `makeNoiseTexture(size, fn, key)` caches the painted canvas
+  for tiles that draw nothing from `rand()` (grass, sand, city ground,
+  gravel, pavement, crops, asphalt colour, verges, kerb normals, steel,
+  concrete) and still returns a new texture each build; the ground tiles of
+  unvisited circuits are painted ahead in idle slices (`prepaintGroundTiles`);
+  the showroom keeps every built car and its shaders, and prepares the rest
+  with `compileAsync`; ideal lines are solved in `idealLineWorker.js`, bit for
+  bit the same as on the page; the cloud and car-texture canvases are
+  `willReadFrequently` so their readbacks never wait on the GPU. Every
+  circuit's vertices and every texture are unchanged against the previous
+  commit except the five cloud sprites, which moved under half a level on
+  average (CPU anti-aliasing). The asphalt chip maps and the kerb paint draw
+  from the circuit's stream and are still painted per build.
 
 ## Changelog (accepted to `main`)
 
