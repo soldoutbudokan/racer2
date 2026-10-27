@@ -465,7 +465,8 @@ typeface on."
 
 - **2026-10-27** (accepted → `main` 2026-10-27, owner: "2 is the best by far.
   just swap the dial and the map ... when done push to main"; was branch
-  `claude/stoic-hypatia-3blwb3`; owner-directed, not a routine run) — **The
+  `claude/stoic-hypatia-3blwb3`, 95a708f..1aa69f0; owner-directed, not a
+  routine run) — **The
   programme menus, a faster menu and the programme-dial HUD.** The full
   account is the "Owner-requested: menus and HUD that don't look generated,
   and a faster menu (2026-10-27)" section above. Known and not fixed here:
