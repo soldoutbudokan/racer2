@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Racer2 — Circuit Series</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7.5' fill='%23cf3a1d'/%3E%3Ctext x='8' y='12.2' text-anchor='middle' font-family='Impact,sans-serif' font-size='11' fill='%23efe8da'%3E2%3C/text%3E%3C/svg%3E" />
-    <script type="module" crossorigin src="./assets/index-DwDOv0kj.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-v--godnb.css">
+    <script type="module" crossorigin src="./assets/index-B_cbf4z8.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CnY4xeRL.css">
   </head>
   <body>
     <div id="loading">
@@ -88,35 +88,19 @@
     </div>
 
     <div id="ui" class="hidden">
-      <div id="race-status">
-        <div id="race-identity"><b>RACER<span class="roundel">2</span></b></div>
-        <div class="status-row hidden" id="hud-position-block"><small>POS</small><span id="pos-current">1</span><small>/<span id="pos-total">4</span></small></div>
-        <div class="status-row"><small>LAP</small><span id="lap-current">1</span><small>/<span id="lap-total">3</span></small></div>
+      <div id="race-tags">
+        <div class="tag big hidden" id="hud-position-block"><span id="pos-current">1</span><sup id="pos-suffix">ST</sup><small> / <span id="pos-total">4</span></small></div>
+        <div class="tag">LAP <span id="lap-current">1</span> OF <span id="lap-total">3</span></div>
+        <div class="tag mono"><span id="lap-time">00:00.000</span><span id="hud-best-block">BEST <span id="best-time">--:--.---</span></span></div>
+        <ol id="standings" class="hidden" aria-label="Race order"></ol>
       </div>
-      <ol id="standings" class="hidden" aria-label="Race order"></ol>
       <div id="graphics-status"></div>
       <div id="start-lights" class="hidden" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
       <div id="race-banner" class="hidden"><span id="race-banner-text"></span></div>
       <div id="wrong-way" class="hidden"><span>⟲ WRONG WAY</span></div>
 
       <div id="hud-bottom">
-        <div id="dash">
-          <div id="shift-lights" aria-hidden="true"></div>
-          <div class="dash-screen">
-            <div class="dash-speed"><span id="speed-num">0</span><small>KM/H</small></div>
-            <div class="dash-gear"><small>GEAR</small><span id="gear-num">N</span></div>
-            <div class="dash-times">
-              <div><small>LAP</small><span id="lap-time">00:00.000</span></div>
-              <div id="hud-best-block"><small>BEST</small><span id="best-time">--:--.---</span></div>
-            </div>
-          </div>
-          <div id="pace-pill" class="hidden">
-            <span class="pace-label">IDEAL</span>
-            <span id="pace-target">0</span>
-            <span class="pace-unit">KM/H</span>
-            <span id="pace-delta" class="pace-on">ON PACE</span>
-          </div>
-        </div>
+        <div id="dash"><svg id="dial" viewBox="0 0 300 300" aria-hidden="true"></svg></div>
         <div id="minimap-wrap">
           <div class="minimap-label" id="race-circuit-name"></div>
           <canvas id="minimap" width="440" height="440"></canvas>
