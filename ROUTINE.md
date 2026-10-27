@@ -420,22 +420,29 @@ typeface on."
   the canvas. If `--paper` changes, change `PAPER` in `garage.js` with it.
 - **Results and pause.** The finish card is a timing sheet (chequered band,
   "Provisional" stamp, the player's row highlighted); pause is a pit board.
-- **The HUD is instruments, printed flat.** Follow-up brief: "Do the same
-  type of thinking for the HUD." A race-car dash bottom left (shift bar,
-  speed, gear, lap/best, pace row), position and lap top left over the
-  running order, the gantry's lights, the headline and wrong-way blocks, the
-  circuit map bottom right and the controls. Split screen still shows player
-  1's instruments on the left. All element ids the scripts read
-  (`#pos-current`, `#standings`, `#pace-pill`, `.track-card`,
-  `button.mode[data-mode]`, `#garage-caption`, the four meters,
-  `#finish-restart` …) are kept.
+- **The HUD is the programme dial.** Follow-up briefs: "Do the same type of
+  thinking for the HUD", then, after a flat version and a broadcast-scorebug
+  version, "start with a bunch of different options you present to me" and
+  "I kinda like the HUD having the radar like you would with a car (like a
+  needle)". Five needle-gauge directions were mocked up over the same race
+  frame (twin road-car dials, a paper programme dial, a racing tach with the
+  shift point at 12, a minimal arc, a chronograph). The owner: "2 is the
+  best by far. just swap the dial and the map". So: a paper speed dial
+  bottom left (hud.js draws it as SVG), red needle, revs as a red band,
+  gear in the red hub, speed in a window, the ideal-speed notch on the rim
+  (`#pace-pill`, red when over); the dial's scale follows the car's top
+  speed (240 to 360 km/h). Paper tags top left (position with ordinal, lap,
+  time and best) over a paper running-order strip; the circuit card bottom
+  right. All element ids the scripts read (`#pos-current`, `#standings`,
+  `#pace-pill`, `.track-card`, `button.mode[data-mode]`, `#garage-caption`,
+  the four meters, `#finish-restart` …) are kept.
 - **Rejected: skeuomorphic finishes.** The first HUD rendered those
   instruments as objects: brushed-aluminium pit boards (HUD and pause),
   glossy glowing LEDs, dot-matrix marshal panels, bevelled bezels. The owner:
-  "these screens look a little like 2004 pc game which i dont like". The HUD
-  is now the programme in negative (solid ink, paper type, one red, square
-  corners, no gradients, glows, shadows or textures) and pause is the
-  results sheet's paper card. Do not bring back metal, glow or LED effects.
+  "these screens look a little like 2004 pc game which i dont like". Pause
+  became the results sheet's paper card. A flat ink-and-paper HUD and a
+  broadcast scorebug followed and were not taken up either. Do not bring
+  back metal, chrome, gloss, glow or LED effects.
 - **Menu speed.** Same follow-up: switching circuits and cars was "VERY slow
   and laggy". Measured in headless Chromium: a circuit switch held the page
   5.5-6.7 s, a car switch 150-720 ms, and the background line solves froze it
@@ -455,6 +462,16 @@ typeface on."
   from the circuit's stream and are still painted per build.
 
 ## Changelog (accepted to `main`)
+
+- **2026-10-27** (accepted → `main` 2026-10-27, owner: "2 is the best by far.
+  just swap the dial and the map ... when done push to main"; was branch
+  `claude/stoic-hypatia-3blwb3`; owner-directed, not a routine run) — **The
+  programme menus, a faster menu and the programme-dial HUD.** The full
+  account is the "Owner-requested: menus and HUD that don't look generated,
+  and a faster menu (2026-10-27)" section above. Known and not fixed here:
+  `physics-test`'s two barrier-recovery checks fail whenever its random
+  roster puts the formula car or the V8 first among the rivals (about two
+  runs in five, on `main` before this work too).
 
 - **2026-10-26** (accepted → `main` 2026-10-26, owner: "i think there is a
   branch that needs to be pushed to main"; was branch

@@ -1,23 +1,39 @@
 /**
- * Race HUD, built from the things a driver actually looks at (a race-car
- * dash with its shift bar, speed, gear, lap and best times and the pace
- * readout; position and lap; the running order; the gantry's start lights;
- * the headlines; the circuit map with every car's position and heading) and
- * printed flat, as the menu's programme in negative: ink blocks, paper type,
- * one red.
+ * Race HUD in the menu's programme style: paper tags for position, lap and
+ * times, a paper strip for the running order, the programme's circuit card
+ * for the map, and a paper speed dial with a red needle, the revs as a red
+ * band and the gear in a red race-number hub.
  *
  * Everything that updates per frame writes only when the value it shows has
  * changed, so a 60 fps race does not rewrite the DOM 60 times a second.
  */
-// The programme's ink, paper and red (--ink, --paper, --spot in style.css).
+import { getTerminalSpeed } from './carSpecs.js';
+
+const SVG_NS = 'http://www.w3.org/2000/svg';
+// The programme's ink and red (--ink, --spot in style.css).
 const INK = '#1b1813';
-const PAPER = '#ebe4d5';
 const SPOT = '#cf3a1d';
+
+// The dial in its 300-unit viewBox. Angles run clockwise from 12 o'clock.
+const CX = 150, CY = 150, R = 140, A0 = -130, A1 = 130, BAND_R = R - 56;
+function polar(r, a) {
+  const t = a * Math.PI / 180;
+  return [CX + r * Math.sin(t), CY - r * Math.cos(t)];
+}
+function arcPath(r, a0, a1) {
+  const [x0, y0] = polar(r, a0), [x1, y1] = polar(r, a1);
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 ${a1 - a0 > 180 ? 1 : 0} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`;
+}
+function svg(tag, attrs, parent) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  parent.appendChild(el);
+  return el;
+}
 
 export function createHud(maxSpeed = 320, engine = null) {
   const dash = document.getElementById('dash');
-  const speedNum = document.getElementById('speed-num');
-  const gearNum = document.getElementById('gear-num');
+  const dial = document.getElementById('dial');
   const lapCurrent = document.getElementById('lap-current');
   const lapTotal = document.getElementById('lap-total');
   const lapTime = document.getElementById('lap-time');
@@ -25,13 +41,11 @@ export function createHud(maxSpeed = 320, engine = null) {
   const bestBlock = document.getElementById('hud-best-block');
   const posBlock = document.getElementById('hud-position-block');
   const posCurrent = document.getElementById('pos-current');
+  const posSuffix = document.getElementById('pos-suffix');
   const posTotal = document.getElementById('pos-total');
   const raceBanner = document.getElementById('race-banner');
   const raceBannerText = document.getElementById('race-banner-text');
   const wrongWay = document.getElementById('wrong-way');
-  const pacePill = document.getElementById('pace-pill');
-  const paceTarget = document.getElementById('pace-target');
-  const paceDelta = document.getElementById('pace-delta');
   const startLights = document.getElementById('start-lights');
   const lamps = [...startLights.querySelectorAll('i')];
   const standings = document.getElementById('standings');
@@ -41,49 +55,90 @@ export function createHud(maxSpeed = 320, engine = null) {
   let bestTimer = null;
   let lightsTimer = null;
 
-  // ---- Shift bar ----
-  // A row of segments across the top of the dash, lit from the left with the
-  // revs: paper through the pull, amber as they near the change-up point,
-  // red past it, and the whole lit bar flashing red at the change-up itself.
-  const SEGMENTS = 16;
-  const shiftLights = document.getElementById('shift-lights');
-  let segs = [], shiftFrac = 0.93;
-  // The band is the player's car's: a formula car idles at 2,500 and shifts
-  // at 11,000, a big-block at 800 and 5,800. setEngine recolours the
-  // segments for the car on the grid.
+  // ---- Speed dial ----
+  // Speed on the needle; the revs as a red band filling inside the numerals,
+  // blinking at the change-up; the gear in the hub; the speed again in
+  // figures in the window under it; and, with the racing-line aid on, a
+  // notch on the rim at the ideal speed for this point of the lap.
+  svg('circle', { cx: CX, cy: CY, r: R, class: 'dial-face' }, dial);
+  const scale = svg('g', {}, dial);
+  svg('path', { d: arcPath(BAND_R, A0, A1), class: 'dial-band-track' }, dial);
+  const revs = svg('path', { d: '', class: 'dial-revs' }, dial);
+  const pace = svg('g', { id: 'pace-pill', class: 'hidden' }, dial);
+  svg('path', { d: `M${CX - 9} ${CY - R + 3}L${CX + 9} ${CY - R + 3}L${CX} ${CY - R + 21}Z` }, pace);
+  svg('rect', { x: CX - 38, y: CY + 52, width: 76, height: 28, class: 'dial-window' }, dial);
+  const speedNum = svg('text', { id: 'speed-num', x: CX, y: CY + 72, class: 'dial-speed' }, dial);
+  svg('text', { x: CX, y: CY + 98, class: 'dial-unit' }, dial).textContent = 'KM/H';
+  const needle = svg('path', {
+    d: `M${CX - 4} ${CY + 26}L${CX - 1.4} ${CY - 124}L${CX + 1.4} ${CY - 124}L${CX + 4} ${CY + 26}Z`,
+    class: 'dial-needle',
+  }, dial);
+  svg('circle', { cx: CX, cy: CY, r: 27, class: 'dial-hub' }, dial);
+  const gearNum = svg('text', { id: 'gear-num', x: CX, y: CY + 1, class: 'dial-gear' }, dial);
+
+  // A speedometer reads to just past the car's own top speed: the formula
+  // car's stops at 240, the hypercar's runs to 360. The rev band is the
+  // car's too: a formula car idles at 2,500 and shifts at 11,000, a big-block
+  // at 800 and 5,800.
+  let dialMax = 320, shiftFrac = 0.93;
+  const angle = (kmh) => A0 + (A1 - A0) * Math.max(0, Math.min(1, kmh / dialMax));
   function setEngine(engine) {
     const idle = engine?.idleRpm ?? 1000;
     const redline = engine?.redlineRpm ?? 7600;
     shiftFrac = engine ? (engine.shiftUpRpm - idle) / (redline - idle) : 0.93;
-    segs = [];
-    for (let i = 0; i < SEGMENTS; i++) {
-      const seg = document.createElement('i');
-      const t = (i + 0.5) / SEGMENTS;
-      seg.className = t >= shiftFrac ? 'seg-over' : t >= shiftFrac - 0.2 ? 'seg-near' : 'seg-pull';
-      segs.push(seg);
+    const top = engine?.massKg ? getTerminalSpeed(engine).speed * 3.6 : maxSpeed;
+    dialMax = 40 * Math.ceil((top + 15) / 40);
+    scale.replaceChildren();
+    for (let v = 0; v <= dialMax; v += 10) {
+      const major = v % 20 === 0, a = angle(v);
+      const [x0, y0] = polar(R - 6, a), [x1, y1] = polar(R - (major ? 20 : 12), a);
+      svg('line', { x1: x0, y1: y0, x2: x1, y2: y1, class: major ? 'dial-tick major' : 'dial-tick' }, scale);
+      if (v % 40) continue;
+      const [lx, ly] = polar(R - 41, a);
+      svg('text', { x: lx, y: ly, class: 'dial-label', 'font-size': dialMax > 320 ? 21 : 24 }, scale).textContent = v;
     }
-    shiftLights.replaceChildren(...segs);
-    litShown = -1;
-    shiftShown = null;
+    needleShown = null; revsShown = -1; shiftShown = null; paceShown = '';
   }
 
-  let litShown = -1, speedShown = null, gearShown = null, shiftShown = null;
+  let needleShown = null, revsShown = -1, speedShown = null, gearShown = null, shiftShown = null;
+  let paceShown = '';
   setEngine(engine);
-  // The tach shows engine RPM when provided; falls back to speed fraction.
+  // The band shows engine revs when provided; falls back to speed.
   function setSpeed(speedKmh, gearLabel, rpmFrac) {
     const t = rpmFrac != null
       ? Math.max(0, Math.min(1, rpmFrac))
       : Math.max(0, Math.min(1, speedKmh / maxSpeed));
-    const lit = Math.round(t * SEGMENTS);
-    if (lit !== litShown) {
-      for (let i = 0; i < SEGMENTS; i++) segs[i].classList.toggle('on', i < lit);
-      litShown = lit;
+    const a = angle(speedKmh);
+    if (needleShown === null || Math.abs(a - needleShown) > 0.1) {
+      needle.setAttribute('transform', `rotate(${a.toFixed(2)} ${CX} ${CY})`);
+      needleShown = a;
+    }
+    const band = Math.round(t * 200);
+    if (band !== revsShown) {
+      revs.setAttribute('d', band ? arcPath(BAND_R, A0, A0 + (A1 - A0) * band / 200) : '');
+      revsShown = band;
     }
     const kmh = Math.round(speedKmh);
     if (kmh !== speedShown) { speedNum.textContent = kmh; speedShown = kmh; }
     if (gearLabel !== gearShown) { gearNum.textContent = gearLabel; gearShown = gearLabel; }
     const shift = t >= shiftFrac - 0.02;
     if (shift !== shiftShown) { dash.classList.toggle('shift', shift); shiftShown = shift; }
+  }
+
+  // Racing-line aid: the notch sits at the ideal speed, and turns red once
+  // the car is more than 3 km/h over it.
+  function setPace(targetKmh, deltaKmh) {
+    pace.classList.remove('hidden');
+    const a = angle(targetKmh), over = deltaKmh > 3;
+    const key = `${a.toFixed(1)}|${over}`;
+    if (key === paceShown) return;
+    paceShown = key;
+    pace.setAttribute('transform', `rotate(${a.toFixed(2)} ${CX} ${CY})`);
+    pace.classList.toggle('over', over);
+  }
+  function hidePace() {
+    pace.classList.add('hidden');
+    paceShown = '';
   }
 
   function setLap(curr, total) {
@@ -109,6 +164,7 @@ export function createHud(maxSpeed = 320, engine = null) {
     const key = `${curr}/${total}`;
     if (key === posShown) return;
     posCurrent.textContent = curr;
+    posSuffix.textContent = ordinal(curr);
     posTotal.textContent = total;
     posShown = key;
   }
@@ -186,37 +242,6 @@ export function createHud(maxSpeed = 320, engine = null) {
     hintShown = visible;
   }
 
-  // Perfect-line pace readout: ideal speed at the player's position plus a
-  // colour-coded verdict against their actual speed.
-  let paceShown = '';
-  function setPace(targetKmh, deltaKmh) {
-    pacePill.classList.remove('hidden');
-    let cls, text;
-    if (deltaKmh > 3) {
-      cls = 'pace-over';
-      text = `+${Math.round(deltaKmh)} TOO FAST`;
-    } else if (deltaKmh < -8) {
-      cls = 'pace-under';
-      text = `−${Math.round(-deltaKmh)} COULD GO FASTER`;
-    } else {
-      cls = 'pace-on';
-      text = 'ON PACE';
-    }
-    const target = Math.round(targetKmh);
-    const key = `${target}|${text}`;
-    if (key === paceShown) return;
-    paceShown = key;
-    paceTarget.textContent = target;
-    paceDelta.textContent = text;
-    paceDelta.className = cls;
-    pacePill.dataset.state = cls;
-  }
-
-  function hidePace() {
-    pacePill.classList.add('hidden');
-    paceShown = '';
-  }
-
   // Clear any transient overlays (called on start / reset / stop).
   function clearAnnouncements() {
     if (bannerTimer) { clearTimeout(bannerTimer); bannerTimer = null; }
@@ -235,8 +260,7 @@ export function createHud(maxSpeed = 320, engine = null) {
   // ----- Minimap -----
   // Drawn in a 220-unit logical space on a canvas with twice the pixels, so
   // the circuit stays sharp on high-density screens. It is the menu's
-  // programme map in negative: paper on the ink card behind the canvas, red
-  // for the line.
+  // programme map: ink on the paper card behind the canvas, red for the line.
   const minimap = document.getElementById('minimap');
   const mctx = minimap.getContext('2d');
   const LOGICAL = 220;
@@ -294,10 +318,10 @@ export function createHud(maxSpeed = 320, engine = null) {
     mctx.lineJoin = 'round';
     mctx.lineCap = 'round';
     mctx.lineWidth = 9;
-    mctx.strokeStyle = 'rgba(235, 228, 213, 0.12)';
+    mctx.strokeStyle = 'rgba(27, 24, 19, 0.14)';
     mctx.stroke(trackPath);
     mctx.lineWidth = 2.4;
-    mctx.strokeStyle = PAPER;
+    mctx.strokeStyle = INK;
     mctx.stroke(trackPath);
 
     if (startMarker) {
@@ -323,7 +347,7 @@ export function createHud(maxSpeed = 320, engine = null) {
         const hx = c.heading.x, hy = c.heading.z;
         mctx.beginPath();
         mctx.arc(x, y, 10, 0, Math.PI * 2);
-        mctx.fillStyle = 'rgba(207, 58, 29, 0.3)';
+        mctx.fillStyle = 'rgba(207, 58, 29, 0.2)';
         mctx.fill();
         mctx.beginPath();
         mctx.moveTo(x + hx * 8, y + hy * 8);
@@ -334,7 +358,7 @@ export function createHud(maxSpeed = 320, engine = null) {
         mctx.fillStyle = fill;
         mctx.fill();
         mctx.lineWidth = 1.6;
-        mctx.strokeStyle = PAPER;
+        mctx.strokeStyle = INK;
         mctx.stroke();
       } else {
         mctx.beginPath();
@@ -342,7 +366,7 @@ export function createHud(maxSpeed = 320, engine = null) {
         mctx.fillStyle = fill;
         mctx.fill();
         mctx.lineWidth = c.isPlayer ? 1.6 : 1.2;
-        mctx.strokeStyle = c.isPlayer ? PAPER : INK;
+        mctx.strokeStyle = INK;
         mctx.stroke();
       }
     }
@@ -357,6 +381,12 @@ export function createHud(maxSpeed = 320, engine = null) {
     show, hide,
     buildMinimap, drawMinimap,
   };
+}
+
+// 1ST, 2ND, 3RD, 4TH.
+function ordinal(n) {
+  if (n % 100 >= 11 && n % 100 <= 13) return 'TH';
+  return ['TH', 'ST', 'ND', 'RD'][n % 10] ?? 'TH';
 }
 
 function colorString(hex) {

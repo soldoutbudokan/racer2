@@ -251,14 +251,17 @@ pass. `M` mutes; the choice is remembered.
   tickets. Results print as a timing sheet with your line highlighted; pause
   is a pit board. The preview keeps correct proportions at every screen size,
   and nothing animates in 3D while choosing a race.
-- **HUD**: the menu's programme printed in negative: flat ink blocks, paper
-  type and one red, with no gradients, glows or textures. A race-car dash
-  with a segmented shift bar (paper, then amber, then red, flashing at the
-  change-up), speed, gear, lap and best times and the pace readout; position
-  and lap; the running order with your line in red; the start gantry's five
-  columns of lights; the lap headlines and wrong-way warning set big on a
-  block; and the circuit map with every car and the player's heading. Pause
-  is a paper card that matches the results sheet.
+- **HUD**: the menu's programme carried onto the track. A paper speed dial,
+  bottom left, with a red needle, the revs as a red band that fills inside
+  the numerals (blinking at the change-up), the gear in a red race-number
+  hub and the speed in figures in a window beneath. Its scale is the car's:
+  the formula car's dial reads to 240 km/h, the hypercar's to 360. With the
+  racing-line aid on, a notch on the rim marks the ideal speed and turns red
+  when you are over it. Position ("2ND / 4"), lap and times sit on paper
+  tags top left over the running order; the circuit card, bottom right, shows
+  every car and your heading. The start gantry's five columns of lights,
+  headline tags and a red wrong-way tag complete it. Pause is a paper card
+  that matches the results sheet.
 - **Tracks**: Catmull-Rom circuits with a vertex-coloured racing groove that
   follows the GT3's solved ideal line, 3D profiled rumble kerbs, dirt verges, skid
   marks, gravel traps wired into the physics, armco with posts, debris
