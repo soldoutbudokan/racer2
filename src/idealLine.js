@@ -60,6 +60,23 @@ export function idealLineFor(track, spec = getCarSpec()) {
   return line;
 }
 
+/** Whether `spec`'s line on `track` is already solved. */
+export function hasIdealLine(track, spec) {
+  return cache.get(track.frames)?.has(spec.id) ?? false;
+}
+
+/**
+ * Keep a line solved elsewhere (the menu's worker) as `spec`'s line on
+ * `track`, unless one was solved here first. The worker sends everything but
+ * the driving limits, which hold functions; they are the solver's own
+ * getDrivingLimits(spec, 1).
+ */
+export function adoptIdealLine(track, spec, line) {
+  let byCar = cache.get(track.frames);
+  if (!byCar) cache.set(track.frames, byCar = new Map());
+  if (!byCar.has(spec.id)) byCar.set(spec.id, { ...line, limits: getDrivingLimits(spec, 1) });
+}
+
 // Line geometry over a set of frames for an offset array: points, chords and
 // the signed Menger curvature (the circle through each point and the points
 // `reach` frames either side), rebuilt over any window.

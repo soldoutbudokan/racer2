@@ -1054,7 +1054,7 @@ export function makeAsphaltMaterial() {
     // Asphalt aggregate is slate, a hair blue of neutral. The sky fill adds
     // its own blue in shade, so any more than this reads as a navy road.
     return [v * 0.985, v * 0.99, v * 1.015];
-  }, 0.12));
+  }, 0.12), 'asphalt');
   colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping;
   colorTex.anisotropy = 16;
   colorTex.colorSpace = THREE.SRGBColorSpace;
@@ -1177,42 +1177,31 @@ export function makeKerbMaterial() {
   tex.anisotropy = 8;
 
   // Normal map: sharp rib flanks so the ribs read as discrete castings even
-  // though the geometric ripple is only ~11 mm, plus concrete grain.
-  const nrm = document.createElement('canvas');
-  nrm.width = nrm.height = SZ;
-  {
-    const nctx = nrm.getContext('2d');
-    const img = nctx.createImageData(SZ, SZ);
-    const height = (x, y) => {
-      const u = (x % HALF) / HALF;
-      const vb = (y % HALF) / HALF;          // 0..1 within one rib
-      let hgt = fractalNoise(x / SZ * 40, y / SZ * 40, 3) * 0.10;
-      if (u > TOP[0] && u < TOP[1]) {
-        // Groove at the rib boundary, flat crown between.
-        hgt += smoothstep(0.0, 0.055, vb) * (1 - smoothstep(0.94, 1.0, vb)) * 0.8;
-        for (const fy of [0.36, 0.68]) {
-          hgt -= 0.25 * (1 - smoothstep(0, 0.02, Math.abs(vb - fy)));
-        }
-      } else if (u <= TOP[0]) {
-        hgt += smoothstep(0.0, 0.055, vb) * (1 - smoothstep(0.94, 1.0, vb)) * 0.35;
+  // though the geometric ripple is only ~11 mm, plus concrete grain. Unlike
+  // the paint above it draws nothing from rand(), so it is painted once per
+  // page (makeNoiseTexture's key); the texel centres map back to whole pixels.
+  const height = (x, y) => {
+    const u = (x % HALF) / HALF;
+    const vb = (y % HALF) / HALF;          // 0..1 within one rib
+    let hgt = fractalNoise(x / SZ * 40, y / SZ * 40, 3) * 0.10;
+    if (u > TOP[0] && u < TOP[1]) {
+      // Groove at the rib boundary, flat crown between.
+      hgt += smoothstep(0.0, 0.055, vb) * (1 - smoothstep(0.94, 1.0, vb)) * 0.8;
+      for (const fy of [0.36, 0.68]) {
+        hgt -= 0.25 * (1 - smoothstep(0, 0.02, Math.abs(vb - fy)));
       }
-      return hgt;
-    };
-    for (let y = 0; y < SZ; y++) {
-      for (let x = 0; x < SZ; x++) {
-        const dx = (height(x + 1, y) - height(x - 1, y)) * 2.2;
-        const dy = (height(x, y + 1) - height(x, y - 1)) * 2.2;
-        const len = Math.hypot(-dx, -dy, 1);
-        const i = (y * SZ + x) * 4;
-        img.data[i] = ((-dx / len) * 0.5 + 0.5) * 255;
-        img.data[i + 1] = ((-dy / len) * 0.5 + 0.5) * 255;
-        img.data[i + 2] = ((1 / len) * 0.5 + 0.5) * 255;
-        img.data[i + 3] = 255;
-      }
+    } else if (u <= TOP[0]) {
+      hgt += smoothstep(0.0, 0.055, vb) * (1 - smoothstep(0.94, 1.0, vb)) * 0.35;
     }
-    nctx.putImageData(img, 0, 0);
-  }
-  const normalTex = new THREE.CanvasTexture(nrm);
+    return hgt;
+  };
+  const normalTex = makeNoiseTexture(SZ, (u, v) => {
+    const x = u * SZ, y = v * SZ;
+    const dx = (height(x + 1, y) - height(x - 1, y)) * 2.2;
+    const dy = (height(x, y + 1) - height(x, y - 1)) * 2.2;
+    const len = Math.hypot(-dx, -dy, 1);
+    return [(-dx / len) * 0.5 + 0.5, (-dy / len) * 0.5 + 0.5, (1 / len) * 0.5 + 0.5];
+  }, 'kerb-normal');
   normalTex.wrapS = THREE.ClampToEdgeWrapping;
   normalTex.wrapT = THREE.RepeatWrapping;
   normalTex.anisotropy = 8;
@@ -1280,7 +1269,7 @@ export function makeVergeMaterial(ground = 'grass') {
     const t = smoothstep(0, 1, (y - (1 - band)) / band);
     const a = raw(x, y), b = raw(x, y - 1);
     return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
-  });
+  }, `verge-${ground}`);
   tex.wrapS = THREE.ClampToEdgeWrapping;
   tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(1, 60);

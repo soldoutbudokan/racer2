@@ -85,28 +85,90 @@ export function makeTileable(fn, band = 0.15) {
   };
 }
 
-export function makeNoiseTexture(size, fn) {
-  const c = document.createElement('canvas');
-  c.width = size; c.height = size;
-  const ctx = c.getContext('2d');
+/**
+ * Painted canvases, kept for the life of the page by name. The ground,
+ * verge and barrier tiles are pure functions of the hash noise and their
+ * own constants, so repainting them on every circuit switch (the grass alone
+ * is a 1024² tile, about 2.5 s) bought nothing. Only the pixels are shared:
+ * every call still returns a new texture over the canvas, because track.js
+ * disposes every texture it finds when the circuit changes, and a shared
+ * texture would come back disposed. A caller passes a key only when its
+ * colour function draws nothing from rand() and depends on nothing but what
+ * the key names. An entry can be part painted (prepaintNoiseTexture); the
+ * first build to need it paints the rest.
+ */
+const painted = new Map();
+
+function paintJob(size, fn) {
+  const canvas = document.createElement('canvas');
+  canvas.width = size; canvas.height = size;
+  const ctx = canvas.getContext('2d');
   const img = ctx.createImageData(size, size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const [r, g, b] = fn(x / size, y / size);
-      const i = (y * size + x) * 4;
-      img.data[i] = Math.min(255, Math.max(0, r * 255));
-      img.data[i + 1] = Math.min(255, Math.max(0, g * 255));
-      img.data[i + 2] = Math.min(255, Math.max(0, b * 255));
-      img.data[i + 3] = 255;
-    }
+  let y = 0;
+  let done = false;
+  return {
+    canvas,
+    // Paints rows while `more()` allows; true once the canvas is finished.
+    run(more = () => true) {
+      for (; y < size && more(); y++) {
+        for (let x = 0; x < size; x++) {
+          const [r, g, b] = fn(x / size, y / size);
+          const i = (y * size + x) * 4;
+          img.data[i] = Math.min(255, Math.max(0, r * 255));
+          img.data[i + 1] = Math.min(255, Math.max(0, g * 255));
+          img.data[i + 2] = Math.min(255, Math.max(0, b * 255));
+          img.data[i + 3] = 255;
+        }
+      }
+      if (y < size) return false;
+      if (!done) { ctx.putImageData(img, 0, 0); done = true; }
+      return true;
+    },
+  };
+}
+
+function texture(id, makeJob) {
+  let job = id && painted.get(id);
+  if (!job) {
+    job = makeJob();
+    if (id) painted.set(id, job);
   }
-  ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(c);
+  job.run();
+  const tex = new THREE.CanvasTexture(job.canvas);
   tex.needsUpdate = true;
   return tex;
 }
 
+export function makeNoiseTexture(size, fn, key) {
+  return texture(key === undefined ? null : `${key}@${size}`, () => paintJob(size, fn));
+}
+
+/**
+ * Paint a keyed tile ahead of need, a few rows per idle slice (or 8 ms per
+ * timer tick where the browser has no requestIdleCallback), so the first
+ * circuit to use it does not stop for it.
+ */
+export function prepaintNoiseTexture(size, fn, key) {
+  const id = `${key}@${size}`;
+  let job = painted.get(id);
+  if (!job) painted.set(id, job = paintJob(size, fn));
+  const idle = typeof requestIdleCallback === 'function';
+  const step = (deadline) => {
+    const start = performance.now();
+    const more = idle ? () => deadline.timeRemaining() > 2 : () => performance.now() - start < 8;
+    if (!job.run(more)) idle ? requestIdleCallback(step) : setTimeout(step, 50);
+  };
+  idle ? requestIdleCallback(step) : setTimeout(step, 50);
+}
+
 export function makeNormalTexture(size, strength) {
+  return texture(`normal-${strength}@${size}`, () => {
+    const canvas = paintNormalCanvas(size, strength);
+    return { canvas, run: () => true };
+  });
+}
+
+function paintNormalCanvas(size, strength) {
   const heights = new Float32Array(size * size);
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
@@ -137,9 +199,7 @@ export function makeNormalTexture(size, strength) {
     }
   }
   ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(c);
-  tex.needsUpdate = true;
-  return tex;
+  return c;
 }
 
 /**

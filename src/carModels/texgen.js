@@ -55,10 +55,12 @@ export function fractalNoise(x, y, oct = 4) {
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp01 = (t) => (t < 0 ? 0 : t > 1 ? 1 : t);
 
+// Read back by normalFromCanvas and the tyre grime pass, so kept in CPU
+// memory (see clouds.js canvasTex).
 function makeCanvas(w, h) {
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
-  return { c, ctx: c.getContext('2d') };
+  return { c, ctx: c.getContext('2d', { willReadFrequently: true }) };
 }
 
 // Wrap a finished canvas as a texture. Band maps (tread, sidewall, disc) must

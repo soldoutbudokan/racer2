@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import {
-  smoothstep, fractalNoise, makeTileable, makeNoiseTexture, makeNormalTexture,
+  smoothstep, fractalNoise, makeTileable, makeNoiseTexture, makeNormalTexture, prepaintNoiseTexture,
   hideFromOverridePasses,
 } from './scenery/noise.js';
 import { makeTerrain } from './scenery/terrain.js';
@@ -530,13 +530,11 @@ function addGravelTraps(scene, frames, curvature, gravelFrames, D) {
 
 // ---------- Materials ----------
 
-function makeGrassMaterial() {
-  // Multi-scale grass: micro blade noise, macro patchiness, dry/wet variation,
-  // subtle mowing bands. Richer saturation for a well-maintained circuit.
-  // makeTileable folds the noise across the tile edges — the raw texture
-  // repeats ~38× over the terrain and every seam printed a plaid grid on
-  // overhead views.
-  const tex = makeNoiseTexture(1024, makeTileable((x, y) => {
+// The ground tiles: colour functions of nothing but the hash noise, so each is
+// painted once per page (makeNoiseTexture's key) and, for the circuits not yet
+// built, ahead of need (prepaintGroundTiles).
+const GROUND_TILES = {
+  grass: makeTileable((x, y) => {
     const blades = fractalNoise(x * 65, y * 65, 5);
     const patch = fractalNoise(x * 5 + 9, y * 5 + 3, 4);
     const dry = fractalNoise(x * 11 + 31, y * 11 + 17, 3);
@@ -551,7 +549,38 @@ function makeGrassMaterial() {
     let r = g * (0.56 + dry * 0.40);
     let b = g * (0.37 + lush * 0.10);
     return [r, g, b];
-  }));
+  }),
+  'city-ground': makeTileable((x, y) => {
+    const grain = fractalNoise(x * 30, y * 30, 4);
+    const patch = fractalNoise(x * 5 + 2, y * 5 + 9, 3);
+    const stain = fractalNoise(x * 2 + 7, y * 2 + 1, 3);
+    // Light urban concrete — the old 0.205 base rendered as a black void
+    // around the whole circuit.
+    const v = 0.315 + grain * 0.07 + patch * 0.06 - stain * 0.06;
+    return [v * 0.99, v, v * 1.03];
+  }),
+  sand: makeTileable((x, y) => {
+    const grain = fractalNoise(x * 40, y * 40, 4);
+    const dune = fractalNoise(x * 3 + 5, y * 3 + 2, 3);
+    const ripple = 0.5 + 0.5 * Math.sin(y * Math.PI * 58 + dune * 6);
+    let v = 0.52 + grain * 0.10 + dune * 0.10;
+    v *= 0.97 + 0.05 * ripple;
+    return [v * 1.08, v * 0.93, v * 0.66];
+  }),
+};
+
+/** Paint the ground tiles of the circuits not yet visited in idle time. */
+export function prepaintGroundTiles() {
+  for (const [key, fn] of Object.entries(GROUND_TILES)) prepaintNoiseTexture(1024, fn, key);
+}
+
+function makeGrassMaterial() {
+  // Multi-scale grass: micro blade noise, macro patchiness, dry/wet variation,
+  // subtle mowing bands. Richer saturation for a well-maintained circuit.
+  // makeTileable folds the noise across the tile edges — the raw texture
+  // repeats ~38× over the terrain and every seam printed a plaid grid on
+  // overhead views.
+  const tex = makeNoiseTexture(1024, GROUND_TILES.grass, 'grass');
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(38, 38);
   tex.anisotropy = 16;
@@ -583,7 +612,7 @@ function makeGravelMaterial() {
     // ambient light, so the albedo must be bright for the trap to read sandy.
     const v = (0.62 + n * 0.24) * rake;
     return [v * 1.04, v * 0.96, v * 0.74];
-  });
+  }, 'gravel');
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 8;
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -1585,15 +1614,7 @@ function makeGroundMaterial(kind) {
 
 // Broad expanse of city pavement/plaza concrete around a street circuit.
 function makeCityGroundMaterial() {
-  const tex = makeNoiseTexture(1024, makeTileable((x, y) => {
-    const grain = fractalNoise(x * 30, y * 30, 4);
-    const patch = fractalNoise(x * 5 + 2, y * 5 + 9, 3);
-    const stain = fractalNoise(x * 2 + 7, y * 2 + 1, 3);
-    // Light urban concrete — the old 0.205 base rendered as a black void
-    // around the whole circuit.
-    const v = 0.315 + grain * 0.07 + patch * 0.06 - stain * 0.06;
-    return [v * 0.99, v, v * 1.03];
-  }));
+  const tex = makeNoiseTexture(1024, GROUND_TILES['city-ground'], 'city-ground');
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(60, 60);
   tex.anisotropy = 8;
@@ -1610,14 +1631,7 @@ function makeCityGroundMaterial() {
 
 // Warm desert sand with faint wind ripples.
 function makeSandMaterial() {
-  const tex = makeNoiseTexture(1024, makeTileable((x, y) => {
-    const grain = fractalNoise(x * 40, y * 40, 4);
-    const dune = fractalNoise(x * 3 + 5, y * 3 + 2, 3);
-    const ripple = 0.5 + 0.5 * Math.sin(y * Math.PI * 58 + dune * 6);
-    let v = 0.52 + grain * 0.10 + dune * 0.10;
-    v *= 0.97 + 0.05 * ripple;
-    return [v * 1.08, v * 0.93, v * 0.66];
-  }));
+  const tex = makeNoiseTexture(1024, GROUND_TILES.sand, 'sand');
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(50, 50);
   tex.anisotropy = 8;
@@ -1804,7 +1818,7 @@ function addSidewalks(scene, frames, D) {
     const joint = (y * 34) % 1 < 0.06 ? -0.10 : 0;
     const v = 0.42 + grain * 0.10 + joint;
     return [v, v * 0.99, v * 0.96];
-  });
+  }, 'pavement');
   paveTex.wrapS = paveTex.wrapT = THREE.RepeatWrapping;
   paveTex.repeat.set(1, 200);
   const paveMat = new THREE.MeshStandardMaterial({
@@ -2073,7 +2087,7 @@ function addFarmland(scene, frames, D) {
         tint[1] * row * (0.85 + n * 0.3),
         tint[2] * row * (0.85 + n * 0.3),
       ];
-    });
+    }, `crop-${rows}-${tint}`);
     tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
     tex.anisotropy = 8;
     tex.colorSpace = THREE.SRGBColorSpace;

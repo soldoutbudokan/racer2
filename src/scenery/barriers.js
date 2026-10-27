@@ -415,10 +415,11 @@ function domeInto(acc, cx, cy, cz, radius, rise, seg, colour, rimColour, axis = 
 // Textures
 // ---------------------------------------------------------------------------
 
-// NOTE: these are built fresh on every call, never cached in a module-level
+// NOTE: each call returns a new texture, never one cached in a module-level
 // singleton. track.js's disposeObject3D() walks every material and disposes
 // every texture it finds when the player switches circuits — a shared cached
 // texture would come back disposed (and render black) on the second load.
+// The painted canvas underneath is shared (makeNoiseTexture's key).
 
 function steelTexture() {
   // Hot-dip galvanised sheet: a spangle of crystal facets, faint roll marks
@@ -438,7 +439,7 @@ function steelTexture() {
     const rust = Math.max(0, fractalNoise(u * 5.5 - 3, v * 5.5 + 8, 3) - 0.70) * 2.2;
     return [r + rust * 0.20, gg + rust * 0.07, b - rust * 0.04];
   }, 0.18);
-  const tex = makeNoiseTexture(128, fn);
+  const tex = makeNoiseTexture(128, fn, 'galvanised-steel');
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 8;
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -456,7 +457,7 @@ function concreteTexture() {
     g -= hole * 0.22;
     return [g * 1.005, g * 0.995, g * 0.965];
   }, 0.16);
-  const tex = makeNoiseTexture(128, fn);
+  const tex = makeNoiseTexture(128, fn, 'concrete');
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.anisotropy = 8;
   tex.colorSpace = THREE.SRGBColorSpace;

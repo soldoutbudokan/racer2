@@ -2,11 +2,11 @@ import * as THREE from 'three';
 
 import { createScene } from './scene.js';
 import { createGarage } from './garage.js';
-import { initCarSelector } from './carSelection.js';
+import { CAR_CHOICES, initCarSelector } from './carSelection.js';
 import { createStartingGrid } from './grid.js';
 import { createRaceRoster } from './raceRoster.js';
 import { createPhysicsWorld } from './physics.js';
-import { createTrack } from './track.js';
+import { createTrack, prepaintGroundTiles } from './track.js';
 import { TRACKS, DEFAULT_TRACK_ID, getTrackById } from './tracks.js';
 import { createCar, ENGINE_BAND } from './car.js';
 import {
@@ -19,7 +19,7 @@ import { createChaseCamera } from './camera.js';
 import { createHud, formatMs } from './hud.js';
 import { createAIDriver } from './ai.js';
 import { createRacingLine } from './racingLine.js';
-import { idealLineFor } from './idealLine.js';
+import { idealLineFor, hasIdealLine, adoptIdealLine } from './idealLine.js';
 import { CAR_SPECS } from './carSpecs.js';
 import { createAudio } from './audio.js';
 import { STATIC_CHASSIS_HEIGHT } from './stance.js';
@@ -238,6 +238,7 @@ async function bootstrap() {
 
   const renderGarage = createGarage(renderer, scene.environment);
   ctx.renderGarage = () => renderGarage(ctx.selectedCar);
+  ctx.prepareGarageCar = renderGarage.prepare;
   ctx.selectedCar = initCarSelector((choice) => {
     ctx.selectedCar = choice;
     ctx.renderGarage();
@@ -282,6 +283,8 @@ async function bootstrap() {
     }
   });
   showMenu(ctx);
+  warmShowroom(ctx);
+  prepaintGroundTiles();
 
   // Start the loop now — it idles until a mode is active.
   function loop(now) {
@@ -332,6 +335,11 @@ function buildTrackSelector(container, ctx, rebuildTrack) {
     document.getElementById('circuit-length').textContent = `${(ctx.track.length / 1000).toFixed(2)} KM`;
   }
   const cards = [];
+  const mark = (card) => cards.forEach(c => {
+    const on = c === card;
+    c.classList.toggle('selected', on);
+    c.setAttribute('aria-pressed', String(on));
+  });
   for (const [index, def] of TRACKS.entries()) {
     const btn = document.createElement('button');
     const selected = def.id === ctx.selectedTrackId;
@@ -357,11 +365,18 @@ function buildTrackSelector(container, ctx, rebuildTrack) {
       container.setAttribute('aria-busy', 'true');
       document.querySelectorAll('button.mode[data-mode]').forEach(b => b.disabled = true);
       document.getElementById('circuit-description').textContent = 'Preparing circuit…';
+      // The pick is marked before the build, which holds the page for a
+      // second or more, so the click answers at once.
+      const previous = cards.find(c => c.classList.contains('selected'));
+      mark(btn);
       await frame(); await frame();
       try {
         rebuildTrack(def);
-        cards.forEach(c => { const on = c === btn; c.classList.toggle('selected', on); c.setAttribute('aria-pressed', String(on)); });
         updateDetail();
+      } catch (error) {
+        mark(previous);
+        updateDetail();
+        throw error;
       } finally {
         container.setAttribute('aria-busy', 'false');
         document.querySelectorAll('button.mode[data-mode]').forEach(b => b.disabled = false);
@@ -374,25 +389,66 @@ function buildTrackSelector(container, ctx, rebuildTrack) {
 
 // Every car's ideal line on a circuit is solved the first time something
 // needs it (idealLine.js, ~0.2 s each in the browser). The groove's build
-// solves the GT3's; the other five are solved here in the menu's idle time,
-// one per callback, so picking a car or starting a race against three rivals
-// finds them ready instead of stalling the click. A line asked for before its
-// turn is simply solved then. Switching circuits starts a new chain and ends
-// the old one (its track is gone), and a chain waits while a race runs: a
-// 0.2 s solve in the game loop is a hitch, and the race has already solved
-// what it needs.
+// solves the GT3's; the other five are solved here, ahead of need, so picking
+// a car or starting a race against three rivals finds them ready instead of
+// stalling the click. They are solved in a worker: on the page's thread each
+// solve was a 0.15-0.2 s freeze, five of them in the seconds after every
+// circuit switch. A line asked for before the worker sends it is simply
+// solved then, and the worker's copy is dropped. Switching circuits ends the
+// old worker (its track is gone) and starts a new one. Without workers the
+// lines are solved on the page in its idle time, one per callback, waiting
+// while a race runs, where a 0.2 s solve would be a hitch.
 let warmGeneration = 0;
+let lineWorker = null;
 function warmIdealLines(ctx) {
   const generation = ++warmGeneration;
   const track = ctx.track;
-  const ids = Object.keys(CAR_SPECS);
+  const specs = Object.values(CAR_SPECS).filter((spec) => !hasIdealLine(track, spec));
+  lineWorker?.terminate();
+  lineWorker = null;
+  if (!specs.length) return;
+  const onPage = () => {
+    const schedule = (fn) => (typeof requestIdleCallback === 'function'
+      ? requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 60));
+    let i = 0;
+    const step = () => {
+      if (generation !== warmGeneration || ctx.track !== track) return;
+      if (!ctx.mode) idealLineFor(track, specs[i++]);
+      if (i < specs.length) schedule(step);
+    };
+    schedule(step);
+  };
+  if (typeof Worker !== 'function') { onPage(); return; }
+  const points = new Float64Array(track.frames.length * 5);
+  track.frames.forEach((f, i) => points.set([f.pos.x, f.pos.y, f.pos.z, f.left.x, f.left.z], i * 5));
+  const worker = lineWorker = new Worker(new URL('./idealLineWorker.js', import.meta.url), { type: 'module' });
+  let received = 0;
+  worker.onmessage = ({ data: { specId, line } }) => {
+    adoptIdealLine(track, CAR_SPECS[specId], line);
+    if (++received === specs.length) { worker.terminate(); if (lineWorker === worker) lineWorker = null; }
+  };
+  worker.onerror = (event) => {
+    event.preventDefault();
+    worker.terminate();
+    if (lineWorker === worker) lineWorker = null;
+    if (generation === warmGeneration) onPage();
+  };
+  worker.postMessage({ points, width: track.width, specIds: specs.map((spec) => spec.id) }, [points.buffer]);
+}
+
+// The showroom builds a car the first time it is picked: the body, its
+// painted textures and its shaders, a few hundred ms in all. The cars not yet
+// shown are built here in the menu's idle time, one per callback, each
+// waiting for its shaders to finish compiling before the next starts, so a
+// pick finds its car ready. Like the line chain, it waits while a race runs.
+function warmShowroom(ctx) {
+  const queue = CAR_CHOICES.filter((choice) => choice.id !== ctx.selectedCar.id);
   const schedule = (fn) => (typeof requestIdleCallback === 'function'
     ? requestIdleCallback(fn, { timeout: 4000 }) : setTimeout(fn, 60));
-  let i = 0;
   const step = () => {
-    if (generation !== warmGeneration || ctx.track !== track) return;
-    if (!ctx.mode) idealLineFor(track, CAR_SPECS[ids[i++]]);
-    if (i < ids.length) schedule(step);
+    if (!queue.length) return;
+    if (ctx.mode) { schedule(step); return; }
+    ctx.prepareGarageCar(queue.shift()).then(() => schedule(step));
   };
   schedule(step);
 }

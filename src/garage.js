@@ -61,38 +61,33 @@ export function createGarage(renderer, environment) {
   const fill = new THREE.DirectionalLight(0xffe1c3, 1.0);
   fill.position.set(5, 2, 4); scene.add(fill);
 
-  let car = null;
+  // Every car built for the showroom stays in it, hidden while another is
+  // shown. Rebuilding on each pick disposed the car's own materials, and
+  // with them their compiled shaders, so every switch (even back to a car
+  // already seen) recompiled them: 70-190 ms of each click in profiles.
+  const built = new Map();
+  let shown = null;
   let currentChoice = getCarChoice();
-  const bounds = new THREE.Box3();
-  const framingPoints = [];
   const framingPoint = new THREE.Vector3();
   const up = new THREE.Vector3(0, 1, 0);
-  function selectCar(choice) {
-    if (car && choice.id === currentChoice.id) return;
-    if (car) {
-      scene.remove(car.root, ...car.wheels);
-      // Preserve the shared hull, wheel templates, paint and trim.
-      car.dispose();
-    }
-    currentChoice = choice;
+  function build(choice) {
+    let entry = built.get(choice.id);
+    if (entry) return entry;
     // Each car sits over its wheels at its own height and wheelbase.
     const stance = showroomStance(choice.id);
-    car = buildVisualCar(choice.id, choice.color, { hubLocalY: stance.hubLocalY });
+    const car = buildVisualCar(choice.id, choice.color, { hubLocalY: stance.hubLocalY });
     car.root.position.y = stance.chassisHeight;
     car.shadow.position.y = -stance.chassisHeight + 0.012;
     car.root.rotation.y = -0.12;
-    scene.add(car.root);
     for (let i = 0; i < 4; i++) {
       const wheel = car.wheels[i];
       wheel.position.set((i % 2 ? -1 : 1) * (stance.halfTrack + 0.02), WHEEL_RADIUS,
         i < 2 ? stance.halfWheelbase : -stance.halfWheelbase);
       wheel.position.applyAxisAngle(up, car.root.rotation.y);
       wheel.rotation.y += car.root.rotation.y;
-      scene.add(wheel);
     }
-    bounds.makeEmpty();
-    framingPoints.length = 0;
-    for (const part of [car.root, ...car.wheels]) {
+    entry = { parts: [car.root, ...car.wheels], bounds: new THREE.Box3(), framingPoints: [] };
+    for (const part of entry.parts) {
       part.updateMatrixWorld(true);
       part.traverse(object => {
         // The contact-shadow plane is larger than the body. Frame the actual
@@ -102,11 +97,23 @@ export function createGarage(renderer, environment) {
         if (!positions) return;
         for (let i = 0; i < positions.count; i++) {
           framingPoint.fromBufferAttribute(positions, i).applyMatrix4(object.matrixWorld);
-          bounds.expandByPoint(framingPoint);
-          framingPoints.push(framingPoint.x, framingPoint.y, framingPoint.z);
+          entry.bounds.expandByPoint(framingPoint);
+          entry.framingPoints.push(framingPoint.x, framingPoint.y, framingPoint.z);
         }
       });
+      part.visible = false;
+      scene.add(part);
     }
+    built.set(choice.id, entry);
+    return entry;
+  }
+  function selectCar(choice) {
+    currentChoice = choice;
+    const entry = build(choice);
+    if (entry === shown) return;
+    if (shown) for (const part of shown.parts) part.visible = false;
+    for (const part of entry.parts) part.visible = true;
+    shown = entry;
   }
 
   const floorTexture = paintTexture([1024, 1024], (g, w, h) => {
@@ -145,7 +152,7 @@ export function createGarage(renderer, environment) {
   const oldSize = new THREE.Vector2();
   const oldViewport = new THREE.Vector4();
   const oldScissor = new THREE.Vector4();
-  return function render(choice = currentChoice) {
+  function render(choice = currentChoice) {
     const canvas = document.getElementById('garage');
     const { width, height } = canvas.getBoundingClientRect();
     if (!width || !height) return;
@@ -153,6 +160,7 @@ export function createGarage(renderer, environment) {
     const ratio = Math.min(window.devicePixelRatio || 1, 1.5);
     canvas.width = Math.round(width * ratio); canvas.height = Math.round(height * ratio);
     camera.aspect = width / height;
+    const { bounds, framingPoints } = shown;
     bounds.getCenter(target);
     const vertical = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
     let distance = 0;
@@ -210,5 +218,21 @@ export function createGarage(renderer, environment) {
       renderer.setScissor(oldScissor);
       renderer.setScissorTest(oldScissorTest);
     }
+  }
+  // Builds a car into the showroom ahead of its first pick and compiles its
+  // shaders without holding the page (in parallel where the browser has
+  // KHR_parallel_shader_compile), so that pick costs one still, not a build.
+  render.prepare = (choice) => {
+    build(getCarChoice(choice?.id));
+    // Programs are keyed on the target (tone mapping applies only on the
+    // canvas), so compile for the canvas the stills are drawn on.
+    const target = renderer.getRenderTarget();
+    renderer.setRenderTarget(null);
+    try {
+      return renderer.compileAsync(scene, camera);
+    } finally {
+      renderer.setRenderTarget(target);
+    }
   };
+  return render;
 }

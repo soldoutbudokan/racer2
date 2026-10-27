@@ -56,6 +56,9 @@ function mulberry32(seed) {
 // Textures
 // ---------------------------------------------------------------------------
 
+// The cloud canvases are read back (getImageData) to feather and warp them.
+// willReadFrequently keeps them in CPU memory: on a GPU-backed canvas each
+// readback waited on the GPU process, the slowest part of a circuit switch.
 function canvasTex(c) {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -82,7 +85,7 @@ function makeCumulusTexture(rng) {
   const yB = h * 0.84;                       // condensation level
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
-  const ctx = c.getContext('2d');
+  const ctx = c.getContext('2d', { willReadFrequently: true });
 
   // Scalloped silhouette: bumps along the base under a dome envelope, larger
   // and taller mid-cloud, squat at the ends. Two or three of them tower into
@@ -253,7 +256,7 @@ function makeBankTexture(rng) {
   const yB = h * 0.80;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
-  const ctx = c.getContext('2d');
+  const ctx = c.getContext('2d', { willReadFrequently: true });
 
   // Union fill (same reasoning as the cumulus): one cohesive row of flattened
   // lumps, then all shading inside the silhouette.
@@ -333,7 +336,7 @@ function makeCirrusTexture(rng) {
   const w = 1024, h = 384;
   const c = document.createElement('canvas');
   c.width = w; c.height = h;
-  const ctx = c.getContext('2d');
+  const ctx = c.getContext('2d', { willReadFrequently: true });
 
   // Few, distinct wisps rather than many merged ones: a sheet of overlapping
   // faint streaks fuses into one grey smear that prints the quad's rectangle.

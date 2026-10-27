@@ -41,6 +41,14 @@ car glass avoids the extra full-scene refraction render, and static menu
 previews render only when needed. Race restarts release their geometry and
 keyboard listeners. Hidden tabs stop advancing the simulation.
 
+The menu keeps switching cheap. Ground, kerb and barrier tiles depend on
+nothing about a circuit, so they are painted once per page and reused (the
+grass alone was 2.5 s of every circuit switch); the ground tiles of circuits
+not yet visited are painted ahead in idle slices. The car previews are built
+once and kept with their compiled shaders, and the cars not yet shown are
+prepared in idle time. Every car's ideal line is solved in a worker instead
+of on the page.
+
 ## Controls
 
 | Key                     | Action            |
