@@ -47,18 +47,13 @@ function studioEnvironment(renderer) {
 // or downloaded assets. Studio reflections never alter shared car materials.
 export function createGarage(renderer, environment) {
   const scene = new THREE.Scene();
-  const GRAPHITE = '#111315';
-  scene.background = paintTexture([768, 512], (g, w, h) => {
-    g.fillStyle = GRAPHITE; g.fillRect(0, 0, w, h);
-    const glow = g.createRadialGradient(w * 0.48, h * 0.55, 0, w * 0.48, h * 0.55, w * 0.6);
-    glow.addColorStop(0, '#2b2b2c');
-    glow.addColorStop(0.48, '#1c1e20');
-    glow.addColorStop(1, GRAPHITE);
-    g.fillStyle = glow; g.fillRect(0, 0, w, h);
-  });
-  scene.fog = new THREE.Fog(GRAPHITE, 9, 23);
+  // The menu's paper (--paper in style.css). Background, floor and fog all
+  // resolve to it, so the car stands on the printed page, not in a box.
+  const PAPER = '#ebe4d5';
+  scene.background = new THREE.Color(PAPER);
+  scene.fog = new THREE.Fog(PAPER, 9, 21);
   scene.environment = renderer.capabilities.isWebGL2 ? studioEnvironment(renderer) : environment;
-  scene.add(new THREE.HemisphereLight(0xf4efe7, 0x24262a, 0.75));
+  scene.add(new THREE.HemisphereLight(0xf4efe7, 0x9a9282, 0.8));
   const key = new THREE.DirectionalLight(0xffefd8, 3.2);
   key.position.set(-3, 7, 5); scene.add(key);
   const rim = new THREE.DirectionalLight(0xdce7ff, 2.4);
@@ -115,11 +110,11 @@ export function createGarage(renderer, environment) {
   }
 
   const floorTexture = paintTexture([1024, 1024], (g, w, h) => {
-    const pool = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
-    pool.addColorStop(0, '#383737');
-    pool.addColorStop(0.15, '#242527');
-    pool.addColorStop(0.35, '#181a1c');
-    pool.addColorStop(0.7, GRAPHITE);
+    g.fillStyle = PAPER; g.fillRect(0, 0, w, h);
+    const pool = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w * 0.09);
+    pool.addColorStop(0, 'rgba(27, 24, 19, 0.1)');
+    pool.addColorStop(0.5, 'rgba(27, 24, 19, 0.04)');
+    pool.addColorStop(1, 'rgba(27, 24, 19, 0)');
     g.fillStyle = pool; g.fillRect(0, 0, w, h);
   });
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40),
@@ -127,16 +122,16 @@ export function createGarage(renderer, environment) {
   floor.rotation.x = -Math.PI / 2;
   scene.add(floor);
 
-  // Flush markings suggest a studio turntable without hiding the contact shadow.
+  // Flush ink rings mark the turntable without hiding the contact shadow.
   for (const radius of [3.18, 3.24]) {
     const ring = new THREE.Mesh(new THREE.RingGeometry(radius, radius + 0.012, 128),
-      new THREE.MeshBasicMaterial({ color: 0x888783, transparent: true, opacity: 0.18, toneMapped: false }));
+      new THREE.MeshBasicMaterial({ color: 0x1b1813, transparent: true, opacity: 0.35, toneMapped: false }));
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.003;
     scene.add(ring);
   }
   const marker = new THREE.Mesh(new THREE.RingGeometry(3.18, 3.24, 24, 1, Math.PI * 0.15, 0.22),
-    new THREE.MeshBasicMaterial({ color: 0xff7448, transparent: true, opacity: 0.7, toneMapped: false }));
+    new THREE.MeshBasicMaterial({ color: 0xcf3a1d, transparent: true, opacity: 0.85, toneMapped: false }));
   marker.rotation.x = -Math.PI / 2;
   marker.position.y = 0.004;
   scene.add(marker);

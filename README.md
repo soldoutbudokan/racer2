@@ -234,11 +234,15 @@ pass. `M` mutes; the choice is remembered.
   car paint to pick up, cool fill light and per-circuit atmospheric fog.
 - **Post-processing**: none in Performance; FXAA and output conversion in
   Balanced; optional half-resolution GTAO and restrained bloom in High.
-- **Menu**: graphite panels with warm orange accents, responsive circuit maps
-  with location labels, start markers and difficulty ratings, clear race modes
-  and saved graphics choices. The selected car is framed in a studio with
-  softbox reflections and subtle turntable markings; the preview keeps correct
-  proportions at every screen size. No running 3D animation while choosing a race.
+- **Menu**: set like a printed race programme: newsprint, black ink and one
+  red for whatever you have picked, with Anton headings, IBM Plex Mono figures
+  and Newsreader copy (bundled through `@fontsource`, not fetched from a font
+  service). The selected car is shot on a floor painted the page's paper colour,
+  so it stands on the page; circuit maps carry location, start marker and
+  difficulty, and the picked one is ringed in red marker. Race modes are
+  tickets. Results print as a timing sheet with your line highlighted; pause
+  is a pit board. The preview keeps correct proportions at every screen size,
+  and nothing animates in 3D while choosing a race.
 - **HUD**: segmented tachometer with a shift light, timing bar, live race
   order, start lights mirroring the gantry, pace readout, a sharp minimap
   with a heading arrow, and a results card with the full classification.

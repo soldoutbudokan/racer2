@@ -402,6 +402,29 @@ was the same for every car; only its speeds changed with the car.
   grid is on the centreline, the line 6–8 m out). The AI's own stuck and
   spin logic is as before.
 
+## Owner-requested: menus that don't look generated (2026-10-27)
+
+Branch `claude/stoic-hypatia-3blwb3`, not a scheduled run. The owner's brief:
+"The menu screens look very AI-y. Think outside the box and make it look less
+so. Like the main screen is basically just the chatgpt default from the
+typeface on."
+
+- **The menu is a race programme.** Newsprint (`--paper`, an SVG-noise grain),
+  black ink, one red (`--spot`) reserved for the player's picks. Type is
+  Anton (display), IBM Plex Mono (labels and figures) and Newsreader (copy),
+  installed from `@fontsource` and bundled by Vite. Marketing lines ("Every
+  corner. All yours.") are gone; section heads are plain ("The entry", "The
+  circuit", "The session").
+- **The showroom is on the page.** `garage.js` paints background, floor and
+  fog in the paper colour, with ink turntable rings; the page grain runs over
+  the canvas. If `--paper` changes, change `PAPER` in `garage.js` with it.
+- **Results and pause.** The finish card is a timing sheet (chequered band,
+  "Provisional" stamp, the player's row highlighted); pause is a pit board.
+- **Not changed.** The in-race HUD keeps its dark glass and system type; only
+  its wordmark took the new roundel. All element ids and classes the scripts
+  use (`.track-card`, `button.mode[data-mode]`, `#garage-caption`, the four
+  meters, `#finish-restart` …) are kept.
+
 ## Changelog (accepted to `main`)
 
 - **2026-10-26** (accepted → `main` 2026-10-26, owner: "i think there is a

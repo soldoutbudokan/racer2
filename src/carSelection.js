@@ -56,17 +56,22 @@ export function saveCarChoice(id) {
   return choice;
 }
 
+const entryNumber = (index) => String(index + 1).padStart(2, '0');
+
 // Native radios provide Tab, arrow-key and screen-reader support. The caller
 // receives the saved initial choice and handles rendering only on changes.
 export function initCarSelector(onChange) {
   const options = document.querySelector('.car-options');
-  options.replaceChildren(...CAR_CHOICES.map(choice => {
+  options.replaceChildren(...CAR_CHOICES.map((choice, index) => {
     const label = document.createElement('label');
     label.className = 'car-option';
     const input = document.createElement('input');
     input.type = 'radio'; input.name = 'car'; input.value = choice.id;
     const content = document.createElement('span');
     content.className = 'car-option-content';
+    const number = document.createElement('span');
+    number.className = 'car-option-number'; number.textContent = entryNumber(index);
+    number.setAttribute('aria-hidden', 'true');
     const swatch = document.createElement('i');
     swatch.className = 'car-swatch';
     swatch.style.backgroundColor = `#${choice.color.toString(16).padStart(6, '0')}`;
@@ -75,7 +80,7 @@ export function initCarSelector(onChange) {
     name.className = 'car-option-name'; name.textContent = choice.name;
     const role = document.createElement('span');
     role.className = 'car-option-color'; role.textContent = choice.role;
-    content.append(swatch, name, role);
+    content.append(number, name, role, swatch);
     label.append(input, content);
     return label;
   }));
@@ -103,8 +108,11 @@ export function initCarSelector(onChange) {
   function update(choice) {
     selected = choice;
     for (const input of inputs) input.checked = input.value === choice.id;
-    const number = String(CAR_CHOICES.indexOf(choice) + 1).padStart(2, '0');
-    caption.textContent = `${number} / ${choice.name.toUpperCase()}`;
+    const number = document.createElement('b');
+    number.textContent = entryNumber(CAR_CHOICES.indexOf(choice));
+    const paint = document.createElement('em');
+    paint.textContent = `in ${choice.colorName}`;
+    caption.replaceChildren(number, ` ${choice.name} `, paint);
     canvas.setAttribute('aria-label', `${choice.colorName} ${choice.name} racing car`);
     document.getElementById('car-selection-note').textContent = `${choice.strength} ${choice.tradeoff}`;
     for (const { key, meter, value } of meters) {
